@@ -15,6 +15,7 @@ import { useAuthStore } from '@/store/auth';
 
 const STATUS_COLORS: Record<string, string> = {
   todo: 'bg-gray-100 text-gray-600',
+  accepted: 'bg-cyan-100 text-cyan-700',
   in_progress: 'bg-blue-100 text-blue-700',
   submitted: 'bg-amber-100 text-amber-700',
   in_review: 'bg-violet-100 text-violet-700',
@@ -26,6 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
 const STATUS_FILTERS = [
   { label: 'All open', value: '' },
   { label: 'To do', value: 'todo' },
+  { label: 'Accepted', value: 'accepted' },
   { label: 'In progress', value: 'in_progress' },
   { label: 'Submitted', value: 'submitted' },
   { label: 'In review', value: 'in_review' },

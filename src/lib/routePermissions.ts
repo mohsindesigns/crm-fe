@@ -24,6 +24,7 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { href: '/hr', permission: 'hr.read' },
   { href: '/self-service', permission: null },
   { href: '/analytics', permission: 'admin.access' },
+  { href: '/reports', permission: 'reports.read' },
   { href: '/admin', permission: 'admin.access' },
 ];
 

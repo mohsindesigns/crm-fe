@@ -2004,6 +2004,9 @@ export default function ProjectDetailPage() {
                       // Assigned-by-someone-else tasks go through submit → review — no one-click Done.
                       const reviewId = task.reviewerId || task.createdBy;
                       const needsReview = !!(task.assigneeId && reviewId && reviewId !== task.assigneeId);
+                      // Tasks handed off by someone else need an explicit Accept (in the
+                      // modal) before a one-click Done — open the task instead.
+                      const needsAcceptance = !!(task.assigneeId && task.assigneeId !== task.createdBy) && task.status === 'todo';
                       return (
                         <div
                           key={task.id}
@@ -2059,6 +2062,7 @@ export default function ProjectDetailPage() {
                             <span className={cn(
                               'px-2.5 py-1 text-xs font-medium rounded-full',
                               isDone ? 'bg-brand-100 text-brand-800' :
+                              task.status === 'accepted' ? 'bg-cyan-100 text-cyan-700' :
                               task.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
                               task.status === 'submitted' ? 'bg-amber-100 text-amber-700' :
                               task.status === 'in_review' ? 'bg-violet-100 text-violet-700' :
@@ -2066,7 +2070,7 @@ export default function ProjectDetailPage() {
                             )}>
                               {titleCase(task.status || 'todo')}
                             </span>
-                            {!isDone && isAssigned && !needsReview && (
+                            {!isDone && isAssigned && !needsReview && !needsAcceptance && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); completeTask.mutate(task.id); }}
                                 disabled={completeTask.isPending}

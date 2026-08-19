@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   X, CheckCircle, Upload, Paperclip, XCircle, Send,
   CircleDot, User, Users, Flag, Calendar, Bell, FileText, History,
-  ExternalLink,
+  ExternalLink, ThumbsUp,
 } from 'lucide-react';
 import { useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { toast } from 'sonner';
@@ -19,6 +19,7 @@ import { useAuthStore } from '@/store/auth';
 
 const STATUS_COLORS: Record<string, string> = {
   todo: 'bg-gray-100 text-gray-600',
+  accepted: 'bg-cyan-100 text-cyan-700',
   in_progress: 'bg-blue-100 text-blue-700',
   submitted: 'bg-amber-100 text-amber-700',
   in_review: 'bg-violet-100 text-violet-700',
@@ -113,6 +114,12 @@ export default function TaskDetailModal({
   const [auditNote, setAuditNote] = useState('');
   const [showAuditReject, setShowAuditReject] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  // File attachments for the "Send back for changes" note — uploaded eagerly to
+  // /media/upload as they're picked, then linked to the TaskEvent by id once the
+  // rejection is actually sent.
+  const [rejectFiles, setRejectFiles] = useState<any[]>([]);
+  const [rejectUploading, setRejectUploading] = useState(false);
+  const rejectFileRef = useRef<HTMLInputElement>(null);
 
   const { data: task, isLoading } = useQuery({
     queryKey: ['task-detail', projectId, taskId],
@@ -131,8 +138,8 @@ export default function TaskDetailModal({
   });
 
   const transition = useMutation({
-    mutationFn: ({ status, note }: { status: string; note?: string }) =>
-      api.patch(`/projects/${projectId}/tasks/${taskId}/status`, { status, note }).then((r) => r.data),
+    mutationFn: ({ status, note, attachmentIds }: { status: string; note?: string; attachmentIds?: string[] }) =>
+      api.patch(`/projects/${projectId}/tasks/${taskId}/status`, { status, note, attachmentIds }).then((r) => r.data),
     onSuccess: async (_data, vars) => {
       await invalidateMany(qc, [
         ['task-detail', projectId, taskId],
@@ -140,7 +147,9 @@ export default function TaskDetailModal({
       ]);
       setShowReject(false);
       setRejectNote('');
+      setRejectFiles([]);
       const labels: Record<string, string> = {
+        accepted: 'Task accepted — you can now begin work.',
         submitted: 'Submitted for review.',
         approved: 'Task approved — done.',
         rejected: 'Changes requested — assignee can revise and resubmit.',
@@ -200,11 +209,40 @@ export default function TaskDetailModal({
     } finally { setUploading(false); }
   }
 
+  // Uploads a single file against this task tagged kind: 'review_note' (kept out
+  // of the Deliverable list — see the taskEventId note on Artifact) and returns
+  // the created artifact so it can be linked to the note once actually sent.
+  async function uploadReviewAttachment(file: File) {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('taskId', taskId);
+    fd.append('projectId', projectId);
+    fd.append('stageKey', task?.stageKey || 'general');
+    fd.append('kind', 'review_note');
+    const res = await api.post('/media/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return res.data?.artifact;
+  }
+
+  async function onPickRejectFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setRejectUploading(true);
+    try {
+      const uploaded = await Promise.all(Array.from(files).map((f) => uploadReviewAttachment(f)));
+      setRejectFiles((prev) => [...prev, ...uploaded.filter(Boolean)]);
+    } catch (err: any) {
+      toast.error(uploadErrorMessage(err));
+    } finally {
+      setRejectUploading(false);
+    }
+  }
+
   // Files uploaded by whoever assigned the task (kind: 'brief') are reference
   // material; everything else is work handed back. Keeping them apart stops a
   // brief from reading as "the deliverable is already done".
   const briefFiles = (artifacts as any[]).filter((a: any) => a.kind === 'brief');
-  const deliverableFiles = (artifacts as any[]).filter((a: any) => a.kind !== 'brief');
+  // review_note attachments (voice/files dropped on a "Send back for changes"
+  // note) render inline under that timeline event instead, via task.events.
+  const deliverableFiles = (artifacts as any[]).filter((a: any) => a.kind !== 'brief' && a.kind !== 'review_note');
 
   const isDone = task?.status === 'done' || task?.status === 'approved';
   const isAssignee = !!user?.id && task?.assigneeId === user.id;
@@ -227,13 +265,19 @@ export default function TaskDetailModal({
     || myProjectSlots.includes('project_strategist')
     || myProjectSlots.includes('project_manager')
   ) && !isAssignee;
+  // A task handed to someone other than its creator must be accepted before the
+  // assignee can start work — see TaskService#transition's acceptance gate.
+  const needsAcceptance = !!(task?.assigneeId && task.assigneeId !== task.createdBy);
+  const awaitingAcceptance = needsAcceptance && task?.status === 'todo';
+  const canAccept = awaitingAcceptance && (isAssignee || isAdmin);
   const canSubmit = usesReviewPipeline
     && (isAssignee || isAdmin)
-    && ['todo', 'in_progress', 'rejected'].includes(task?.status || '');
+    && ['accepted', 'in_progress', 'rejected'].includes(task?.status || '');
   const awaitingReview = usesReviewPipeline && ['submitted', 'in_review'].includes(task?.status || '');
   // Self-assigned / no reviewer — single-owner complete (no submit/review).
   const canMarkComplete = !usesReviewPipeline
     && !isDone
+    && !awaitingAcceptance
     && (isAssignee || isAdmin || isEffectiveReviewer);
   const awaitingAudit = !!task?.requiresTechnicalAudit && task?.auditStatus === 'pending';
 
@@ -258,7 +302,7 @@ export default function TaskDetailModal({
   ].filter(Boolean).join(' / ');
 
   const showActions = !!task && !isDone && (
-    canSubmit || (awaitingReview && canReview) || canMarkComplete || showReject
+    canAccept || awaitingAcceptance || canSubmit || (awaitingReview && canReview) || canMarkComplete || showReject
     || (awaitingAudit && isAdmin) || showAuditReject
   );
 
@@ -564,6 +608,22 @@ export default function TaskDetailModal({
                             {ev.note}
                           </p>
                         )}
+                        {Array.isArray(ev.attachments) && ev.attachments.length > 0 && (
+                          <div className="mt-1.5 space-y-1.5">
+                            {ev.attachments.map((a: any) => (
+                              <a
+                                key={a.id}
+                                href={a.fileUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center gap-1.5 text-xs text-brand-800 hover:underline bg-white border border-gray-100 rounded-lg px-2.5 py-1.5"
+                              >
+                                <Paperclip className="w-3 h-3 shrink-0" />
+                                <span className="truncate">{a.fileName || 'Attachment'}</span>
+                              </a>
+                            ))}
+                          </div>
+                        )}
                       </TimelineRow>
                     ))}
 
@@ -651,11 +711,53 @@ export default function TaskDetailModal({
                       placeholder="What should they change? (optional but recommended)"
                       className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
                     />
+                    {rejectFiles.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {rejectFiles.map((f: any, i: number) => (
+                          <span key={f.id || i} className="inline-flex items-center gap-1.5 text-xs bg-red-50 text-red-800 border border-red-100 px-2.5 py-1 rounded-lg">
+                            <Paperclip className="w-3 h-3" />
+                            <span className="max-w-[140px] truncate font-medium">
+                              {f.fileName || 'File'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setRejectFiles((prev) => prev.filter((_, j) => j !== i))}
+                              className="hover:text-red-900"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <input
+                      ref={rejectFileRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => { onPickRejectFiles(e.target.files); e.target.value = ''; }}
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => rejectFileRef.current?.click()}
+                        disabled={rejectUploading}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-60"
+                      >
+                        <Paperclip className="w-3.5 h-3.5" />
+                        Attach file
+                      </button>
+                      {rejectUploading && <span className="text-xs text-gray-400">Uploading…</span>}
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={transition.isPending}
-                        onClick={() => transition.mutate({ status: 'rejected', note: rejectNote.trim() || undefined })}
+                        disabled={transition.isPending || rejectUploading}
+                        onClick={() => transition.mutate({
+                          status: 'rejected',
+                          note: rejectNote.trim() || undefined,
+                          attachmentIds: rejectFiles.map((f: any) => f.id).filter(Boolean),
+                        })}
                         className="inline-flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg"
                       >
                         <XCircle className="w-4 h-4" />
@@ -663,7 +765,7 @@ export default function TaskDetailModal({
                       </button>
                       <button
                         type="button"
-                        onClick={() => setShowReject(false)}
+                        onClick={() => { setShowReject(false); setRejectFiles([]); }}
                         className="text-sm font-medium text-gray-500 hover:text-gray-700 px-3 py-2"
                       >
                         Cancel
@@ -672,6 +774,17 @@ export default function TaskDetailModal({
                   </div>
                 ) : (
                   <div className="flex flex-wrap items-center gap-2">
+                    {canAccept && (
+                      <button
+                        type="button"
+                        onClick={() => transition.mutate({ status: 'accepted' })}
+                        disabled={transition.isPending}
+                        className="inline-flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg"
+                      >
+                        <ThumbsUp className="w-4 h-4" />
+                        Accept task
+                      </button>
+                    )}
                     {canSubmit && (
                       <button
                         type="button"
@@ -715,6 +828,9 @@ export default function TaskDetailModal({
                         <CheckCircle className="w-4 h-4" />
                         Mark Complete
                       </button>
+                    )}
+                    {awaitingAcceptance && !canAccept && (
+                      <p className="text-xs text-gray-500">Waiting for {task.assignee?.name || 'the assignee'} to accept this task.</p>
                     )}
                     {awaitingReview && isAssignee && !canReview && (
                       <p className="text-xs text-gray-500">Submitted — waiting for {reviewerDisplay || 'reviewer'} to approve.</p>

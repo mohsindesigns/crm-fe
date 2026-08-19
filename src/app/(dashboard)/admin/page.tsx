@@ -38,6 +38,7 @@ const ALL_PERMISSIONS = [
   { key: 'hr.read',          label: 'View HR & payroll' },
   { key: 'hr.manage',        label: 'Manage HR & payroll' },
   { key: 'admin.access',     label: 'Access admin panel' },
+  { key: 'reports.read',     label: 'View member reports' },
   { key: 'seo.read',         label: 'View SEO data' },
   { key: 'seo.manage',       label: 'Manage SEO data' },
 ];

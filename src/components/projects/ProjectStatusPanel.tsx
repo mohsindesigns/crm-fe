@@ -305,7 +305,7 @@ export default function ProjectStatusPanel({
             segments={[
               { label: 'Done / approved', value: (taskCounts.get('done') || 0) + (taskCounts.get('approved') || 0), color: C.good },
               { label: 'In progress', value: (taskCounts.get('in_progress') || 0) + (taskCounts.get('submitted') || 0) + (taskCounts.get('in_review') || 0), color: C.progress },
-              { label: 'To do', value: taskCounts.get('todo') || 0, color: C.neutral },
+              { label: 'To do', value: (taskCounts.get('todo') || 0) + (taskCounts.get('accepted') || 0), color: C.neutral },
               { label: 'Rejected', value: taskCounts.get('rejected') || 0, color: C.bad },
             ]}
           />
