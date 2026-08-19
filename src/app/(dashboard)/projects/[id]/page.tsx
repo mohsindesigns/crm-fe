@@ -273,6 +273,14 @@ export default function ProjectDetailPage() {
     enabled: !!project && tab === 'blogs',
   });
 
+  // Approved blogs get handed to a designer for the featured/inline image —
+  // separate pool from the writers above.
+  const { data: assignableBlogDesigners = [] } = useQuery({
+    queryKey: ['users-assignable', 'ui_designer'],
+    queryFn: () => api.get('/users/assignable', { params: { role: 'ui_designer' } }).then((r) => r.data || []),
+    enabled: !!project && tab === 'blogs',
+  });
+
   const { data: timeline } = useQuery({
     queryKey: ['project-timeline', id],
     queryFn: () => api.get(`/projects/${id}/timeline`).then((r) => r.data),
@@ -1083,6 +1091,19 @@ export default function ProjectDetailPage() {
       toast.success(vars.writerId ? 'Writer assigned — task created.' : 'Writer unassigned.');
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to assign writer.'),
+  });
+
+  const assignBlogDesigner = useMutation({
+    mutationFn: ({ blogId, designerId }: { blogId: string; designerId: string }) =>
+      api.patch(`/seo/blogs/${blogId}`, { assignedDesignerId: designerId || null }).then((r) => r.data),
+    onSuccess: async (_data, vars) => {
+      await invalidateMany(qc, [
+        ['blog-sheet', id],
+        ...afterTaskChange(id),
+      ]);
+      toast.success(vars.designerId ? 'Designer assigned — task created for the blog image.' : 'Designer unassigned.');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to assign designer.'),
   });
 
   const importBlogSheet = useMutation({
@@ -1977,8 +1998,9 @@ export default function ProjectDetailPage() {
                         && new Date(task.dueAt) < new Date(new Date().toDateString())
                         && !isDone;
                       const typeLabel = task.type === 'blog_post' ? 'Blog'
-                        : task.type === 'content' ? 'Content'
-                          : task.type ? titleCase(task.type) : null;
+                        : task.type === 'blog_image' ? 'Blog Image'
+                          : task.type === 'content' ? 'Content'
+                            : task.type ? titleCase(task.type) : null;
                       // Assigned-by-someone-else tasks go through submit → review — no one-click Done.
                       const reviewId = task.reviewerId || task.createdBy;
                       const needsReview = !!(task.assigneeId && reviewId && reviewId !== task.assigneeId);
@@ -3799,8 +3821,10 @@ export default function ProjectDetailPage() {
                           <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">KD</th>
                           <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">Supporting Keywords</th>
                           <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">URL Slug</th>
+                          <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">File</th>
                           <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Status</th>
                           <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Writer</th>
+                          <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Designer</th>
                           <th className="w-28" />
                         </tr>
                       </thead>
@@ -3845,6 +3869,29 @@ export default function ProjectDetailPage() {
                                   <span className="block truncate" title={row.urlSlug || undefined}>
                                     {cellOrDash(row.urlSlug)}
                                   </span>
+                                </td>
+                                <td className="px-3 py-2.5 text-gray-700 max-w-[160px]">
+                                  {row.fileUrl ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => openDeliverable(row.fileUrl, row.fileName).catch(() => toast.error('Failed to open deliverable.'))}
+                                      className="flex items-center gap-1 text-brand-700 hover:underline max-w-full"
+                                      title={row.fileName || row.fileUrl}
+                                    >
+                                      {isLinkDeliverable(row.fileUrl, row.fileName) ? (
+                                        <Link className="w-3.5 h-3.5 shrink-0" />
+                                      ) : (
+                                        <Paperclip className="w-3.5 h-3.5 shrink-0" />
+                                      )}
+                                      <span className="truncate">
+                                        {row.fileName === 'Link'
+                                          ? (row.fileUrl || 'Link')
+                                          : (row.fileName || 'Attached')}
+                                      </span>
+                                    </button>
+                                  ) : (
+                                    <span className="text-gray-400">—</span>
+                                  )}
                                 </td>
                                 <td className="px-3 py-2.5 whitespace-nowrap">
                                   {/* "Draft" covers two genuinely different
@@ -3902,22 +3949,48 @@ export default function ProjectDetailPage() {
                                     <span className="text-gray-700">{row.assignedWriter?.name || '—'}</span>
                                   )}
                                 </td>
+                                <td className="px-3 py-2.5 whitespace-nowrap">
+                                  {row.status !== 'approved' ? (
+                                    <span className="text-gray-400" title="Assign a designer once this blog is approved">—</span>
+                                  ) : canActOnProject ? (() => {
+                                    const options = [...(assignableBlogDesigners as any[])];
+                                    if (row.assignedDesignerId && row.assignedDesigner && !options.some((u) => u.id === row.assignedDesignerId)) {
+                                      options.unshift({ id: row.assignedDesignerId, name: row.assignedDesigner.name });
+                                    }
+                                    return (
+                                      <select
+                                        value={row.assignedDesignerId || ''}
+                                        onChange={(e) => assignBlogDesigner.mutate({ blogId: row.id, designerId: e.target.value })}
+                                        disabled={assignBlogDesigner.isPending}
+                                        className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-600 bg-white max-w-[140px]"
+                                        title={options.length ? undefined : 'No users have the UI/UX Designer role yet'}
+                                      >
+                                        <option value="">Unassigned</option>
+                                        {options.map((u: any) => (
+                                          <option key={u.id} value={u.id}>{u.name}</option>
+                                        ))}
+                                      </select>
+                                    );
+                                  })() : (
+                                    <span className="text-gray-700">{row.assignedDesigner?.name || '—'}</span>
+                                  )}
+                                </td>
                                 <td className="px-3 py-2.5">
                                   <div className="flex items-center gap-1 justify-end">
                                     {row.fileUrl && (
                                       <>
                                         <button
                                           type="button"
-                                          onClick={() => openDeliverable(row.fileUrl).catch(() => toast.error('Failed to open deliverable.'))}
+                                          onClick={() => openDeliverable(row.fileUrl, row.fileName).catch(() => toast.error('Failed to open deliverable.'))}
                                           className="p-1.5 text-gray-400 hover:text-brand-700 rounded-lg hover:bg-gray-100"
-                                          title={isLinkDeliverable(row.fileUrl) ? 'Open link' : 'View'}
+                                          title={isLinkDeliverable(row.fileUrl, row.fileName) ? 'Open link' : 'View'}
                                         >
                                           <Eye className="w-3.5 h-3.5" />
                                         </button>
-                                        {!isLinkDeliverable(row.fileUrl) && (
+                                        {!isLinkDeliverable(row.fileUrl, row.fileName) && (
                                           <a
                                             href={row.fileUrl}
-                                            download
+                                            download={row.fileName || undefined}
                                             className="p-1.5 text-gray-400 hover:text-brand-700 rounded-lg hover:bg-gray-100"
                                             title="Download"
                                           >
@@ -3981,7 +4054,7 @@ export default function ProjectDetailPage() {
                               </tr>
                               {isRejecting && (
                                 <tr>
-                                  <td colSpan={10} className="px-3 pb-3">
+                                  <td colSpan={12} className="px-3 pb-3">
                                     <div className="flex flex-wrap items-center gap-2 bg-red-50/60 border border-red-200 rounded-lg p-2.5">
                                       <input
                                         value={blogRejectReason}

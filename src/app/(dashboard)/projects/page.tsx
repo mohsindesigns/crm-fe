@@ -195,6 +195,22 @@ export default function ProjectsPage() {
       <Header title="Projects" />
       <div className="flex-1 p-4 sm:p-6 space-y-4 overflow-y-auto">
 
+        {/* ── Service type tabs ── */}
+        <div className="-mx-4 sm:mx-0 px-4 sm:px-0 flex gap-1 overflow-x-auto scrollbar-hide">
+          {[{ key: '', name: 'All Services' }, ...(serviceTypes as any[])].map((s: any) => (
+            <button
+              key={s.key || 'all'}
+              onClick={() => { setService(s.key); setStage(''); setPage(1); }}
+              className={cn(
+                'shrink-0 whitespace-nowrap px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors',
+                service === s.key ? 'bg-gray-900 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
+              )}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+
         {/* ── Toolbar ── */}
         <div className="flex flex-col gap-2.5">
           <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
@@ -223,14 +239,6 @@ export default function ProjectsPage() {
                 className="flex-1 min-w-36 sm:min-w-0 sm:flex-none text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-600"
               >
                 {STATUS_OPTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              <select
-                value={service}
-                onChange={(e) => { setService(e.target.value); setStage(''); setPage(1); }}
-                className="flex-1 min-w-36 sm:min-w-0 sm:flex-none text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-600"
-              >
-                <option value="">All services</option>
-                {(serviceTypes as any[]).map((s: any) => <option key={s.key} value={s.key}>{s.name}</option>)}
               </select>
             </div>
           </div>

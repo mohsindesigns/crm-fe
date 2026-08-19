@@ -30,6 +30,7 @@ const STATUS_COLORS: Record<string, string> = {
 const TYPE_LABELS: Record<string, string> = {
   content: 'Content',
   blog_post: 'Blog',
+  blog_image: 'Blog Image',
   custom: 'Custom',
   issue: 'Issue',
 };

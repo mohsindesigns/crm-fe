@@ -716,7 +716,7 @@ export default function TasksPage() {
                             {task.type && (
                               <span className={cn(META_PILL_BASE, 'inline-flex items-center gap-1 whitespace-nowrap')}>
                                 <Flag className="w-2.5 h-2.5 text-brand-700" />
-                                {titleCase(task.type === 'blog_post' ? 'Blog' : task.type)}
+                                {titleCase(task.type === 'blog_post' ? 'Blog' : task.type === 'blog_image' ? 'Blog Image' : task.type)}
                               </span>
                             )}
                           </div>
@@ -833,7 +833,7 @@ export default function TasksPage() {
                                 {task.type && (
                                   <span className={cn(META_PILL_BASE, 'inline-flex items-center gap-1')}>
                                     <Flag className="w-2.5 h-2.5 text-brand-700" />
-                                    {titleCase(task.type === 'blog_post' ? 'Blog' : task.type)}
+                                    {titleCase(task.type === 'blog_post' ? 'Blog' : task.type === 'blog_image' ? 'Blog Image' : task.type)}
                                   </span>
                                 )}
                               </div>
