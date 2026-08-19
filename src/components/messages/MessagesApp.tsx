@@ -1018,7 +1018,7 @@ export default function MessagesApp({
   }
 
   function roomTitle(room: any) {
-    if (room.roomType === 'dm') return room.peer?.name || room.name;
+    if (room.roomType === 'dm') return room.isSelf ? 'You' : (room.peer?.name || room.name);
     return room.client?.name || room.name;
   }
 
@@ -1054,7 +1054,8 @@ export default function MessagesApp({
     const cls = cn('w-4 h-4 shrink-0', active ? 'text-white/90' : 'text-gray-400');
     if (room.roomType === 'dm') {
       // Presence dot on the icon itself — no extra row, no layout shift.
-      const online = !!room.peer?.id && onlineIds.includes(room.peer.id);
+      // Skipped for "Message yourself" — you're always online with yourself.
+      const online = !room.isSelf && !!room.peer?.id && onlineIds.includes(room.peer.id);
       return (
         <span className="relative shrink-0">
           <MessageSquare className={cls} />
@@ -1332,6 +1333,19 @@ export default function MessagesApp({
               />
             )}
             <div className="space-y-1">
+              {composeMode === 'dm' && user && (
+                <button
+                  type="button"
+                  onClick={() => openDm.mutate(user.id)}
+                  className="w-full flex items-center gap-2.5 px-2 py-2 rounded-xl text-sm text-left transition-colors hover:bg-slate-50 text-gray-800 mb-1 border-b border-gray-100 pb-2.5"
+                >
+                  <Avatar name={user.name} src={user.avatarUrl} size="xs" />
+                  <span className="truncate flex-1 font-medium">You</span>
+                  <span className="text-[10px] font-semibold text-brand-700/60 bg-brand-50 px-1.5 py-0.5 rounded-md shrink-0">
+                    Message yourself
+                  </span>
+                </button>
+              )}
               {peopleForPicker.length === 0 && (
                 <p className="text-xs text-gray-400 py-2">No teammates available.</p>
               )}
@@ -1486,6 +1500,14 @@ export default function MessagesApp({
                         side), so the presence line has to live HERE — the other
                         variant below only covers rooms and the portal. */}
                     {(() => {
+                      if (activeRoom.isSelf) {
+                        return (
+                          <p className="text-[11px] text-gray-500 flex items-center gap-1.5">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: BRAND.accent }} />
+                            Message yourself
+                          </p>
+                        );
+                      }
                       const peerId = activeRoom.peer?.id;
                       const isOnline = !!peerId && onlineIds.includes(peerId);
                       const seenAt = (peerId && lastSeenById[peerId]) || activeRoom.peer?.lastSeenAt;
@@ -1522,7 +1544,7 @@ export default function MessagesApp({
                       // "Active now" while they hold a socket, otherwise the
                       // persisted last-seen. Rooms keep their description.
                       const isDm = activeRoom?.roomType === 'dm';
-                      const peerOnline = isDm && !!activeRoom.peer?.id && onlineIds.includes(activeRoom.peer.id);
+                      const peerOnline = isDm && !activeRoom.isSelf && !!activeRoom.peer?.id && onlineIds.includes(activeRoom.peer.id);
                       const peerId = activeRoom?.peer?.id;
                       const seenAt = (peerId && lastSeenById[peerId]) || activeRoom?.peer?.lastSeenAt;
                       const presence = isDm ? presenceLabel(peerOnline, seenAt) : null;
@@ -1532,10 +1554,12 @@ export default function MessagesApp({
                             className="inline-block w-1.5 h-1.5 rounded-full shrink-0"
                             style={{ backgroundColor: peerOnline ? '#22c55e' : (isDm ? '#cbd5e1' : BRAND.accent) }}
                           />
-                          {isDm
-                            ? (presence || 'Direct message')
-                            : activeRoom?.description
-                              || (activeRoom?.roomType === 'group' ? 'Custom room' : 'Client room')}
+                          {activeRoom?.isSelf
+                            ? 'Message yourself'
+                            : isDm
+                              ? (presence || 'Direct message')
+                              : activeRoom?.description
+                                || (activeRoom?.roomType === 'group' ? 'Custom room' : 'Client room')}
                         </p>
                       );
                     })()}

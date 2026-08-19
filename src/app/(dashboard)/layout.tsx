@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/store/auth';
 import Sidebar from '@/components/layout/Sidebar';
 import NotificationBridge from '@/components/NotificationBridge';
+import MessagesWidget from '@/components/messages/MessagesWidget';
 import api from '@/lib/api';
 import { requiredPermissionFor } from '@/lib/routePermissions';
 import { toast } from 'sonner';
@@ -131,6 +132,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <main className="flex-1 overflow-y-auto overflow-x-hidden min-w-0">{children}</main>
       </div>
+      <MessagesWidget />
     </div>
   );
 }
