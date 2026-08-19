@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Plus, Trash2, GripVertical, Palette } from 'lucide-react';
+import { X, Plus, Trash2, GripVertical, Palette, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { usePortalStore } from '@/store/portal';
 import { useBranding } from '@/hooks/useBranding';
@@ -36,9 +36,10 @@ interface FieldDraft {
   type: FieldType;
   required: boolean;
   options: string;
+  hidden: boolean; // kept in the form definition but not shown on the public form
 }
 
-const BLANK_FIELD: FieldDraft = { label: '', type: 'text', required: false, options: '' };
+const BLANK_FIELD: FieldDraft = { label: '', type: 'text', required: false, options: '', hidden: false };
 
 function ColorInput({ label, value, onChange, fallback }: { label: string; value: string; onChange: (v: string) => void; fallback: string }) {
   return (
@@ -67,7 +68,7 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
   const [successMessage, setSuccessMessage] = useState(form?.successMessage || '');
   const [fields, setFields] = useState<FieldDraft[]>(
     form?.fields?.length
-      ? form.fields.map((f: any) => ({ label: f.label, type: f.type, required: !!f.required, options: (f.options || []).join(', ') }))
+      ? form.fields.map((f: any) => ({ label: f.label, type: f.type, required: !!f.required, options: (f.options || []).join(', '), hidden: !!f.hidden }))
       : [{ ...BLANK_FIELD, label: 'Full Name' }, { ...BLANK_FIELD, label: 'Email', type: 'email' as FieldType, required: true }]
   );
 
@@ -78,7 +79,11 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
   const [buttonText, setButtonText] = useState(savedTheme.buttonText || '');
   const [primaryColor, setPrimaryColor] = useState(savedTheme.primaryColor || '');
   const [backgroundColor, setBackgroundColor] = useState(savedTheme.backgroundColor || '');
-  const [showBranding, setShowBranding] = useState(savedTheme.showBranding !== undefined ? savedTheme.showBranding : true);
+  // Falls back to the old combined `showBranding` field for forms saved before
+  // logo/name were split into independent toggles.
+  const legacyShowBranding = (savedTheme as any).showBranding;
+  const [showLogo, setShowLogo] = useState(savedTheme.showLogo !== undefined ? savedTheme.showLogo : legacyShowBranding !== undefined ? legacyShowBranding : true);
+  const [showName, setShowName] = useState(savedTheme.showName !== undefined ? savedTheme.showName : legacyShowBranding !== undefined ? legacyShowBranding : true);
   const [borderRadius, setBorderRadius] = useState<BorderRadius>(savedTheme.borderRadius || 'rounded');
 
   function updateField(i: number, patch: Partial<FieldDraft>) {
@@ -90,6 +95,9 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
   function addField() {
     setFields((fs) => [...fs, { ...BLANK_FIELD }]);
   }
+  function toggleHidden(i: number) {
+    setFields((fs) => fs.map((f, idx) => (idx === i ? { ...f, hidden: !f.hidden } : f)));
+  }
 
   function toPayloadFields(): FormField[] {
     return fields
@@ -99,11 +107,12 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
         label: f.label.trim(),
         type: f.type,
         required: f.required,
+        hidden: f.hidden,
         ...(f.type === 'select' ? { options: f.options.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
       }));
   }
 
-  const themePayload = { headline, description, buttonText, primaryColor, backgroundColor, showBranding, borderRadius };
+  const themePayload = { headline, description, buttonText, primaryColor, backgroundColor, showLogo, showName, borderRadius };
 
   const save = useMutation({
     mutationFn: () => {
@@ -134,7 +143,8 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
     buttonText: buttonText.trim() || DEFAULT_THEME.buttonText,
     primaryColor: primaryColor || orgBranding.primaryColor || DEFAULT_THEME.primaryColor,
     backgroundColor: backgroundColor || DEFAULT_THEME.backgroundColor,
-    showBranding,
+    showLogo,
+    showName,
     borderRadius,
   };
   const previewBranding = { brandName: orgBranding.brandName, logoUrl: orgBranding.logoUrl };
@@ -174,7 +184,7 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
               </div>
               <div className="space-y-2">
                 {fields.map((f, i) => (
-                  <div key={i} className="border border-gray-200 rounded-lg p-2.5 space-y-2">
+                  <div key={i} className={`border border-gray-200 rounded-lg p-2.5 space-y-2 ${f.hidden ? 'opacity-50' : ''}`}>
                     <div className="flex items-center gap-2">
                       <GripVertical className="w-3.5 h-3.5 text-gray-300 shrink-0" />
                       <input value={f.label} onChange={(e) => updateField(i, { label: e.target.value })} placeholder="Field label"
@@ -187,10 +197,18 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
                         <input type="checkbox" checked={f.required} onChange={(e) => updateField(i, { required: e.target.checked })} />
                         Required
                       </label>
+                      <button
+                        onClick={() => toggleHidden(i)}
+                        title={f.hidden ? 'Hidden from the public form — click to show' : 'Hide this field from the public form'}
+                        className={`p-1 rounded shrink-0 ${f.hidden ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50' : 'text-gray-300 hover:text-gray-700 hover:bg-gray-100'}`}
+                      >
+                        {f.hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
                       <button onClick={() => removeField(i)} className="p-1 rounded text-gray-300 hover:text-red-600 hover:bg-red-50 shrink-0">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
+                    {f.hidden && <p className="text-[11px] text-amber-600 pl-5">Hidden — won&apos;t appear on the public form.</p>}
                     {f.type === 'select' && (
                       <input value={f.options} onChange={(e) => updateField(i, { options: e.target.value })} placeholder="Options, comma-separated"
                         className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-600" />
@@ -242,10 +260,16 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
                         {BORDER_RADIUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
                     </div>
-                    <label className="flex items-center gap-2 text-sm text-gray-700 pb-2">
-                      <input type="checkbox" checked={showBranding} onChange={(e) => setShowBranding(e.target.checked)} />
-                      Show your logo/name
-                    </label>
+                    <div className="flex flex-col gap-1.5 pb-2">
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="checkbox" checked={showLogo} onChange={(e) => setShowLogo(e.target.checked)} />
+                        Show your logo
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="checkbox" checked={showName} onChange={(e) => setShowName(e.target.checked)} />
+                        Show your name
+                      </label>
+                    </div>
                   </div>
                 </div>
               )}
@@ -265,7 +289,7 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
           <div className="hidden lg:block flex-1 min-w-0 bg-gray-100 overflow-y-auto p-6">
             <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-3">Live preview</p>
             <div className="rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <LeadFormRenderer mode="preview" theme={previewTheme} branding={previewBranding} fields={toPayloadFields()} />
+              <LeadFormRenderer mode="preview" theme={previewTheme} branding={previewBranding} fields={toPayloadFields().filter((f) => !f.hidden)} />
             </div>
           </div>
         </div>

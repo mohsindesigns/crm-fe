@@ -75,7 +75,7 @@ export default function ClientDetailPage() {
   const [editContactId, setEditContactId] = useState<string | null>(null);
   const [editContactForm, setEditContactForm] = useState({ name: '', email: '', phone: '', role: '', businessName: '', state: '', billingAddress: '', useForInvoice: false, portalAccess: false });
   const [showSellForm, setShowSellForm] = useState(false);
-  const [sellForm, setSellForm] = useState({ packageId: '', startDate: '', discountType: '', discountValue: '', customPrice: '' });
+  const [sellForm, setSellForm] = useState({ packageId: '', startDate: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' });
   // Extra packages bought in the same sale. They go out at list price — the
   // discount / custom-price / installment controls above stay tied to the main
   // package, because those only make sense one package at a time.
@@ -84,7 +84,7 @@ export default function ClientDetailPage() {
   // endpoint already accepts these overrides per entry; the UI just never
   // offered them, so extras could only be sold at list price.
   const [extraTerms, setExtraTerms] = useState<Record<string, {
-    discountType: string; discountValue: string; customPrice: string;
+    discountType: string; discountValue: string; discountCycles: string; customPrice: string;
   }>>({});
   const [sellInstallmentPlan, setSellInstallmentPlan] = useState<{ percent: string; dueAt: string; label: string }[]>([]);
 
@@ -115,6 +115,7 @@ export default function ClientDetailPage() {
   // gates the whole router on admin.access) — hide the tabs for anyone who'd
   // just get a 403 from them.
   const canViewDocuments = hasPermission('admin.access');
+  const canCreateInvoices = hasPermission('billing.create');
   // Mirrors the adminOnly gate the endpoint enforces — changing how a real
   // client is billed is an administrator decision, not a project-level one.
   const roleKey = useAuthStore((s) => s.user?.role?.key);
@@ -173,6 +174,7 @@ export default function ClientDetailPage() {
         packageId: data.packageId,
         discountType: data.customPrice ? undefined : (data.discountType || undefined),
         discountValue: !data.customPrice && data.discountType && data.discountValue ? Number(data.discountValue) : undefined,
+        discountCycles: !data.customPrice && data.discountType && data.discountCycles ? Number(data.discountCycles) : undefined,
         customPrice: data.customPrice ? Number(data.customPrice) : undefined,
         installmentPlan: sellInstallmentPlan.filter((p) => p.percent && p.dueAt).length
           ? sellInstallmentPlan.filter((p) => p.percent && p.dueAt).map((p) => ({
@@ -191,13 +193,14 @@ export default function ClientDetailPage() {
           packages: [
             primary,
             ...extraPackageIds.map((packageId) => {
-              const t = extraTerms[packageId] || { discountType: '', discountValue: '', customPrice: '' };
+              const t = extraTerms[packageId] || { discountType: '', discountValue: '', discountCycles: '', customPrice: '' };
               return {
                 packageId,
                 // Only send what was actually set — an empty string would read as
                 // "sell for 0" rather than "no override".
                 discountType: t.discountType || undefined,
                 discountValue: t.discountType && t.discountValue !== '' ? Number(t.discountValue) : undefined,
+                discountCycles: t.discountType && t.discountCycles !== '' ? Number(t.discountCycles) : undefined,
                 customPrice: t.customPrice !== '' ? Number(t.customPrice) : undefined,
               };
             }),
@@ -213,7 +216,7 @@ export default function ClientDetailPage() {
     onSuccess: async (res) => {
       await invalidateMany(qc, afterClientChange(id));
       setShowSellForm(false);
-      setSellForm({ packageId: '', startDate: '', discountType: '', discountValue: '', customPrice: '' });
+      setSellForm({ packageId: '', startDate: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' });
       setSellInstallmentPlan([]);
       setExtraPackageIds([]);
       setExtraTerms({});
@@ -894,7 +897,7 @@ export default function ClientDetailPage() {
               </div>
               {canSell && (
                 <button
-                  onClick={() => { setShowSellForm((v) => !v); setSellForm({ packageId: '', startDate: '', discountType: '', discountValue: '', customPrice: '' }); setSellInstallmentPlan([]); }}
+                  onClick={() => { setShowSellForm((v) => !v); setSellForm({ packageId: '', startDate: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' }); setSellInstallmentPlan([]); }}
                   className="flex items-center gap-1.5 shrink-0 whitespace-nowrap bg-brand-700 hover:bg-brand-800 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
                 >
                   <Plus className="w-4 h-4" />
@@ -903,7 +906,9 @@ export default function ClientDetailPage() {
               )}
             </div>
 
-            {showSellForm && canSell && (
+            {showSellForm && canSell && (() => {
+              const selectedPkg = (sellablePackages as any[]).find((x: any) => x.id === sellForm.packageId);
+              return (
               <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
                 <h4 className="text-sm font-semibold text-gray-900">Sell a Package</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1009,6 +1014,23 @@ export default function ClientDetailPage() {
                       />
                     </div>
                   )}
+                  {!sellForm.customPrice && sellForm.discountType && selectedPkg?.isRecurring && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                        Discount valid for <span className="text-gray-400 font-normal">(billing cycles)</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={sellForm.discountCycles}
+                        onChange={(e) => setSellForm({ ...sellForm, discountCycles: e.target.value })}
+                        placeholder={`e.g. 3 (${selectedPkg.billingCycle} cycles, then full price)`}
+                        className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                      />
+                      <p className="mt-1 text-[11px] text-gray-500">Leave blank for a discount that never expires.</p>
+                    </div>
+                  )}
                 </div>
                 {sellForm.packageId && (() => {
                   const p = (sellablePackages as any[]).find((x: any) => x.id === sellForm.packageId);
@@ -1032,6 +1054,9 @@ export default function ClientDetailPage() {
                       )}
                       {!sellForm.customPrice && sellForm.discountType && discountValue > 0 && (
                         <> Price after discount: <strong>{p?.currency} {finalPrice.toLocaleString()}</strong> (was {p?.currency} {base.toLocaleString()}).</>
+                      )}
+                      {!sellForm.customPrice && sellForm.discountType && discountValue > 0 && p?.isRecurring && Number(sellForm.discountCycles) > 0 && (
+                        <> Discount applies for the first <strong>{sellForm.discountCycles}</strong> {p.billingCycle} cycle{Number(sellForm.discountCycles) !== 1 ? 's' : ''} — billing then reverts to <strong>{p?.currency} {base.toLocaleString()}</strong> automatically.</>
                       )}
                       {p?.isRecurring && <> This package bills on a <strong>{p.billingCycle}</strong> cycle — a retainer and the first invoice will be created automatically; later invoices on each renewal date.</>}
                       {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.percent).length > 0 && (
@@ -1120,7 +1145,7 @@ export default function ClientDetailPage() {
                         .filter((p: any) => p.id !== sellForm.packageId)
                         .map((p: any) => {
                           const checked = extraPackageIds.includes(p.id);
-                          const terms = extraTerms[p.id] || { discountType: '', discountValue: '', customPrice: '' };
+                          const terms = extraTerms[p.id] || { discountType: '', discountValue: '', discountCycles: '', customPrice: '' };
                           const listPrice = Number(p.price || 0);
                           // Mirrors ClientService._computeSoldPrice so the figure
                           // shown here is the one that will actually be charged.
@@ -1201,6 +1226,19 @@ export default function ClientDetailPage() {
                                     placeholder="Sell price (overrides discount)"
                                     className="w-full px-2 py-1.5 text-[11px] border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-600"
                                   />
+                                  {!terms.customPrice && terms.discountType && p.isRecurring && (
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      step="1"
+                                      value={terms.discountCycles}
+                                      onChange={(e) => setExtraTerms((prev) => ({
+                                        ...prev, [p.id]: { ...terms, discountCycles: e.target.value },
+                                      }))}
+                                      placeholder={`Discount valid for N ${p.billingCycle} cycles (blank = never expires)`}
+                                      className="w-full px-2 py-1.5 text-[11px] border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-600"
+                                    />
+                                  )}
                                   {sold !== listPrice && (
                                     <p className="text-[11px] text-brand-800 font-medium">
                                       Sells for {p.currency} {sold.toLocaleString()}
@@ -1238,7 +1276,8 @@ export default function ClientDetailPage() {
                   </button>
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             {(soldPackages as any[]).length === 0 ? (
               <div className="text-center py-10 text-sm text-gray-400">No packages sold to this client yet.</div>
@@ -1265,6 +1304,11 @@ export default function ClientDetailPage() {
                             )}
                             {cp.startDate ? ` · started ${formatDate(cp.startDate)}` : ''}
                           </p>
+                          {cp.discountEndsAt && (
+                            <p className="text-xs text-amber-600 mt-0.5">
+                              Discount ends {formatDate(cp.discountEndsAt)} — reverts to {cp.currency} {Number(cp.basePrice || 0).toLocaleString()} automatically.
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
@@ -1394,6 +1438,16 @@ export default function ClientDetailPage() {
         {/* Invoices tab */}
         {tab === 'invoices' && (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {canCreateInvoices && (
+              <div className="flex items-center justify-end px-5 py-3 border-b border-gray-100">
+                <button
+                  onClick={() => router.push(`/invoices?new=1&clientId=${id}`)}
+                  className="flex items-center gap-1.5 text-sm font-medium text-white bg-brand-700 hover:bg-brand-800 px-3.5 py-1.5 rounded-lg transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" /> New Invoice
+                </button>
+              </div>
+            )}
             <div className="overflow-x-auto">
             <table className="w-full min-w-140">
               <thead>
@@ -1440,6 +1494,14 @@ export default function ClientDetailPage() {
         {/* Quotations tab */}
         {tab === 'quotations' && (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="flex items-center justify-end px-5 py-3 border-b border-gray-100">
+              <button
+                onClick={() => router.push(`/documents/new?clientId=${id}&type=quotation`)}
+                className="flex items-center gap-1.5 text-sm font-medium text-white bg-brand-700 hover:bg-brand-800 px-3.5 py-1.5 rounded-lg transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> New Quotation
+              </button>
+            </div>
             <div className="overflow-x-auto">
             <table className="w-full min-w-140">
               <thead>
@@ -1489,6 +1551,14 @@ export default function ClientDetailPage() {
         {/* Agreements tab */}
         {tab === 'agreements' && (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="flex items-center justify-end px-5 py-3 border-b border-gray-100">
+              <button
+                onClick={() => router.push(`/documents/new?clientId=${id}&type=agreement`)}
+                className="flex items-center gap-1.5 text-sm font-medium text-white bg-brand-700 hover:bg-brand-800 px-3.5 py-1.5 rounded-lg transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> New Agreement
+              </button>
+            </div>
             <div className="overflow-x-auto">
             <table className="w-full min-w-140">
               <thead>

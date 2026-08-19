@@ -124,6 +124,7 @@ export default function DocumentDetailPage() {
       email: doc.email, phone: doc.phone || '',
       currency: doc.currency, amount: doc.amount,
       discountType: doc.discountType || '', discountValue: doc.discountValue || '',
+      discountCycles: doc.discountCycles || '',
       validUntil: doc.validUntil || '', scopeTerms: doc.scopeTerms || '',
     });
     // Legacy single-service documents (no services array) become a one-row list.
@@ -382,6 +383,7 @@ export default function DocumentDetailPage() {
         amount: isCompareMode ? 0 : (baseAmount || undefined),
         discountType: form.discountType || undefined,
         discountValue: form.discountType ? form.discountValue : undefined,
+        discountCycles: form.discountType ? (form.discountCycles || undefined) : undefined,
         lineItems: doc.type === 'quotation' && hasLineItems
           ? lines.filter((l) => l.description && l.unitPrice).map((l) => ({ description: l.description, qty: Number(l.qty) || 1, unitPrice: Number(l.unitPrice) }))
           : (isCompareMode ? [] : undefined),
@@ -530,6 +532,9 @@ export default function DocumentDetailPage() {
                             <div className="text-xs text-brand-700 mt-1">
                               {doc.discountType === 'percent' ? `${doc.discountValue}% off` : `${formatCurrency(doc.discountValue, doc.currency)} off`}
                               {doc.basePrice != null && <span className="text-gray-400"> · was {formatCurrency(doc.basePrice, doc.currency)}</span>}
+                              {Number(doc.discountCycles) > 0 && (
+                                <span className="text-gray-400"> · first {doc.discountCycles} billing cycle{Number(doc.discountCycles) !== 1 ? 's' : ''} only</span>
+                              )}
                             </div>
                           ) : (
                             <div className="text-xs text-gray-400 mt-1">{serviceLabel}</div>
@@ -1014,6 +1019,16 @@ export default function DocumentDetailPage() {
                           </label>
                           <input type="number" min="0" value={form.discountValue} onChange={(e) => setForm({ ...form, discountValue: e.target.value })}
                             placeholder={form.discountType === 'percent' ? 'e.g. 10' : 'e.g. 50'}
+                            className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
+                        </div>
+                      )}
+                      {form.discountType && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                            Discount valid for <span className="text-gray-400 font-normal">(billing cycles, recurring packages only)</span>
+                          </label>
+                          <input type="number" min="1" step="1" value={form.discountCycles} onChange={(e) => setForm({ ...form, discountCycles: e.target.value })}
+                            placeholder="e.g. 3 — blank means it never expires"
                             className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
                         </div>
                       )}

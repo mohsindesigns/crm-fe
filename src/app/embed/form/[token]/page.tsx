@@ -30,6 +30,16 @@ export default function EmbedLeadFormPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [result, setResult] = useState<{ message: string; redirectUrl: string | null } | null>(null);
+  const [captcha, setCaptcha] = useState<{ question: string; captchaToken: string } | null>(null);
+  const [captchaAnswer, setCaptchaAnswer] = useState('');
+
+  function fetchCaptcha() {
+    if (!token) return;
+    fetch(`${apiBase}/public/lead-forms/${token}/captcha`)
+      .then((res) => res.json())
+      .then((data) => setCaptcha(data))
+      .catch(() => {});
+  }
 
   useEffect(() => {
     if (!token) return;
@@ -40,6 +50,7 @@ export default function EmbedLeadFormPage() {
       })
       .then((data: FormSchema) => setSchema(data))
       .catch((e) => setLoadError(e.message || 'This form is no longer available.'));
+    fetchCaptcha();
   }, [token]);
 
   useEffect(() => {
@@ -58,13 +69,22 @@ export default function EmbedLeadFormPage() {
       const res = await fetch(`${apiBase}/public/lead-forms/${token}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answers, _hp: honeypot }),
+        body: JSON.stringify({
+          answers,
+          _hp: honeypot,
+          captchaToken: captcha?.captchaToken,
+          captchaAnswer,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message || 'Something went wrong — please try again.');
       setResult({ message: data.message, redirectUrl: data.redirectUrl || null });
     } catch (err: any) {
       setSubmitError(err.message || 'Something went wrong — please try again.');
+      // The token may now be expired, wrong, or (harmlessly) already spent —
+      // hand back a fresh challenge either way so retrying doesn't just repeat the same error.
+      setCaptchaAnswer('');
+      fetchCaptcha();
     } finally {
       setSubmitting(false);
     }
@@ -101,6 +121,9 @@ export default function EmbedLeadFormPage() {
         successMessage={result?.message || null}
         honeypotValue={honeypot}
         onHoneypotChange={setHoneypot}
+        captchaQuestion={captcha?.question}
+        captchaAnswer={captchaAnswer}
+        onCaptchaAnswerChange={setCaptchaAnswer}
       />
     </div>
   );

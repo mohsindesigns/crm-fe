@@ -473,6 +473,11 @@ export default function PublicDocumentReviewPage() {
                     <span className="text-sm font-semibold" style={{ color: accentColor }}>Total</span>
                     <span className="text-lg font-semibold text-gray-900">{currency} {Number(doc.amount ?? 0).toLocaleString()}</span>
                   </div>
+                  {doc.discountType && Number(doc.discountValue) > 0 && Number(doc.discountCycles) > 0 && (
+                    <p className="text-xs text-gray-500 pt-1">
+                      This discounted rate applies for the first {doc.discountCycles} billing cycle{Number(doc.discountCycles) !== 1 ? 's' : ''}; billing reverts to the full rate afterward.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -599,6 +604,7 @@ export default function PublicDocumentReviewPage() {
                     {doc.discountType && Number(doc.discountValue) > 0 && (
                       <p className="text-[11px] text-gray-500 mt-1">
                         Discount applied: {doc.discountType === 'percent' ? `${doc.discountValue}%` : `${currency} ${doc.discountValue}`}
+                        {Number(doc.discountCycles) > 0 && ` — first ${doc.discountCycles} billing cycle${Number(doc.discountCycles) !== 1 ? 's' : ''} only`}
                       </p>
                     )}
                   </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ChevronRight, ChevronDown, ChevronUp, Plus, Trash2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -40,6 +40,7 @@ const DEFAULT_QUOTATION_VALID_DAYS = 7;
 
 export default function NewDocumentPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const qc = useQueryClient();
   const [form, setForm] = useState({
     type: 'quotation',
@@ -53,6 +54,7 @@ export default function NewDocumentPage() {
     amount: '',
     discountType: '',
     discountValue: '',
+    discountCycles: '',
     // Quotations default to a 7-day validity window; admin can change freely.
     validUntil: daysFromToday(DEFAULT_QUOTATION_VALID_DAYS),
     scopeTerms: '',
@@ -130,6 +132,20 @@ export default function NewDocumentPage() {
     }
     setForm((f) => ({ ...f, clientId }));
   }
+
+  // Arriving from a client's "New Quotation"/"New Agreement" button (e.g.
+  // /documents/new?clientId=…&type=agreement) pre-scopes the doc to that
+  // client and type instead of landing on a blank picker they'd have to
+  // re-fill with data they just came from.
+  useEffect(() => {
+    const clientIdParam = searchParams.get('clientId');
+    const typeParam = searchParams.get('type');
+    if (typeParam && DOC_TYPES.some((t) => t.value === typeParam)) {
+      setForm((f) => ({ ...f, type: typeParam }));
+    }
+    if (clientIdParam) selectClient(clientIdParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Autofill once per client, not on every refetch — otherwise React Query
   // refocusing the window would wipe out edits the admin had already made.
@@ -357,6 +373,7 @@ export default function NewDocumentPage() {
         amount: baseAmount || undefined,
         discountType: form.discountType || undefined,
         discountValue: form.discountValue || undefined,
+        discountCycles: form.discountCycles || undefined,
         scopeTerms: form.scopeTerms,
         validUntil: form.validUntil,
       }).then((r) => setPreview(r.data.rendered || ''))
@@ -811,6 +828,16 @@ export default function NewDocumentPage() {
                             </label>
                             <input type="number" min="0" value={form.discountValue} onChange={(e) => set('discountValue', e.target.value)}
                               placeholder={form.discountType === 'percent' ? 'e.g. 10' : 'e.g. 50'}
+                              className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
+                          </div>
+                        )}
+                        {form.discountType && (
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                              Discount valid for <span className="text-gray-400 font-normal">(billing cycles, recurring packages only)</span>
+                            </label>
+                            <input type="number" min="1" step="1" value={form.discountCycles} onChange={(e) => set('discountCycles', e.target.value)}
+                              placeholder="e.g. 3 — blank means it never expires"
                               className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
                           </div>
                         )}

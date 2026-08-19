@@ -11,7 +11,8 @@ export interface LeadFormTheme {
   buttonText: string;
   primaryColor: string;
   backgroundColor: string;
-  showBranding: boolean;
+  showLogo: boolean;
+  showName: boolean;
   borderRadius: BorderRadius;
 }
 
@@ -33,6 +34,7 @@ export const DEFAULT_THEME: LeadFormTheme = {
   buttonText: 'Submit',
   primaryColor: '#0B1D5E',
   backgroundColor: '#FFFFFF',
-  showBranding: true,
+  showLogo: true,
+  showName: true,
   borderRadius: 'rounded',
 };

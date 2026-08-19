@@ -291,11 +291,19 @@ export default function ProjectDetailPage() {
   });
 
 
-  const { data: keywords = [] } = useQuery({
-    queryKey: ['seo-keywords', id, inactive.key],
-    queryFn: () => api.get(`/seo/projects/${id}/keywords`, { params: inactive.params }).then((r) => r.data),
+  // Always fetches active + inactive in one request — the Show Inactive toggle
+  // just filters what's already loaded, client-side. Simpler than re-fetching
+  // per toggle state, and it means the toggle can never "not show" rows that
+  // are already sitting right there in memory.
+  const { data: allKeywords = [] } = useQuery({
+    queryKey: ['seo-keywords', id],
+    queryFn: () => api.get(`/seo/projects/${id}/keywords`, { params: { includeInactive: 1 } }).then((r) => r.data),
     enabled: tab === 'keywords' || tab === 'content',
   });
+  const inactiveKeywordCount = (allKeywords as any[]).filter((k: any) => (k.status || 'active') === 'inactive').length;
+  const keywords = inactive.show
+    ? allKeywords
+    : (allKeywords as any[]).filter((k: any) => (k.status || 'active') === 'active');
 
   // The page title is derived from whichever selected keyword already has a
   // page name (set when the keyword was added) — content writers pick keywords,
@@ -623,8 +631,12 @@ export default function ProjectDetailPage() {
 
   const [confirmSeoDelete, setConfirmSeoDelete] = useState<
     null | {
+      // 'keyword'/'backlink'/'*-delete-selected'/'content-selected' are real,
+      // permanent deletes. 'keywords-sheet'/'keywords-selected'/'backlinks-sheet'
+      // /'backlinks-selected' are the non-destructive Set Inactive counterparts —
+      // two separate actions now, not one (see SeoService bulkDeactivate*).
       kind: 'keyword' | 'backlink' | 'keywords-sheet' | 'backlinks-sheet' | 'keywords-selected' | 'backlinks-selected'
-        | 'content-selected';
+        | 'keywords-delete-selected' | 'backlinks-delete-selected' | 'content-selected';
       id?: string;
       label?: string;
       count?: number;
@@ -636,9 +648,9 @@ export default function ProjectDetailPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['seo-keywords', id] });
       setConfirmSeoDelete(null);
-      toast.success('Keyword set to Inactive');
+      toast.success('Keyword deleted');
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change keyword status.'),
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to delete keyword.'),
   });
 
   const clearKeywords = useMutation({
@@ -654,7 +666,7 @@ export default function ProjectDetailPage() {
           : `Set ${deleted} keyword(s) to Inactive`,
       );
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change keywords status.'),
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to delete keywords.'),
   });
 
   const bulkDeleteKeywords = useMutation({
@@ -666,11 +678,11 @@ export default function ProjectDetailPage() {
       setConfirmSeoDelete(null);
       const deleted = data?.deleted ?? 0;
       const skipped = data?.skipped?.length ?? 0;
-      if (deleted && skipped) toast.success(`Set ${deleted} keyword(s) to Inactive. ${skipped} skipped.`);
-      else if (deleted) toast.success(`Set ${deleted} keyword(s) to Inactive`);
-      else toast.error('No keywords were set to Inactive. Assigned or approved keywords were skipped.');
+      if (deleted && skipped) toast.success(`Deleted ${deleted} keyword(s). ${skipped} skipped.`);
+      else if (deleted) toast.success(`Deleted ${deleted} keyword(s)`);
+      else toast.error('No keywords were deleted. Assigned or approved keywords were skipped.');
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change keywords status.'),
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to delete keywords.'),
   });
 
   const bulkActivateKeywords = useMutation({
@@ -686,14 +698,33 @@ export default function ProjectDetailPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change keywords status.'),
   });
 
+  // Non-destructive: just flips selected keywords to Inactive, keeping the row
+  // and its rank history — the separate, reversible counterpart to
+  // bulkDeleteKeywords now that Delete really deletes.
+  const bulkDeactivateKeywords = useMutation({
+    mutationFn: (ids: string[]) =>
+      api.post(`/seo/projects/${id}/keywords/bulk-deactivate`, { ids }).then((r) => r.data),
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ['seo-keywords', id] });
+      setSelectedKeywordIds(new Set());
+      setConfirmSeoDelete(null);
+      const deactivated = data?.deactivated ?? 0;
+      const skipped = data?.skipped?.length ?? 0;
+      if (deactivated && skipped) toast.success(`Set ${deactivated} keyword(s) to Inactive. ${skipped} skipped.`);
+      else if (deactivated) toast.success(`Set ${deactivated} keyword(s) to Inactive`);
+      else toast.error('No keywords were set to Inactive. Assigned or approved keywords were skipped.');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change keywords status.'),
+  });
+
   const deleteBacklink = useMutation({
     mutationFn: (blId: string) => api.delete(`/seo/backlinks/${blId}`).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['seo-backlinks', id] });
       setConfirmSeoDelete(null);
-      toast.success('Backlink set to Inactive');
+      toast.success('Backlink deleted');
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change backlink status.'),
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to delete backlink.'),
   });
 
   const clearBacklinks = useMutation({
@@ -721,8 +752,26 @@ export default function ProjectDetailPage() {
       setConfirmSeoDelete(null);
       const deleted = data?.deleted ?? 0;
       const skipped = data?.skipped?.length ?? 0;
-      if (deleted && skipped) toast.success(`Set ${deleted} backlink(s) to Inactive. ${skipped} skipped.`);
-      else if (deleted) toast.success(`Set ${deleted} backlink(s) to Inactive`);
+      if (deleted && skipped) toast.success(`Deleted ${deleted} backlink(s). ${skipped} skipped.`);
+      else if (deleted) toast.success(`Deleted ${deleted} backlink(s)`);
+      else toast.error('No backlinks were deleted. Indexed backlinks were skipped.');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to delete backlinks.'),
+  });
+
+  // Non-destructive counterpart to bulkDeleteBacklinks — just flips selected
+  // backlinks to Inactive, row and history intact.
+  const bulkDeactivateBacklinks = useMutation({
+    mutationFn: (ids: string[]) =>
+      api.post(`/seo/projects/${id}/backlinks/bulk-deactivate`, { ids }).then((r) => r.data),
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ['seo-backlinks', id] });
+      setSelectedBacklinkIds(new Set());
+      setConfirmSeoDelete(null);
+      const deactivated = data?.deactivated ?? 0;
+      const skipped = data?.skipped?.length ?? 0;
+      if (deactivated && skipped) toast.success(`Set ${deactivated} backlink(s) to Inactive. ${skipped} skipped.`);
+      else if (deactivated) toast.success(`Set ${deactivated} backlink(s) to Inactive`);
       else toast.error('No backlinks were set to Inactive. Indexed backlinks were skipped.');
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change backlinks status.'),
@@ -732,9 +781,11 @@ export default function ProjectDetailPage() {
     deleteKeyword.isPending
     || clearKeywords.isPending
     || bulkDeleteKeywords.isPending
+    || bulkDeactivateKeywords.isPending
     || deleteBacklink.isPending
     || clearBacklinks.isPending
-    || bulkDeleteBacklinks.isPending;
+    || bulkDeleteBacklinks.isPending
+    || bulkDeactivateBacklinks.isPending;
 
   const allDeletableKeywordsSelected =
     deletableKeywordIds.length > 0 && deletableKeywordIds.every((kid) => selectedKeywordIds.has(kid));
@@ -1511,32 +1562,41 @@ export default function ProjectDetailPage() {
             : confirmSeoDelete?.kind === 'backlinks-sheet' ? 'Set backlink sheet to Inactive'
               : confirmSeoDelete?.kind === 'keywords-selected' ? 'Set selected keywords to Inactive'
                 : confirmSeoDelete?.kind === 'backlinks-selected' ? 'Set selected backlinks to Inactive'
-                  : confirmSeoDelete?.kind === 'content-selected' ? 'Delete selected content'
-                    : confirmSeoDelete?.kind === 'backlink' ? 'Set backlink to Inactive'
-                      : 'Set keyword to Inactive'
+                  : confirmSeoDelete?.kind === 'keywords-delete-selected' ? 'Delete selected keywords'
+                    : confirmSeoDelete?.kind === 'backlinks-delete-selected' ? 'Delete selected backlinks'
+                      : confirmSeoDelete?.kind === 'content-selected' ? 'Delete selected content'
+                        : confirmSeoDelete?.kind === 'backlink' ? 'Delete backlink'
+                          : 'Delete keyword'
         }
-        // Nothing here is destroyed — rows are flipped inactive, keeping their rank
-        // history, and an admin can bring them back (see SoftDeleteService). Content
-        // submissions are the one exception: they're review-workflow artifacts, not
-        // core records, so deleting one is permanent (see SeoService.deleteContent).
+        // Two different actions, deliberately not conflated:
+        //  - "Set ... to Inactive" (keywords-sheet/backlinks-sheet/*-selected
+        //    without "-delete-") is a non-destructive status flip — the row and
+        //    its history stay, reversible via the Active/Inactive dropdown.
+        //  - "Delete" (keyword/backlink/*-delete-selected/content-selected) is a
+        //    real, permanent removal. This cannot be undone.
         message={
           confirmSeoDelete?.kind === 'keywords-sheet'
-            ? `This sets ${deletableKeywordIds.length} keyword(s) to Inactive — their rank history is kept and they can be set back to Active. Assigned or approved keywords (${lockedKeywordIds.size}) are left alone.`
+            ? `Set ${deletableKeywordIds.length} keyword(s) to Inactive? Nothing is deleted — rank history is kept and they can be set back to Active any time. Assigned or approved keywords (${lockedKeywordIds.size}) are left alone.`
             : confirmSeoDelete?.kind === 'backlinks-sheet'
-              ? `This sets ${deletableBacklinkIds.length} backlink(s) to Inactive — they can be set back to Active later. Indexed backlinks (${(backlinks as any[]).length - deletableBacklinkIds.length}) are left alone.`
+              ? `Set ${deletableBacklinkIds.length} backlink(s) to Inactive? Nothing is deleted — they can be set back to Active any time. Indexed backlinks (${(backlinks as any[]).length - deletableBacklinkIds.length}) are left alone.`
               : confirmSeoDelete?.kind === 'keywords-selected'
-                ? `Set ${confirmSeoDelete.count ?? selectedKeywordIds.size} selected keyword(s) to Inactive? They keep their rank history and can be set back to Active. Keywords assigned to a writer or with approved content are skipped.`
+                ? `Set ${confirmSeoDelete.count ?? selectedKeywordIds.size} selected keyword(s) to Inactive? Nothing is deleted — rank history is kept and they can be set back to Active any time. Keywords assigned to a writer or with approved content are skipped.`
                 : confirmSeoDelete?.kind === 'backlinks-selected'
-                  ? `Set ${confirmSeoDelete.count ?? selectedBacklinkIds.size} selected backlink(s) to Inactive? They can be set back to Active later. Indexed backlinks are skipped.`
-                  : confirmSeoDelete?.kind === 'content-selected'
-                    ? `Permanently delete ${confirmSeoDelete.count ?? selectedContentIds.size} selected content item(s)? This cannot be undone. Approved items are skipped.`
-                    : confirmSeoDelete?.kind === 'backlink'
-                      ? `Set this backlink${confirmSeoDelete.label ? ` (${confirmSeoDelete.label})` : ''} to Inactive? It can be set back to Active later — nothing is deleted.`
-                      : `Set keyword${confirmSeoDelete?.label ? ` "${confirmSeoDelete.label}"` : ''} to Inactive? Its rank history is kept and it can be set back to Active — nothing is deleted.`
+                  ? `Set ${confirmSeoDelete.count ?? selectedBacklinkIds.size} selected backlink(s) to Inactive? Nothing is deleted — they can be set back to Active any time. Indexed backlinks are skipped.`
+                  : confirmSeoDelete?.kind === 'keywords-delete-selected'
+                    ? `Permanently delete ${confirmSeoDelete.count ?? selectedKeywordIds.size} selected keyword(s)? This cannot be undone — their rank history goes with them. Keywords assigned to a writer or with approved content are skipped.`
+                    : confirmSeoDelete?.kind === 'backlinks-delete-selected'
+                      ? `Permanently delete ${confirmSeoDelete.count ?? selectedBacklinkIds.size} selected backlink(s)? This cannot be undone. Indexed backlinks are skipped.`
+                      : confirmSeoDelete?.kind === 'content-selected'
+                        ? `Permanently delete ${confirmSeoDelete.count ?? selectedContentIds.size} selected content item(s)? This cannot be undone. Approved items are skipped.`
+                        : confirmSeoDelete?.kind === 'backlink'
+                          ? `Permanently delete this backlink${confirmSeoDelete.label ? ` (${confirmSeoDelete.label})` : ''}? This cannot be undone.`
+                          : `Permanently delete keyword${confirmSeoDelete?.label ? ` "${confirmSeoDelete.label}"` : ''}? This cannot be undone — its rank history goes with it.`
         }
         confirmLabel={
-          confirmSeoDelete?.kind === 'content-selected' ? 'Delete selected'
-            : confirmSeoDelete?.kind?.endsWith('-selected') ? 'Set selected Inactive' : 'Set Inactive'
+          confirmSeoDelete?.kind === 'keywords-sheet' || confirmSeoDelete?.kind === 'backlinks-sheet'
+            || confirmSeoDelete?.kind === 'keywords-selected' || confirmSeoDelete?.kind === 'backlinks-selected'
+            ? 'Set Inactive' : 'Delete'
         }
         onConfirm={() => {
           if (!confirmSeoDelete) return;
@@ -1545,8 +1605,12 @@ export default function ProjectDetailPage() {
           else if (confirmSeoDelete.kind === 'keywords-sheet') clearKeywords.mutate();
           else if (confirmSeoDelete.kind === 'backlinks-sheet') clearBacklinks.mutate();
           else if (confirmSeoDelete.kind === 'keywords-selected') {
-            bulkDeleteKeywords.mutate([...selectedKeywordIds]);
+            bulkDeactivateKeywords.mutate([...selectedKeywordIds]);
           } else if (confirmSeoDelete.kind === 'backlinks-selected') {
+            bulkDeactivateBacklinks.mutate([...selectedBacklinkIds]);
+          } else if (confirmSeoDelete.kind === 'keywords-delete-selected') {
+            bulkDeleteKeywords.mutate([...selectedKeywordIds]);
+          } else if (confirmSeoDelete.kind === 'backlinks-delete-selected') {
             bulkDeleteBacklinks.mutate([...selectedBacklinkIds]);
           } else if (confirmSeoDelete.kind === 'content-selected') {
             bulkDeleteContent.mutate([...selectedContentIds]);
@@ -2515,40 +2579,51 @@ export default function ProjectDetailPage() {
                       </button>
                       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
                         onChange={(e) => { if (e.target.files?.[0]) importKeywords.mutate(e.target.files[0]); e.target.value = ''; }} />
-                      {deletableKeywordIds.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmSeoDelete({ kind: 'keywords-sheet' })}
-                          className="flex items-center gap-1.5 border border-amber-200 hover:bg-amber-50 text-amber-700 text-sm font-medium px-3.5 py-2 rounded-lg"
-                        >
-                          <ToggleLeft className="w-4 h-4" /> Set sheet Inactive
-                        </button>
-                      )}
-                      {selectedKeywordIds.size > 0 && (
-                        <>
-                          <button
-                            type="button"
-                            disabled={bulkActivateKeywords.isPending}
-                            onClick={() => bulkActivateKeywords.mutate([...selectedKeywordIds])}
-                            className="flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-3.5 py-2 rounded-lg"
-                          >
-                            <ToggleRight className="w-4 h-4" /> Set Active ({selectedKeywordIds.size})
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmSeoDelete({
-                              kind: 'keywords-selected',
-                              count: selectedKeywordIds.size,
-                            })}
-                            className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-3.5 py-2 rounded-lg"
-                          >
-                            <ToggleLeft className="w-4 h-4" /> Set Inactive ({selectedKeywordIds.size})
-                          </button>
-                        </>
-                      )}
+                      <button
+                        type="button"
+                        disabled={deletableKeywordIds.length === 0}
+                        title={deletableKeywordIds.length === 0 ? 'No keywords are eligible — every keyword is either assigned to a writer or has approved content.' : undefined}
+                        onClick={() => setConfirmSeoDelete({ kind: 'keywords-sheet' })}
+                        className="flex items-center gap-1.5 border border-amber-200 hover:bg-amber-50 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed text-amber-700 text-sm font-medium px-3.5 py-2 rounded-lg"
+                      >
+                        <ToggleLeft className="w-4 h-4" /> Set sheet Inactive
+                      </button>
+                      <button
+                        type="button"
+                        disabled={selectedKeywordIds.size === 0 || bulkActivateKeywords.isPending}
+                        title={selectedKeywordIds.size === 0 ? 'Check one or more keywords below first.' : undefined}
+                        onClick={() => bulkActivateKeywords.mutate([...selectedKeywordIds])}
+                        className="flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-3.5 py-2 rounded-lg"
+                      >
+                        <ToggleRight className="w-4 h-4" /> Set Active {selectedKeywordIds.size > 0 ? `(${selectedKeywordIds.size})` : ''}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={selectedKeywordIds.size === 0}
+                        title={selectedKeywordIds.size === 0 ? 'Check one or more keywords below first.' : undefined}
+                        onClick={() => setConfirmSeoDelete({
+                          kind: 'keywords-selected',
+                          count: selectedKeywordIds.size,
+                        })}
+                        className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-3.5 py-2 rounded-lg"
+                      >
+                        <ToggleLeft className="w-4 h-4" /> Set Inactive {selectedKeywordIds.size > 0 ? `(${selectedKeywordIds.size})` : ''}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={selectedKeywordIds.size === 0}
+                        title={selectedKeywordIds.size === 0 ? 'Check one or more keywords below first.' : 'Permanently deletes — this cannot be undone.'}
+                        onClick={() => setConfirmSeoDelete({
+                          kind: 'keywords-delete-selected',
+                          count: selectedKeywordIds.size,
+                        })}
+                        className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-3.5 py-2 rounded-lg"
+                      >
+                        <Trash2 className="w-4 h-4" /> Delete {selectedKeywordIds.size > 0 ? `(${selectedKeywordIds.size})` : ''}
+                      </button>
                     </>
                   )}
-                  <ShowInactiveToggle {...inactive.toggleProps} />
+                  <ShowInactiveToggle {...inactive.toggleProps} count={inactiveKeywordCount} />
                 </div>
               </div>
               {/* Compact keyword list — no horizontal scroll; secondary keywords truncated */}
@@ -2564,7 +2639,11 @@ export default function ProjectDetailPage() {
                       title="Select all deletable keywords"
                       aria-label="Select all deletable keywords"
                     />
-                    <span className="text-xs text-gray-500">Select all deletable</span>
+                    <span className="text-xs text-gray-500">
+                      {deletableKeywordIds.length > 0
+                        ? 'Select all deletable'
+                        : 'Nothing to select — every keyword below is assigned to a writer or has approved content (see the "Assigned"/"Approved" tag on each row). Use the Active/Inactive dropdown on a row to change it individually instead.'}
+                    </span>
                   </div>
                 )}
 
@@ -2681,11 +2760,11 @@ export default function ProjectDetailPage() {
                             {!locked && canActOnProject && (isAdminUser || kw.createdBy === user?.id) && (
                               <button
                                 type="button"
-                                title="Set keyword to Inactive"
+                                title="Delete"
                                 onClick={() => setConfirmSeoDelete({ kind: 'keyword', id: kw.id, label: kw.primaryKeyword })}
-                                className="p-1.5 text-gray-300 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors self-center"
+                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors self-center"
                               >
-                                <ToggleLeft className="w-4 h-4" />
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             )}
                           </div>
@@ -2753,26 +2832,42 @@ export default function ProjectDetailPage() {
                       onChange={(e) => { if (e.target.files?.[0]) updateBacklinkStatusFile.mutate(e.target.files[0]); e.target.value = ''; }} />
                   </>
                 )}
-                {canActOnProject && deletableBacklinkIds.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmSeoDelete({ kind: 'backlinks-sheet' })}
-                    className="flex items-center gap-1.5 border border-amber-200 hover:bg-amber-50 text-amber-700 text-sm font-medium px-3.5 py-2 rounded-lg"
-                  >
-                    <ToggleLeft className="w-4 h-4" /> Set sheet Inactive
-                  </button>
-                )}
-                {canActOnProject && selectedBacklinkIds.size > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmSeoDelete({
-                      kind: 'backlinks-selected',
-                      count: selectedBacklinkIds.size,
-                    })}
-                    className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-3.5 py-2 rounded-lg"
-                  >
-                    <ToggleLeft className="w-4 h-4" /> Set Inactive ({selectedBacklinkIds.size})
-                  </button>
+                {canActOnProject && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={deletableBacklinkIds.length === 0}
+                      title={deletableBacklinkIds.length === 0 ? 'No backlinks are eligible — every backlink is currently indexed.' : undefined}
+                      onClick={() => setConfirmSeoDelete({ kind: 'backlinks-sheet' })}
+                      className="flex items-center gap-1.5 border border-amber-200 hover:bg-amber-50 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed text-amber-700 text-sm font-medium px-3.5 py-2 rounded-lg"
+                    >
+                      <ToggleLeft className="w-4 h-4" /> Set sheet Inactive
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedBacklinkIds.size === 0}
+                      title={selectedBacklinkIds.size === 0 ? 'Check one or more backlinks below first.' : undefined}
+                      onClick={() => setConfirmSeoDelete({
+                        kind: 'backlinks-selected',
+                        count: selectedBacklinkIds.size,
+                      })}
+                      className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-3.5 py-2 rounded-lg"
+                    >
+                      <ToggleLeft className="w-4 h-4" /> Set Inactive {selectedBacklinkIds.size > 0 ? `(${selectedBacklinkIds.size})` : ''}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedBacklinkIds.size === 0}
+                      title={selectedBacklinkIds.size === 0 ? 'Check one or more backlinks below first.' : 'Permanently deletes — this cannot be undone.'}
+                      onClick={() => setConfirmSeoDelete({
+                        kind: 'backlinks-delete-selected',
+                        count: selectedBacklinkIds.size,
+                      })}
+                      className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-3.5 py-2 rounded-lg"
+                    >
+                      <Trash2 className="w-4 h-4" /> Delete {selectedBacklinkIds.size > 0 ? `(${selectedBacklinkIds.size})` : ''}
+                    </button>
+                  </>
                 )}
                 <ShowInactiveToggle {...inactive.toggleProps} />
                 </div>
@@ -2958,7 +3053,7 @@ export default function ProjectDetailPage() {
                             ) : canActOnProject && (
                               <button
                                 type="button"
-                                title="Set backlink to Inactive"
+                                title="Delete"
                                 onClick={() => setConfirmSeoDelete({
                                   kind: 'backlink',
                                   id: bl.id,
@@ -2966,7 +3061,7 @@ export default function ProjectDetailPage() {
                                 })}
                                 className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                               >
-                                <ToggleLeft className="w-4 h-4" />
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             )}
                           </td>

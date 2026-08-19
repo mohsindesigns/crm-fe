@@ -10,7 +10,13 @@ export interface FormField {
   type: FieldType;
   required: boolean;
   options?: string[];
+  hidden?: boolean;
 }
+
+// Loose enough to not fight real-world formatting (extensions, spaces,
+// dashes), strict enough to reject obvious junk like "abc" or a single digit.
+// Mirrors crm-be's LeadService PHONE_RE — keep the two in sync.
+const PHONE_PATTERN = '\\+?[\\d\\s().-]{7,20}';
 
 interface LeadFormRendererProps {
   mode: 'live' | 'preview';
@@ -25,6 +31,10 @@ interface LeadFormRendererProps {
   successMessage?: string | null;
   honeypotValue?: string;
   onHoneypotChange?: (v: string) => void;
+  /** Anti-bot math challenge, e.g. "3 + 7 = ?" — omit to hide the captcha row (used by the builder preview, which has no live token to solve against). */
+  captchaQuestion?: string;
+  captchaAnswer?: string;
+  onCaptchaAnswerChange?: (v: string) => void;
 }
 
 /** Renders a lead form exactly as it appears live — used both for the actual
@@ -45,6 +55,9 @@ export default function LeadFormRenderer({
   successMessage,
   honeypotValue = '',
   onHoneypotChange,
+  captchaQuestion,
+  captchaAnswer = '',
+  onCaptchaAnswerChange,
 }: LeadFormRendererProps) {
   const radius = RADIUS_PX[theme.borderRadius];
   const isPreview = mode === 'preview';
@@ -65,16 +78,18 @@ export default function LeadFormRenderer({
   return (
     <div style={{ background: theme.backgroundColor, fontFamily: 'system-ui, -apple-system, sans-serif', padding: isPreview ? 24 : '32px 20px', borderRadius: isPreview ? 12 : 0 }}>
       <div style={{ width: '100%', maxWidth: 480, margin: isPreview ? undefined : '0 auto' }}>
-        {theme.showBranding && (
+        {(theme.showLogo || theme.showName) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-            {branding.logoUrl ? (
-              <img src={branding.logoUrl} alt={branding.brandName} style={{ height: 28, width: 'auto', objectFit: 'contain' }} />
-            ) : (
-              <div style={{ width: 32, height: 32, borderRadius: Math.min(radius, 10), background: theme.primaryColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14 }}>
-                {(branding.brandName || '?').charAt(0)}
-              </div>
+            {theme.showLogo && (
+              branding.logoUrl ? (
+                <img src={branding.logoUrl} alt={branding.brandName} style={{ height: 28, width: 'auto', objectFit: 'contain' }} />
+              ) : (
+                <div style={{ width: 32, height: 32, borderRadius: Math.min(radius, 10), background: theme.primaryColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14 }}>
+                  {(branding.brandName || '?').charAt(0)}
+                </div>
+              )
             )}
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{branding.brandName}</span>
+            {theme.showName && <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{branding.brandName}</span>}
           </div>
         )}
 
@@ -140,6 +155,8 @@ export default function LeadFormRenderer({
                     type={field.type === 'email' ? 'email' : field.type === 'phone' ? 'tel' : 'text'}
                     required={field.required}
                     disabled={isPreview}
+                    pattern={field.type === 'phone' ? PHONE_PATTERN : undefined}
+                    title={field.type === 'phone' ? 'Enter a valid phone number (7-20 digits, may start with +).' : undefined}
                     value={answers[field.key] || ''}
                     onChange={(e) => onAnswerChange?.(field.key, e.target.value)}
                     style={inputStyle}
@@ -147,6 +164,23 @@ export default function LeadFormRenderer({
                 )}
               </div>
             ))}
+
+            {captchaQuestion && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>
+                  Quick check: {captchaQuestion}<span style={{ color: '#DC2626' }}> *</span>
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  required
+                  disabled={isPreview}
+                  value={captchaAnswer}
+                  onChange={(e) => onCaptchaAnswerChange?.(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+            )}
 
             {submitError && <p style={{ color: '#DC2626', fontSize: 13, marginBottom: 12 }}>{submitError}</p>}
 
