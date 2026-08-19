@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { CheckCircle2, XCircle, FileText, Download, ExternalLink } from 'lucide-react';
+import { CheckCircle2, XCircle, FileText, Download, ExternalLink, CreditCard } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type Branding = {
@@ -85,6 +85,8 @@ export default function PublicDocumentReviewPage() {
   const [details, setDetails] = useState<Record<string, string>>({});
   const [detailsSubmitting, setDetailsSubmitting] = useState(false);
   const [detailsError, setDetailsError] = useState('');
+  const [payingNow, setPayingNow] = useState(false);
+  const [payError, setPayError] = useState('');
 
   // Always same-origin /api (proxied by next.config rewrites). Absolute
   // http://localhost:5000 URLs break Chrome's PDF iframe ("refused to connect").
@@ -195,6 +197,25 @@ export default function PublicDocumentReviewPage() {
       setDetailsError(e.message || 'Failed to submit your details.');
     } finally {
       setDetailsSubmitting(false);
+    }
+  }
+
+  // Sends the client straight to Stripe for the document's own total — no
+  // client/project/invoice exists yet at this point (see PublicDocumentService
+  // .startPayment). If they abandon the Stripe page, nothing was ever created;
+  // they land back here and this button is simply still there to click again.
+  async function payNow() {
+    setPayingNow(true);
+    setPayError('');
+    try {
+      const res = await fetch(`${apiBase}/public/documents/${token}/pay`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Could not start the payment.');
+      if (data.url) window.location.href = data.url;
+      else throw new Error('Stripe did not return a payment link.');
+    } catch (e: any) {
+      setPayError(e.message || 'Could not start the payment.');
+      setPayingNow(false);
     }
   }
 
@@ -768,9 +789,34 @@ export default function PublicDocumentReviewPage() {
                   </button>
                 </div>
               ) : !canRespond ? (
-                <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 rounded-xl px-4 py-3">
-                  {doc.status === 'approved' ? <CheckCircle2 className="w-4 h-4 text-brand-600 shrink-0" /> : <XCircle className="w-4 h-4 text-gray-400 shrink-0" />}
-                  {STATUS_LABEL[doc.status] || `Status: ${doc.status}`}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 rounded-xl px-4 py-3">
+                    {doc.status === 'approved' ? <CheckCircle2 className="w-4 h-4 text-brand-600 shrink-0" /> : <XCircle className="w-4 h-4 text-gray-400 shrink-0" />}
+                    {STATUS_LABEL[doc.status] || `Status: ${doc.status}`}
+                  </div>
+
+                  {doc.convertedClientId || doc.convertedProjectId ? (
+                    <div className="flex items-center gap-2 text-sm text-emerald-800 bg-emerald-50 rounded-xl px-4 py-3">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      Payment received — thank you! Your invoice has been generated and marked paid.
+                    </div>
+                  ) : doc.canPayByCard ? (
+                    <div className="space-y-2">
+                      <button
+                        onClick={payNow}
+                        disabled={payingNow}
+                        className="w-full flex items-center justify-center gap-2 text-white font-semibold text-sm py-3 rounded-xl transition-all hover:opacity-90 disabled:opacity-60"
+                        style={{ backgroundColor: accentColor }}
+                      >
+                        <CreditCard className="w-4 h-4" />
+                        {payingNow ? 'Opening secure checkout…' : `Pay ${currency} ${Number(doc.amount).toLocaleString()} now`}
+                      </button>
+                      {payError && <p className="text-sm text-red-600">{payError}</p>}
+                      <p className="text-[11px] text-gray-400 text-center">
+                        Payments are processed securely by Stripe. Nothing is billed until you complete checkout.
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
               ) : mode === 'view' ? (
                 <div className="flex flex-col sm:flex-row gap-3">

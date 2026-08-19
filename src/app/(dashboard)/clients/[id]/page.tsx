@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Plus, Trash2, Globe, Mail, Phone, User, FileText, Briefcase, Pencil, X, Save, Package, Layers } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Globe, Mail, Phone, User, FileText, FileSignature, Briefcase, Pencil, X, Save, Package, Layers } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { toast } from 'sonner';
@@ -43,7 +43,16 @@ const PROJ_STATUS: Record<string, string> = {
   cancelled: 'bg-red-100 text-red-700',
 };
 
-type Tab = 'overview' | 'contacts' | 'packages' | 'projects' | 'invoices';
+const DOC_STATUS: Record<string, string> = {
+  draft: 'bg-gray-100 text-gray-600',
+  sent: 'bg-blue-100 text-blue-700',
+  viewed: 'bg-violet-100 text-violet-700',
+  approved: 'bg-brand-100 text-brand-800',
+  rejected: 'bg-red-100 text-red-700',
+  expired: 'bg-amber-100 text-amber-700',
+};
+
+type Tab = 'overview' | 'contacts' | 'packages' | 'projects' | 'invoices' | 'quotations' | 'agreements';
 
 const CP_STATUS: Record<string, string> = {
   active: 'bg-brand-100 text-brand-800',
@@ -102,6 +111,10 @@ export default function ClientDetailPage() {
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const canSell = hasPermission('projects.create');
   const canManagePackages = hasPermission('projects.manage');
+  // Quotes & Agreements is an admin-only module server-side (routes/documents.js
+  // gates the whole router on admin.access) — hide the tabs for anyone who'd
+  // just get a 403 from them.
+  const canViewDocuments = hasPermission('admin.access');
   // Mirrors the adminOnly gate the endpoint enforces — changing how a real
   // client is billed is an administrator decision, not a project-level one.
   const roleKey = useAuthStore((s) => s.user?.role?.key);
@@ -128,6 +141,18 @@ export default function ClientDetailPage() {
     queryKey: ['invoices', { clientId: id }],
     queryFn: () => api.get(`/invoices?clientId=${id}`).then((r) => r.data?.data ?? r.data ?? []),
     enabled: tab === 'invoices' || tab === 'overview',
+  });
+
+  const { data: quotations } = useQuery({
+    queryKey: ['documents', { clientId: id, type: 'quotation' }],
+    queryFn: () => api.get(`/documents?clientId=${id}&type=quotation&limit=100`).then((r) => r.data?.data ?? r.data ?? []),
+    enabled: canViewDocuments && tab === 'quotations',
+  });
+
+  const { data: agreements } = useQuery({
+    queryKey: ['documents', { clientId: id, type: 'agreement' }],
+    queryFn: () => api.get(`/documents?clientId=${id}&type=agreement&limit=100`).then((r) => r.data?.data ?? r.data ?? []),
+    enabled: canViewDocuments && tab === 'agreements',
   });
 
   const { data: soldPackages = [] } = useQuery({
@@ -258,6 +283,20 @@ export default function ClientDetailPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change how this client pays.'),
   });
 
+  const chargeCardFeeMutation = useMutation({
+    mutationFn: (chargeCardFee: boolean) =>
+      api.patch(`/clients/${id}/card-fee`, { chargeCardFee }).then((r) => r.data),
+    onSuccess: async (_res: any, chargeCardFee) => {
+      await invalidateMany(qc, afterClientChange(id));
+      toast.success(
+        chargeCardFee
+          ? 'Card processing fee will be added to this client’s card payments.'
+          : 'Card processing fee will be absorbed by the agency for this client — nothing added to their card payments.',
+      );
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change the card fee setting.'),
+  });
+
   const updateClient = useMutation({
     mutationFn: (data: typeof editForm) => api.patch(`/clients/${id}`, data).then((r) => r.data),
     onSuccess: async () => {
@@ -371,7 +410,10 @@ export default function ClientDetailPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-gray-200 overflow-x-auto overflow-y-hidden">
-          {(['overview', 'contacts', 'packages', 'projects', 'invoices'] as Tab[]).map((t) => (
+          {([
+            'overview', 'contacts', 'packages', 'projects', 'invoices',
+            ...(canViewDocuments ? (['quotations', 'agreements'] as Tab[]) : []),
+          ] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -513,6 +555,37 @@ export default function ClientDetailPage() {
                     {billingModeMutation.isPending && <span className="text-xs text-gray-400">saving…</span>}
                   </label>
                 </div>
+
+                {/* Only meaningful once Pay via CRM is on — whether the org's
+                    card rate (Admin → Payments → Card processing fees) gets
+                    added to this client's card payments, or the agency
+                    absorbs it. Applies to invoices AND quotations/agreements/
+                    proposals alike (see StripeService.processingFeeFor). */}
+                {payViaCrm && (
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Card processing fee</p>
+                      <p className="text-xs text-gray-400">
+                        {client.chargeCardFee !== false
+                          ? 'Added to this client’s card payments, using the org’s rate from Admin → Payments.'
+                          : 'Absorbed by the agency — not added to this client’s card payments.'}
+                      </p>
+                    </div>
+                    <label
+                      title={canSetBillingMode ? undefined : 'Only an administrator can change this.'}
+                      className={cn(
+                        'flex items-center gap-2 text-sm text-gray-700',
+                        canSetBillingMode && !chargeCardFeeMutation.isPending ? 'cursor-pointer' : 'cursor-not-allowed',
+                      )}
+                    >
+                      <input type="checkbox" checked={client.chargeCardFee !== false}
+                        disabled={!canSetBillingMode || chargeCardFeeMutation.isPending}
+                        onChange={(e) => chargeCardFeeMutation.mutate(e.target.checked)}
+                        className="w-4 h-4 rounded accent-brand-700" />
+                      {chargeCardFeeMutation.isPending && <span className="text-xs text-gray-400">saving…</span>}
+                    </label>
+                  </div>
+                )}
 
                 {/* Read-only: which legal entity actually prints on this
                     client's invoices/quotations, derived from the Pay via CRM
@@ -1353,6 +1426,104 @@ export default function ClientDetailPage() {
                       <td className="px-5 py-3.5">
                         <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', INV_STATUS[inv.status] || 'bg-gray-100 text-gray-600')}>
                           {inv.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+            </div>
+          </div>
+        )}
+
+        {/* Quotations tab */}
+        {tab === 'quotations' && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-140">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Quotation</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Prospect</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Sent</th>
+                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {!quotations ? (
+                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</td></tr>
+                ) : (quotations as any[]).length === 0 ? (
+                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No quotations for this client.</td></tr>
+                ) : (
+                  (quotations as any[]).map((doc: any) => (
+                    <tr key={doc.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/documents/${doc.id}`)}>
+                      <td className="px-5 py-3.5">
+                        <span className="text-sm font-medium text-gray-900 font-mono flex items-center gap-2">
+                          <FileSignature className="w-4 h-4 text-gray-400" />{doc.number}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">
+                        <p className="text-gray-900">{doc.prospectName}</p>
+                        {doc.businessName && <p className="text-xs text-gray-400">{doc.businessName}</p>}
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">{doc.sentAt ? formatDate(doc.sentAt) : '—'}</td>
+                      <td className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
+                        {formatCurrency(doc.amount, doc.currency)}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', DOC_STATUS[doc.status] || 'bg-gray-100 text-gray-600')}>
+                          {doc.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+            </div>
+          </div>
+        )}
+
+        {/* Agreements tab */}
+        {tab === 'agreements' && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-140">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Agreement</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Prospect</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Sent</th>
+                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {!agreements ? (
+                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</td></tr>
+                ) : (agreements as any[]).length === 0 ? (
+                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No agreements for this client.</td></tr>
+                ) : (
+                  (agreements as any[]).map((doc: any) => (
+                    <tr key={doc.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/documents/${doc.id}`)}>
+                      <td className="px-5 py-3.5">
+                        <span className="text-sm font-medium text-gray-900 font-mono flex items-center gap-2">
+                          <FileSignature className="w-4 h-4 text-gray-400" />{doc.number}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">
+                        <p className="text-gray-900">{doc.prospectName}</p>
+                        {doc.businessName && <p className="text-xs text-gray-400">{doc.businessName}</p>}
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">{doc.sentAt ? formatDate(doc.sentAt) : '—'}</td>
+                      <td className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
+                        {formatCurrency(doc.amount, doc.currency)}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', DOC_STATUS[doc.status] || 'bg-gray-100 text-gray-600')}>
+                          {doc.status}
                         </span>
                       </td>
                     </tr>

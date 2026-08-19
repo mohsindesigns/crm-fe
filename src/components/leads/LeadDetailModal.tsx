@@ -114,18 +114,29 @@ export default function LeadDetailModal({ leadId, onClose }: { leadId: string; o
               </span>
             </div>
 
-            {/* Submitted answers */}
-            {lead.form?.fields?.length > 0 && (
-              <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Form answers</p>
-                {lead.form.fields.map((f: any) => (
-                  <div key={f.key} className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-3 text-sm">
-                    <span className="text-gray-500 sm:w-32 shrink-0">{f.label}</span>
-                    <span className="text-gray-800 break-words">{String(lead.fieldData?.[f.key] ?? '—')}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* Submitted answers — excludes whichever fields the backend already
+                pulled out into fullName/email/phone (shown above), matching
+                LeadService.buildFieldData's own selection exactly so nothing
+                gets shown twice. */}
+            {(() => {
+              const fields = lead.form?.fields || [];
+              const nameField = fields.find((f: any) => f.type === 'text' && (f.key === 'name' || f.key.includes('name')))
+                || fields.find((f: any) => f.type === 'text');
+              const extraFields = fields.filter((f: any) =>
+                f.type !== 'email' && f.type !== 'phone' && f.key !== nameField?.key);
+              if (extraFields.length === 0) return null;
+              return (
+                <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Form answers</p>
+                  {extraFields.map((f: any) => (
+                    <div key={f.key} className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-3 text-sm">
+                      <span className="text-gray-500 sm:w-32 shrink-0">{f.label}</span>
+                      <span className="text-gray-800 break-words">{String(lead.fieldData?.[f.key] ?? '—')}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
 
             {/* Status + assignment */}
             <div className="grid grid-cols-2 gap-3">

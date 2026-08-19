@@ -264,36 +264,41 @@ export default function PublicInvoicePage() {
               <div>
                 <h2 className="text-sm font-semibold text-gray-900">Pay by card</h2>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Pay the full balance, or part of it now and the rest later.
+                  {inv.isRetainer ? 'Retainer invoices are paid in full.' : 'Pay the full balance, or part of it now and the rest later.'}
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPayMode('full')}
-                  className={`text-left rounded-xl border px-4 py-3 transition-colors ${
-                    payMode === 'full' ? 'border-2' : 'border border-gray-200 hover:border-gray-300'
-                  }`}
-                  style={payMode === 'full' ? { borderColor: accent } : undefined}
-                >
-                  <p className="text-sm font-medium text-gray-900">Pay in full</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{money(inv.currency, inv.amountDue)}</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPayMode('part')}
-                  className={`text-left rounded-xl border px-4 py-3 transition-colors ${
-                    payMode === 'part' ? 'border-2' : 'border border-gray-200 hover:border-gray-300'
-                  }`}
-                  style={payMode === 'part' ? { borderColor: accent } : undefined}
-                >
-                  <p className="text-sm font-medium text-gray-900">Pay part now</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Choose your own amount</p>
-                </button>
-              </div>
+              {/* Retainer invoices bill a fixed recurring cycle amount — partial
+                  payment doesn't apply, so the picker only shows for one-off
+                  invoices (see PublicInvoiceService.getByToken#isRetainer). */}
+              {!inv.isRetainer && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPayMode('full')}
+                    className={`text-left rounded-xl border px-4 py-3 transition-colors ${
+                      payMode === 'full' ? 'border-2' : 'border border-gray-200 hover:border-gray-300'
+                    }`}
+                    style={payMode === 'full' ? { borderColor: accent } : undefined}
+                  >
+                    <p className="text-sm font-medium text-gray-900">Pay in full</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{money(inv.currency, inv.amountDue)}</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPayMode('part')}
+                    className={`text-left rounded-xl border px-4 py-3 transition-colors ${
+                      payMode === 'part' ? 'border-2' : 'border border-gray-200 hover:border-gray-300'
+                    }`}
+                    style={payMode === 'part' ? { borderColor: accent } : undefined}
+                  >
+                    <p className="text-sm font-medium text-gray-900">Pay part now</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Choose your own amount</p>
+                  </button>
+                </div>
+              )}
 
-              {payMode === 'part' && (
+              {!inv.isRetainer && payMode === 'part' && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1.5">
                     Amount to pay now <span className="text-gray-400 font-normal">(max {money(inv.currency, inv.amountDue)})</span>

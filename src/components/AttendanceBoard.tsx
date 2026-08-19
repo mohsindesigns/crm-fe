@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import api from '@/lib/api';
 import Pagination from '@/components/Pagination';
 import { cn, formatPeriod, titleCase } from '@/lib/utils';
-import { attendanceSourceLabel, shouldTreatUnmarkedAsAbsent } from '@/lib/attendanceDate';
+import { attendanceSourceLabel, shouldTreatUnmarkedAsAbsent, nowInKarachi } from '@/lib/attendanceDate';
 import AttendanceStatusBadges, { attendanceLabelClass } from '@/components/AttendanceStatusBadges';
 import { marksAttendance } from '@/lib/routePermissions';
 import { useAuthStore } from '@/store/auth';
@@ -72,10 +72,27 @@ export default function AttendanceBoard() {
   });
   const logDateAttendance: any[] = logDateResp?.data || [];
 
+  // Same "attendance day" the self-marking flow uses (Asia/Karachi, 12PM→12PM
+  // shift), not the browser's local date — so this always matches what today's
+  // check-ins actually landed on.
+  const today = nowInKarachi().date;
+  const { data: todayResp, isLoading: loadingToday } = useQuery({
+    queryKey: ['hr-attendance-day', today],
+    queryFn: () => api.get('/hr/attendance', { params: { date: today, page: 1, limit: 500 } }).then((r) => r.data),
+  });
+  const todayAttendance: any[] = todayResp?.data || [];
+
   // Admins, super admins and partners never mark attendance, so they're not
   // listed in the roll call and can't be marked absent for it.
   const isAttendanceWorker = (w: any) => w.status === 'active' && marksAttendance(w.user?.role?.key);
   const activeWorkers = (workers as any[]).filter(isAttendanceWorker);
+
+  const todayCounts = activeWorkers.reduce((acc: Record<string, number>, w: any) => {
+    const rec = todayAttendance.find((x: any) => x.workerId === w.id);
+    const status = rec?.status || (shouldTreatUnmarkedAsAbsent(today) ? 'absent' : 'not_marked');
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
 
   function refreshAttendance() {
     qc.invalidateQueries({ queryKey: ['hr-attendance'] });
@@ -119,7 +136,36 @@ export default function AttendanceBoard() {
 
   return (
     <div className="space-y-5">
-      {/* Manual marking — the fallback when someone forgets to check in */}
+      {/* Today's Attendance — a one-glance roll call, above the monthly views
+          below it, so "who's in today" doesn't require picking a date first. */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Today&apos;s Attendance — {today}</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Live roll call for {activeWorkers.length} active employee{activeWorkers.length === 1 ? '' : 's'}</p>
+          </div>
+          {loadingToday || loadingWorkers ? (
+            <span className="text-xs text-gray-400">Loading…</span>
+          ) : (
+            <div className="flex items-center gap-4 text-xs flex-wrap">
+              <span className="text-gray-500">Present <strong className="text-brand-800">{todayCounts.present || 0}</strong></span>
+              <span className="text-gray-500">Absent <strong className="text-red-600">{todayCounts.absent || 0}</strong></span>
+              <span className="text-gray-500">Leave <strong className="text-amber-600">{todayCounts.leave || 0}</strong></span>
+              <span className="text-gray-500">Half-day <strong className="text-blue-600">{todayCounts.half_day || 0}</strong></span>
+              <span className="text-gray-500">Not marked <strong className="text-gray-900">{todayCounts.not_marked || 0}</strong></span>
+              <button
+                type="button"
+                onClick={() => setLogDate(today)}
+                className="text-brand-700 hover:text-brand-900 font-medium underline underline-offset-2 decoration-brand-300"
+              >
+                View log
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Manual marking — the fallback when someone forgot to check in */}
       {canManage && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 space-y-4">
           <div className="flex items-start justify-between gap-3 flex-wrap">

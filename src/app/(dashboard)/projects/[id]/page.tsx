@@ -2,7 +2,7 @@
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, XCircle, ChevronRight, Clock, Plus, Upload, Users, Link, Paperclip, ToggleLeft, Download, Repeat, AlertTriangle, Eye, Pencil, Save, X, Calendar, Bell, Flag, RotateCcw, Trash2 } from 'lucide-react';
+import { CheckCircle, XCircle, ChevronRight, Clock, Plus, Upload, Users, Link, Paperclip, ToggleLeft, ToggleRight, Download, Repeat, AlertTriangle, Eye, Pencil, Save, X, Calendar, Bell, Flag, RotateCcw, Trash2, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
@@ -623,7 +623,8 @@ export default function ProjectDetailPage() {
 
   const [confirmSeoDelete, setConfirmSeoDelete] = useState<
     null | {
-      kind: 'keyword' | 'backlink' | 'keywords-sheet' | 'backlinks-sheet' | 'keywords-selected' | 'backlinks-selected';
+      kind: 'keyword' | 'backlink' | 'keywords-sheet' | 'backlinks-sheet' | 'keywords-selected' | 'backlinks-selected'
+        | 'content-selected';
       id?: string;
       label?: string;
       count?: number;
@@ -668,6 +669,19 @@ export default function ProjectDetailPage() {
       if (deleted && skipped) toast.success(`Set ${deleted} keyword(s) to Inactive. ${skipped} skipped.`);
       else if (deleted) toast.success(`Set ${deleted} keyword(s) to Inactive`);
       else toast.error('No keywords were set to Inactive. Assigned or approved keywords were skipped.');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change keywords status.'),
+  });
+
+  const bulkActivateKeywords = useMutation({
+    mutationFn: (ids: string[]) =>
+      api.post(`/seo/projects/${id}/keywords/bulk-activate`, { ids }).then((r) => r.data),
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ['seo-keywords', id] });
+      setSelectedKeywordIds(new Set());
+      const activated = data?.activated ?? 0;
+      if (activated) toast.success(`Set ${activated} keyword(s) to Active`);
+      else toast.error('No keywords were set to Active.');
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change keywords status.'),
   });
@@ -800,6 +814,24 @@ export default function ProjectDetailPage() {
       toast.success(vars.status === 'approved' ? 'Content approved.' : 'Content sent back to the writer for revision.');
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Review failed.'),
+  });
+
+  const [selectedContentIds, setSelectedContentIds] = useState<Set<string>>(new Set());
+
+  const bulkDeleteContent = useMutation({
+    mutationFn: (ids: string[]) =>
+      api.post(`/seo/projects/${id}/content/bulk-delete`, { ids }).then((r) => r.data),
+    onSuccess: async (data: any) => {
+      await invalidateMany(qc, [['seo-content', id], ...afterProjectChange(id)]);
+      setSelectedContentIds(new Set());
+      setConfirmSeoDelete(null);
+      const deleted = data?.deleted ?? 0;
+      const skipped = data?.skipped?.length ?? 0;
+      if (deleted && skipped) toast.success(`Deleted ${deleted} item(s). ${skipped} skipped (approved or not yours).`);
+      else if (deleted) toast.success(`Deleted ${deleted} item(s).`);
+      else toast.error('Nothing was deleted. Approved items are kept.');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to delete content.'),
   });
 
   const deleteContentSubmission = useMutation({
@@ -1299,6 +1331,13 @@ export default function ProjectDetailPage() {
     .map((a: any) => a.roleSlot);
   const iAmProjectManager = myRoleSlots.includes('project_manager');
   const iAmProjectStrategist = myRoleSlots.includes('project_strategist');
+  // Same rule as the per-row Content delete button: submitter (or an admin/PM)
+  // can remove their own or others' unapproved/rejected submissions. Superseded
+  // rows are history and never deletable from here.
+  const deletableContentIds: string[] = historyContent
+    .filter((cs: any) => cs.status !== 'superseded' && cs.status !== 'approved'
+      && (cs.submittedBy === user?.id || isAdminUser || iAmProjectManager))
+    .map((cs: any) => cs.id);
   // Weekly blog / retainer automation is scheduled deliberately — not auto-started.
   const canScheduleAutomation = isAdminUser || canManageTeam || iAmProjectManager || iAmProjectStrategist;
   const heldSpecialistSlots = myRoleSlots.filter((slot) => SPECIALIST_TAB_ACCESS[slot]);
@@ -1472,11 +1511,14 @@ export default function ProjectDetailPage() {
             : confirmSeoDelete?.kind === 'backlinks-sheet' ? 'Set backlink sheet to Inactive'
               : confirmSeoDelete?.kind === 'keywords-selected' ? 'Set selected keywords to Inactive'
                 : confirmSeoDelete?.kind === 'backlinks-selected' ? 'Set selected backlinks to Inactive'
-                  : confirmSeoDelete?.kind === 'backlink' ? 'Set backlink to Inactive'
-                    : 'Set keyword to Inactive'
+                  : confirmSeoDelete?.kind === 'content-selected' ? 'Delete selected content'
+                    : confirmSeoDelete?.kind === 'backlink' ? 'Set backlink to Inactive'
+                      : 'Set keyword to Inactive'
         }
         // Nothing here is destroyed — rows are flipped inactive, keeping their rank
-        // history, and an admin can bring them back (see SoftDeleteService).
+        // history, and an admin can bring them back (see SoftDeleteService). Content
+        // submissions are the one exception: they're review-workflow artifacts, not
+        // core records, so deleting one is permanent (see SeoService.deleteContent).
         message={
           confirmSeoDelete?.kind === 'keywords-sheet'
             ? `This sets ${deletableKeywordIds.length} keyword(s) to Inactive — their rank history is kept and they can be set back to Active. Assigned or approved keywords (${lockedKeywordIds.size}) are left alone.`
@@ -1486,12 +1528,15 @@ export default function ProjectDetailPage() {
                 ? `Set ${confirmSeoDelete.count ?? selectedKeywordIds.size} selected keyword(s) to Inactive? They keep their rank history and can be set back to Active. Keywords assigned to a writer or with approved content are skipped.`
                 : confirmSeoDelete?.kind === 'backlinks-selected'
                   ? `Set ${confirmSeoDelete.count ?? selectedBacklinkIds.size} selected backlink(s) to Inactive? They can be set back to Active later. Indexed backlinks are skipped.`
-                  : confirmSeoDelete?.kind === 'backlink'
-                    ? `Set this backlink${confirmSeoDelete.label ? ` (${confirmSeoDelete.label})` : ''} to Inactive? It can be set back to Active later — nothing is deleted.`
-                    : `Set keyword${confirmSeoDelete?.label ? ` "${confirmSeoDelete.label}"` : ''} to Inactive? Its rank history is kept and it can be set back to Active — nothing is deleted.`
+                  : confirmSeoDelete?.kind === 'content-selected'
+                    ? `Permanently delete ${confirmSeoDelete.count ?? selectedContentIds.size} selected content item(s)? This cannot be undone. Approved items are skipped.`
+                    : confirmSeoDelete?.kind === 'backlink'
+                      ? `Set this backlink${confirmSeoDelete.label ? ` (${confirmSeoDelete.label})` : ''} to Inactive? It can be set back to Active later — nothing is deleted.`
+                      : `Set keyword${confirmSeoDelete?.label ? ` "${confirmSeoDelete.label}"` : ''} to Inactive? Its rank history is kept and it can be set back to Active — nothing is deleted.`
         }
         confirmLabel={
-          confirmSeoDelete?.kind?.endsWith('-selected') ? 'Set selected Inactive' : 'Set Inactive'
+          confirmSeoDelete?.kind === 'content-selected' ? 'Delete selected'
+            : confirmSeoDelete?.kind?.endsWith('-selected') ? 'Set selected Inactive' : 'Set Inactive'
         }
         onConfirm={() => {
           if (!confirmSeoDelete) return;
@@ -1503,9 +1548,11 @@ export default function ProjectDetailPage() {
             bulkDeleteKeywords.mutate([...selectedKeywordIds]);
           } else if (confirmSeoDelete.kind === 'backlinks-selected') {
             bulkDeleteBacklinks.mutate([...selectedBacklinkIds]);
+          } else if (confirmSeoDelete.kind === 'content-selected') {
+            bulkDeleteContent.mutate([...selectedContentIds]);
           }
         }}
-        onCancel={() => !seoDeletePending && setConfirmSeoDelete(null)}
+        onCancel={() => !seoDeletePending && !bulkDeleteContent.isPending && setConfirmSeoDelete(null)}
       />
       <ConfirmDialog
         open={showCancelConfirm}
@@ -1529,6 +1576,12 @@ export default function ProjectDetailPage() {
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 sm:p-6 flex flex-col lg:flex-row lg:items-start gap-5 max-w-[1500px] mx-auto">
         <div className="flex-1 min-w-0 space-y-5 max-w-6xl">
+
+          {/* Back */}
+          <button onClick={() => router.back()} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </button>
 
           {/* Project meta + stage progress */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -2472,16 +2525,26 @@ export default function ProjectDetailPage() {
                         </button>
                       )}
                       {selectedKeywordIds.size > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmSeoDelete({
-                            kind: 'keywords-selected',
-                            count: selectedKeywordIds.size,
-                          })}
-                          className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-3.5 py-2 rounded-lg"
-                        >
-                          <ToggleLeft className="w-4 h-4" /> Set Inactive ({selectedKeywordIds.size})
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            disabled={bulkActivateKeywords.isPending}
+                            onClick={() => bulkActivateKeywords.mutate([...selectedKeywordIds])}
+                            className="flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-3.5 py-2 rounded-lg"
+                          >
+                            <ToggleRight className="w-4 h-4" /> Set Active ({selectedKeywordIds.size})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmSeoDelete({
+                              kind: 'keywords-selected',
+                              count: selectedKeywordIds.size,
+                            })}
+                            className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-3.5 py-2 rounded-lg"
+                          >
+                            <ToggleLeft className="w-4 h-4" /> Set Inactive ({selectedKeywordIds.size})
+                          </button>
+                        </>
                       )}
                     </>
                   )}
@@ -3092,12 +3155,43 @@ export default function ProjectDetailPage() {
               </div>
 
               <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-                <div className="px-5 py-4 border-b border-gray-100">
+                <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold text-gray-900">Content Submissions</h3>
+                  {selectedContentIds.size > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">{selectedContentIds.size} selected</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedContentIds(new Set())}
+                        className="text-xs font-medium text-gray-600 hover:text-gray-900 px-2.5 py-1.5"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmSeoDelete({ kind: 'content-selected', count: selectedContentIds.size })}
+                        className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete ({selectedContentIds.size})
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <table className="w-full min-w-[880px]">
                   <thead>
                     <tr className="border-b border-gray-100">
+                      {canActOnProject && deletableContentIds.length > 0 && (
+                        <th className="px-4 py-3 w-10">
+                          <input
+                            type="checkbox"
+                            checked={deletableContentIds.length > 0 && deletableContentIds.every((cid) => selectedContentIds.has(cid))}
+                            onChange={(e) => setSelectedContentIds(e.target.checked ? new Set(deletableContentIds) : new Set())}
+                            className="rounded border-gray-300 text-brand-700 focus:ring-brand-600"
+                            aria-label="Select all deletable content"
+                            title="Select all deletable content"
+                          />
+                        </th>
+                      )}
                       <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Page title</th>
                       <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Keywords</th>
                       <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Words</th>
@@ -3111,7 +3205,7 @@ export default function ProjectDetailPage() {
                   <tbody className="divide-y divide-gray-100">
                     {historyContent.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="px-4 py-8 text-sm text-gray-400 text-center">
+                        <td colSpan={9} className="px-4 py-8 text-sm text-gray-400 text-center">
                           No content submissions yet.
                         </td>
                       </tr>
@@ -3125,9 +3219,26 @@ export default function ProjectDetailPage() {
                         const isSuperseded = cs.status === 'superseded';
                         const isLive = !isSuperseded;
                         const canReopenApproved = (isAdminUser || iAmProjectManager) && cs.submittedBy !== user?.id;
+                        const isDeletableRow = deletableContentIds.includes(cs.id);
                         return (
                           <Fragment key={cs.id}>
                           <tr className={cn('hover:bg-gray-50', isSuperseded && 'bg-slate-50/70 text-gray-500')}>
+                            {canActOnProject && deletableContentIds.length > 0 && (
+                              <td className="px-4 py-3">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedContentIds.has(cs.id)}
+                                  disabled={!isDeletableRow}
+                                  onChange={() => setSelectedContentIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(cs.id)) next.delete(cs.id); else next.add(cs.id);
+                                    return next;
+                                  })}
+                                  className="rounded border-gray-300 text-brand-700 focus:ring-brand-600 disabled:opacity-40"
+                                  aria-label={`Select ${cs.pageName}`}
+                                />
+                              </td>
+                            )}
                             <td className="px-4 py-3 text-sm font-medium text-gray-900 max-w-[200px] whitespace-normal break-words">
                               <div className="space-y-1">
                                 <div className={isSuperseded ? 'text-gray-500' : undefined}>{cs.pageName}</div>
@@ -3248,7 +3359,7 @@ export default function ProjectDetailPage() {
                                     <Pencil className="w-3.5 h-3.5" />
                                   </button>
                                 )}
-                                {isLive && cs.submittedBy === user?.id && cs.status !== 'approved' && (
+                                {isLive && (cs.submittedBy === user?.id || isAdminUser || iAmProjectManager) && cs.status !== 'approved' && (
                                   <button
                                     type="button"
                                     onClick={() => deleteContentSubmission.mutate(cs.id)}
@@ -3264,7 +3375,7 @@ export default function ProjectDetailPage() {
                           </tr>
                           {isLive && rejectingContentId === cs.id && (
                             <tr>
-                              <td colSpan={8} className="px-4 py-3 bg-red-50/50 border-t border-red-100">
+                              <td colSpan={9} className="px-4 py-3 bg-red-50/50 border-t border-red-100">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <input
                                     autoFocus

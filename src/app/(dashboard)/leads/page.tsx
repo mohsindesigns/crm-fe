@@ -41,14 +41,27 @@ export default function LeadsPage() {
 
   const [status, setStatus] = useState('');
   const [search, setSearch] = useState('');
+  const [projectId, setProjectId] = useState('');
+  const [campaign, setCampaign] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
   const [showFormModal, setShowFormModal] = useState(false);
   const [editingForm, setEditingForm] = useState<any>(null);
   const [expandedFormId, setExpandedFormId] = useState<string | null>(null);
 
   const { data: leads = [], isLoading: leadsLoading } = useQuery({
-    queryKey: ['leads', { status, search }],
-    queryFn: () => api.get('/leads', { params: { status: status || undefined, q: search || undefined } }).then((r) => r.data),
+    queryKey: ['leads', { status, search, projectId, campaign, dateFrom, dateTo }],
+    queryFn: () => api.get('/leads', {
+      params: {
+        status: status || undefined,
+        q: search || undefined,
+        projectId: projectId || undefined,
+        campaign: campaign || undefined,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+      },
+    }).then((r) => r.data),
     enabled: tab === 'leads',
   });
 
@@ -57,6 +70,24 @@ export default function LeadsPage() {
     queryFn: () => api.get('/lead-forms').then((r) => r.data),
     enabled: tab === 'forms',
   });
+
+  // Unfiltered baseline (only needs leads.read, same as the page itself — unlike
+  // /lead-forms, which needs leads.manage) purely to build the Project/Campaign
+  // filter dropdown option lists. Kept separate from the `leads` query above so
+  // narrowing one filter never shrinks another filter's own option list.
+  const { data: allLeads = [] } = useQuery({
+    queryKey: ['leads', 'all-for-filters'],
+    queryFn: () => api.get('/leads').then((r) => r.data),
+    enabled: tab === 'leads',
+    staleTime: 60_000,
+  });
+
+  const projectOptions = Array.from(
+    new Map(
+      (allLeads as any[]).filter((l) => l.project).map((l) => [l.project.id, l.project.name]),
+    ).entries(),
+  );
+  const campaignOptions = Array.from(new Set((allLeads as any[]).map((l) => l.campaign).filter(Boolean))) as string[];
 
   const toggleFormStatus = useMutation({
     mutationFn: ({ id, next }: { id: string; next: 'active' | 'paused' }) =>
@@ -112,7 +143,7 @@ export default function LeadsPage() {
                   className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
                 />
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Filter className="w-4 h-4 text-gray-400 shrink-0" />
                 <select
                   value={status}
@@ -122,6 +153,52 @@ export default function LeadsPage() {
                   <option value="">All statuses</option>
                   {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{titleCase(s)}</option>)}
                 </select>
+                <select
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                  className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600"
+                  title="Filter by project"
+                >
+                  <option value="">All projects</option>
+                  {projectOptions.map(([pid, name]) => <option key={pid} value={pid}>{name}</option>)}
+                </select>
+                <select
+                  value={campaign}
+                  onChange={(e) => setCampaign(e.target.value)}
+                  className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600"
+                  title="Filter by campaign"
+                >
+                  <option value="">All campaigns</option>
+                  {campaignOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    max={dateTo || undefined}
+                    className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    title="From date"
+                  />
+                  <span>–</span>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    min={dateFrom || undefined}
+                    className="border border-gray-300 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    title="To date"
+                  />
+                </div>
+                {(status || projectId || campaign || dateFrom || dateTo) && (
+                  <button
+                    type="button"
+                    onClick={() => { setStatus(''); setProjectId(''); setCampaign(''); setDateFrom(''); setDateTo(''); }}
+                    className="text-xs font-medium text-gray-500 hover:text-gray-800 px-2 py-2"
+                  >
+                    Clear filters
+                  </button>
+                )}
               </div>
             </div>
 
