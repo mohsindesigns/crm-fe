@@ -7,7 +7,7 @@ import {
   FileText, Settings, ChevronDown, Bell,
   Briefcase, ClipboardList, BarChart2, UserCog, Receipt, DollarSign, RefreshCw,
   Palette, Workflow, Shield, Package, X, FileSignature, ScrollText, Clock, MessagesSquare,
-  Building2, CreditCard, Target, ChevronLeft, ChevronRight, PieChart,
+  Building2, CreditCard, Target, ChevronLeft, ChevronRight, PieChart, History,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
@@ -44,6 +44,7 @@ const NAV_ITEMS = [
   { label: 'Attendance',   href: '/self-service?tab=attendance' as const, icon: Clock, attendanceOnly: true },
   { label: 'Analytics',    href: '/analytics' as const,     icon: BarChart2 },
   { label: 'Reports',      href: '/reports' as const,       icon: PieChart },
+  { label: 'Activity Logs', href: '/activity-logs' as const, icon: History },
 ].map((item) => ({ ...item, permission: requiredPermissionFor(item.href.split('?')[0]) }));
 
 const ADMIN_SUB_ITEMS = [
