@@ -14,6 +14,7 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { href: '/clients', permission: 'clients.read' },
   { href: '/tasks', permission: null },
   { href: '/messages', permission: 'projects.read' },
+  { href: '/leads', permission: 'leads.read' },
   { href: '/notifications', permission: null },
   { href: '/invoices', permission: 'billing.read' },
   { href: '/documents', permission: 'admin.access' },

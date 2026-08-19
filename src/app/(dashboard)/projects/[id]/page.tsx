@@ -18,8 +18,27 @@ import { invalidateMany, afterProjectChange, afterTaskChange } from '@/lib/query
 import { usersForRoleSlot } from '@/lib/projectTeam';
 import { useState, useRef, useMemo, useEffect, Fragment } from 'react';
 import { useAuthStore } from '@/store/auth';
+import { useSidebarStore } from '@/store/sidebar';
+import ProjectStatusPanel from '@/components/projects/ProjectStatusPanel';
 
 const KEYWORD_PAGE_SIZE = 10;
+
+/**
+ * Which company details print on the keyword/backlink report's letterhead
+ * block (logo, office address, tax/EIN number, email, phone, website, the
+ * quoted "Note:" paragraph). All checked by default, matching the letterhead
+ * every report showed before this existed.
+ */
+const REPORT_LETTERHEAD_FIELD_OPTS = [
+  { key: 'logo',    label: 'Logo' },
+  { key: 'address', label: 'Address' },
+  { key: 'tax',     label: 'Tax/EIN' },
+  { key: 'email',   label: 'Email' },
+  { key: 'phone',   label: 'Phone' },
+  { key: 'website', label: 'Website' },
+  { key: 'note',    label: 'Note' },
+];
+const DEFAULT_REPORT_LETTERHEAD_FIELDS = REPORT_LETTERHEAD_FIELD_OPTS.map((o) => o.key);
 
 /** Never render a literal "null"/"undefined" for an empty optional sheet cell. */
 function cellOrDash(value: unknown) {
@@ -167,6 +186,10 @@ export default function ProjectDetailPage() {
   const searchParams = useSearchParams();
   const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
+  const [reportLetterheadFields, setReportLetterheadFields] = useState<string[]>(DEFAULT_REPORT_LETTERHEAD_FIELDS);
+  function toggleReportLetterheadField(key: string) {
+    setReportLetterheadFields((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
   const [actionNote, setActionNote] = useState('');
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   // Deep-linkable so notifications (e.g. "blog submitted for review") can land
@@ -216,6 +239,13 @@ export default function ProjectDetailPage() {
   const [selectedBlogIds, setSelectedBlogIds] = useState<string[]>([]);
   const [confirmClearBlogs, setConfirmClearBlogs] = useState(false);
   const [blogRejectReason, setBlogRejectReason] = useState('');
+
+  // Give the status panel room: collapse the left nav for as long as a project
+  // detail page is open, restore it on the way out (to any other page).
+  useEffect(() => {
+    useSidebarStore.getState().setCollapsed(true);
+    return () => useSidebarStore.getState().setCollapsed(false);
+  }, []);
 
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', id],
@@ -836,7 +866,7 @@ export default function ProjectDetailPage() {
   });
 
   const [showTaskForm, setShowTaskForm] = useState(false);
-  const [newTask, setNewTask] = useState({ title: '', assigneeId: '', dueAt: '', remarks: '' });
+  const [newTask, setNewTask] = useState({ title: '', assigneeId: '', dueAt: '', remarks: '', requiresTechnicalAudit: false });
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
 
   // Deep-link: /projects/:id?task=… opens the same TaskDetailModal as row click.
@@ -870,12 +900,17 @@ export default function ProjectDetailPage() {
         dueAt: payload.dueAt || undefined,
         remarks: payload.remarks.trim() || undefined,
         type: 'issue',
+        requiresTechnicalAudit: payload.requiresTechnicalAudit || undefined,
       }).then((r) => r.data),
     onSuccess: async () => {
       await invalidateMany(qc, afterTaskChange(id));
-      setNewTask({ title: '', assigneeId: '', dueAt: '', remarks: '' });
+      const neededAudit = newTask.requiresTechnicalAudit;
+      const hadAssignee = !!newTask.assigneeId;
+      setNewTask({ title: '', assigneeId: '', dueAt: '', remarks: '', requiresTechnicalAudit: false });
       setShowTaskForm(false);
-      toast.success(newTask.assigneeId ? 'Task created and assignee notified.' : 'Task created.');
+      toast.success(neededAudit
+        ? 'Task created — sent for technical audit approval before it is assigned.'
+        : hadAssignee ? 'Task created and assignee notified.' : 'Task created.');
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to create task.'),
   });
@@ -1345,31 +1380,65 @@ export default function ProjectDetailPage() {
 
   async function downloadKeywordReport() {
     try {
-      await downloadAuthedFile(`/seo/projects/${id}/keywords/pdf`, `keyword-report-${id}.pdf`);
+      await downloadAuthedFile(`/seo/projects/${id}/keywords/pdf`, `keyword-report-${id}.pdf`, { fields: reportLetterheadFields.join(',') });
     } catch (e: any) {
       toast.error(e?.message || 'Failed to generate PDF.');
+    }
+  }
+
+  async function downloadKeywordCsv() {
+    try {
+      await downloadAuthedFile(`/seo/projects/${id}/keywords/csv`, `keywords-${id}.csv`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to export CSV.');
     }
   }
 
   async function viewKeywordReport() {
     try {
-      await viewAuthedFile(`/seo/projects/${id}/keywords/pdf`);
+      await viewAuthedFile(`/seo/projects/${id}/keywords/pdf`, { fields: reportLetterheadFields.join(',') });
     } catch (e: any) {
       toast.error(e?.message || 'Failed to open PDF.');
     }
   }
 
+  async function downloadBlogCsv() {
+    try {
+      await downloadAuthedFile(`/seo/projects/${id}/blog-sheet/csv`, `blog-sheet-${id}.csv`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to export CSV.');
+    }
+  }
+
   async function downloadBacklinkReport() {
     try {
-      await downloadAuthedFile(`/seo/projects/${id}/backlinks/pdf`, `backlink-report-${id}.pdf`);
+      await downloadAuthedFile(`/seo/projects/${id}/backlinks/pdf`, `backlink-report-${id}.pdf`, { fields: reportLetterheadFields.join(',') });
     } catch (e: any) {
       toast.error(e?.message || 'Failed to generate PDF.');
     }
   }
 
+  // Shared by the Keywords and Backlinks tab report bars — same letterhead,
+  // same selection either way. A plain element, not a nested component: a
+  // function defined in the render body would get a new identity every
+  // render, forcing React to remount (and reset) it instead of updating it.
+  const reportLetterheadFieldsControl = (
+    <div className="flex items-center gap-3 flex-wrap text-xs text-gray-500">
+      <span className="font-medium text-gray-600">Company details:</span>
+      {REPORT_LETTERHEAD_FIELD_OPTS.map((opt) => (
+        <label key={opt.key} className="flex items-center gap-1 cursor-pointer">
+          <input type="checkbox" checked={reportLetterheadFields.includes(opt.key)}
+            onChange={() => toggleReportLetterheadField(opt.key)}
+            className="w-3.5 h-3.5 rounded accent-brand-700" />
+          {opt.label}
+        </label>
+      ))}
+    </div>
+  );
+
   async function viewBacklinkReport() {
     try {
-      await viewAuthedFile(`/seo/projects/${id}/backlinks/pdf`);
+      await viewAuthedFile(`/seo/projects/${id}/backlinks/pdf`, { fields: reportLetterheadFields.join(',') });
     } catch (e: any) {
       toast.error(e?.message || 'Failed to open PDF.');
     }
@@ -1458,7 +1527,8 @@ export default function ProjectDetailPage() {
       />
       <Header title={project.name} />
       <div className="flex-1 overflow-y-auto">
-        <div className="p-4 sm:p-6 space-y-5 max-w-6xl">
+        <div className="p-4 sm:p-6 flex flex-col lg:flex-row lg:items-start gap-5 max-w-[1500px] mx-auto">
+        <div className="flex-1 min-w-0 space-y-5 max-w-6xl">
 
           {/* Project meta + stage progress */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -1747,9 +1817,26 @@ export default function ProjectDetailPage() {
                       placeholder="Remarks / instructions for the assignee…"
                       className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 resize-none"
                     />
+                    <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newTask.requiresTechnicalAudit}
+                        onChange={(e) => setNewTask((x) => ({ ...x, requiresTechnicalAudit: e.target.checked }))}
+                        className="w-3.5 h-3.5 mt-0.5 rounded accent-brand-600"
+                      />
+                      <span>
+                        Technical Audit
+                        <span className="block text-xs text-gray-400">
+                          Task is created unassigned and held for an administrator to approve first — only then is the chosen assignee actually assigned and notified.
+                        </span>
+                      </span>
+                    </label>
                     <p className="text-[11px] text-gray-400">
-                      Starts as To do. Assignee is notified immediately
-                      {newTask.dueAt ? '; automatic reminder 24 hours before due date.' : '.'}
+                      Starts as To do.
+                      {newTask.requiresTechnicalAudit
+                        ? ' Held unassigned until an administrator approves the technical audit.'
+                        : ' Assignee is notified immediately'}
+                      {!newTask.requiresTechnicalAudit && (newTask.dueAt ? '; automatic reminder 24 hours before due date.' : '.')}
                     </p>
                     <div className="flex gap-2">
                       <button
@@ -1795,12 +1882,20 @@ export default function ProjectDetailPage() {
                                   {typeLabel}
                                 </span>
                               )}
+                              {task.requiresTechnicalAudit && task.auditStatus === 'pending' && (
+                                <span className="inline-flex items-center gap-1 shrink-0 px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-[10px] font-medium text-amber-700">
+                                  Awaiting technical audit
+                                </span>
+                              )}
                               <p className="text-sm font-medium text-gray-900 truncate">{task.title}</p>
                             </div>
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-xs text-gray-500">
                               <span className="inline-flex items-center gap-1.5 min-w-0">
-                                <Avatar name={task.assignee?.name} size="xs" />
-                                <span className="truncate">{task.assignee?.name || 'Unassigned'}</span>
+                                <Avatar name={task.assignee?.name || task.pendingAssignee?.name} size="xs" />
+                                <span className="truncate">
+                                  {task.assignee?.name
+                                    || (task.pendingAssignee?.name ? `Pending: ${task.pendingAssignee.name}` : 'Unassigned')}
+                                </span>
                               </span>
                               {task.dueAt && (
                                 <span className={cn('inline-flex items-center gap-1', isOverdue ? 'text-red-600 font-medium' : '')}>
@@ -2245,19 +2340,28 @@ export default function ProjectDetailPage() {
           {/* Keywords tab */}
           {tab === 'keywords' && (
             <div className="space-y-4">
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={viewKeywordReport}
-                  className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3.5 py-2 rounded-lg"
-                >
-                  <Eye className="w-4 h-4" /> View PDF
-                </button>
-                <button
-                  onClick={downloadKeywordReport}
-                  className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3.5 py-2 rounded-lg"
-                >
-                  <Download className="w-4 h-4" /> Download PDF Report
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                {reportLetterheadFieldsControl}
+                <div className="flex gap-2">
+                  <button
+                    onClick={viewKeywordReport}
+                    className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3.5 py-2 rounded-lg"
+                  >
+                    <Eye className="w-4 h-4" /> View PDF
+                  </button>
+                  <button
+                    onClick={downloadKeywordReport}
+                    className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3.5 py-2 rounded-lg"
+                  >
+                    <Download className="w-4 h-4" /> Download PDF Report
+                  </button>
+                  <button
+                    onClick={downloadKeywordCsv}
+                    className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3.5 py-2 rounded-lg"
+                  >
+                    <Download className="w-4 h-4" /> Export CSV
+                  </button>
+                </div>
               </div>
 
               {/* Stats — remaining/used count only active (focus) keywords */}
@@ -2507,7 +2611,11 @@ export default function ProjectDetailPage() {
                             ) : (
                               <span className="text-xs text-gray-600 self-center">{kw.assignedWriter?.name || '—'}</span>
                             ))}
-                            {!locked && canActOnProject && (
+                            {/* Backend allows the keyword's own submitter to delete it too
+                                (not just an admin) while it's still unassigned/unapproved —
+                                match that here so the button isn't shown to someone whose
+                                click would just 403. */}
+                            {!locked && canActOnProject && (isAdminUser || kw.createdBy === user?.id) && (
                               <button
                                 type="button"
                                 title="Set keyword to Inactive"
@@ -2551,7 +2659,9 @@ export default function ProjectDetailPage() {
 
             return (
             <div className="space-y-4">
-              <div className="flex justify-end gap-2 flex-wrap">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                {reportLetterheadFieldsControl}
+                <div className="flex justify-end gap-2 flex-wrap">
                 <button
                   onClick={viewBacklinkReport}
                   className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3.5 py-2 rounded-lg"
@@ -2602,6 +2712,7 @@ export default function ProjectDetailPage() {
                   </button>
                 )}
                 <ShowInactiveToggle {...inactive.toggleProps} />
+                </div>
               </div>
 
               {/* Stats */}
@@ -3372,6 +3483,13 @@ export default function ProjectDetailPage() {
                         onChange={(e) => { if (e.target.files?.[0]) importBlogSheet.mutate(e.target.files[0]); e.target.value = ''; }} />
                     </>
                   )}
+                  <button
+                    type="button"
+                    onClick={downloadBlogCsv}
+                    className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3.5 py-2 rounded-lg"
+                  >
+                    <Download className="w-4 h-4" /> Export CSV
+                  </button>
                   <ShowInactiveToggle {...inactive.toggleProps} />
                 </div>
                 {canActOnProject && (
@@ -3634,6 +3752,23 @@ export default function ProjectDetailPage() {
                                         // could never be switched back on.
                                         onToggle={(next) => toggleBlogRowActive.mutate({ blogId: row.id, next })}
                                       />
+                                    )}
+                                    {/* ActiveToggle renders nothing for non-admins. The
+                                        backend also lets the row's own submitter delete
+                                        it while it's still unapproved (see
+                                        SeoService.deleteBlogTask) — surface a matching
+                                        delete-only affordance so that isn't a dead 403. */}
+                                    {!isAdminUser && canActOnProject && row.createdBy === user?.id
+                                      && row.status !== 'approved' && row.isActive !== false && (
+                                      <button
+                                        type="button"
+                                        title="Set this blog to Inactive"
+                                        disabled={toggleBlogRowActive.isPending}
+                                        onClick={() => toggleBlogRowActive.mutate({ blogId: row.id, next: false })}
+                                        className="p-1.5 text-gray-300 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-50"
+                                      >
+                                        <ToggleLeft className="w-4 h-4" />
+                                      </button>
                                     )}
                                   </div>
                                 </td>
@@ -4004,6 +4139,13 @@ export default function ProjectDetailPage() {
               </div>
             </div>
           )}
+        </div>
+        <ProjectStatusPanel
+          project={project}
+          stages={stages}
+          currentStageIdx={currentStageIdx}
+          setTab={setTab}
+        />
         </div>
       </div>
 

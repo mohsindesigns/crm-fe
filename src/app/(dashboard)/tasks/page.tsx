@@ -97,7 +97,7 @@ export default function TasksPage() {
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTask, setNewTask] = useState({
     projectId: '', title: '', assigneeId: '', reviewerId: '', type: 'issue',
-    pageName: '', dueAt: '', remarks: '',
+    pageName: '', dueAt: '', remarks: '', requiresTechnicalAudit: false,
   });
   // Files staged in the Add Task dialog. They can only be uploaded once the task
   // exists (the media endpoint keys artifacts on taskId), so they're held here and
@@ -189,6 +189,7 @@ export default function TasksPage() {
         remarks: payload.remarks.trim() || undefined,
         type: payload.type || 'issue',
         pageName: payload.pageName.trim() || undefined,
+        requiresTechnicalAudit: payload.requiresTechnicalAudit || undefined,
       }).then((r) => r.data);
 
       // Attachment upload is reported separately: the task itself is already
@@ -216,9 +217,10 @@ export default function TasksPage() {
       qc.invalidateQueries({ queryKey: ['all-tasks'] });
       setShowAddTask(false);
       const hadAssignee = !!newTask.assigneeId;
+      const neededAudit = newTask.requiresTechnicalAudit;
       setNewTask({
         projectId: '', title: '', assigneeId: '', reviewerId: '', type: 'issue',
-        pageName: '', dueAt: '', remarks: '',
+        pageName: '', dueAt: '', remarks: '', requiresTechnicalAudit: false,
       });
       setNewTaskFiles([]);
       if (uploadError) {
@@ -226,7 +228,9 @@ export default function TasksPage() {
         return;
       }
       const filePart = fileCount ? ` ${fileCount} file${fileCount === 1 ? '' : 's'} attached.` : '';
-      toast.success((hadAssignee ? 'Task created and assignee notified.' : 'Task created.') + filePart);
+      toast.success((neededAudit
+        ? 'Task created — sent for technical audit approval before it is assigned.'
+        : hadAssignee ? 'Task created and assignee notified.' : 'Task created.') + filePart);
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to create task. You may not have permission to add tasks on this project.'),
   });
@@ -501,6 +505,20 @@ export default function TasksPage() {
                   />
                 </div>
               </div>
+              <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={newTask.requiresTechnicalAudit}
+                  onChange={(e) => setNewTask((x) => ({ ...x, requiresTechnicalAudit: e.target.checked }))}
+                  className="w-3.5 h-3.5 mt-0.5 rounded accent-brand-600"
+                />
+                <span>
+                  Technical Audit
+                  <span className="block text-xs text-gray-400">
+                    Task is created unassigned and held for an administrator to approve first — only then is the chosen assignee actually assigned and notified.
+                  </span>
+                </span>
+              </label>
               {/* Only meaningful for page-scoped work — asking every task which
                   page it is about would be noise on the other types. */}
               {['content', 'design', 'review'].includes(newTask.type) && (
@@ -595,7 +613,10 @@ export default function TasksPage() {
                 </p>
               </div>
               <p className="text-[11px] text-gray-400">
-                Starts as <span className="font-medium text-gray-600">To do</span>. Assignee gets a notification right away.
+                Starts as <span className="font-medium text-gray-600">To do</span>.
+                {newTask.requiresTechnicalAudit
+                  ? ' Held unassigned until an administrator approves the technical audit.'
+                  : ' Assignee gets a notification right away.'}
                 {newTask.dueAt ? ' An automatic reminder is sent 24 hours before the due date.' : ' Add a due date to enable the automatic 24h reminder.'}
               </p>
               <div className="flex gap-2 justify-end pt-1">
@@ -683,6 +704,11 @@ export default function TasksPage() {
                                 You assigned
                               </span>
                             )}
+                            {task.requiresTechnicalAudit && task.auditStatus === 'pending' && (
+                              <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                                Awaiting technical audit
+                              </span>
+                            )}
                             {!task.project?.name && task.project?.client?.name && (
                               <span className={META_PILL_BASE}>{task.project.client.name}</span>
                             )}
@@ -719,8 +745,11 @@ export default function TasksPage() {
                         <div className="flex items-center gap-2 flex-wrap">
                           {(showAssigneeCol || assignedByMe) && (
                             <span className="flex items-center gap-1.5 min-w-0">
-                              <Avatar name={task.assignee?.name} size="xs" />
-                              <span className="text-xs text-gray-600 truncate">{task.assignee?.name || 'Unassigned'}</span>
+                              <Avatar name={task.assignee?.name || task.pendingAssignee?.name} size="xs" />
+                              <span className="text-xs text-gray-600 truncate">
+                                {task.assignee?.name
+                                  || (task.pendingAssignee?.name ? `Pending: ${task.pendingAssignee.name}` : 'Unassigned')}
+                              </span>
                             </span>
                           )}
                           {task.reminderAt && (
@@ -784,6 +813,11 @@ export default function TasksPage() {
                                     You assigned
                                   </span>
                                 )}
+                                {task.requiresTechnicalAudit && task.auditStatus === 'pending' && (
+                                  <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                                    Awaiting technical audit
+                                  </span>
+                                )}
                                 {task.project?.client?.name && <span className={META_PILL_BASE}>{task.project.client.name}</span>}
                                 {task.project?.name && (
                               <button
@@ -815,9 +849,10 @@ export default function TasksPage() {
                         {showAssigneeCol && (
                           <td className="px-3 py-3.5 align-top">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <Avatar name={task.assignee?.name} size="xs" />
+                              <Avatar name={task.assignee?.name || task.pendingAssignee?.name} size="xs" />
                               <span className="text-xs text-gray-600 truncate">
-                                {task.assignee?.name || 'Unassigned'}
+                                {task.assignee?.name
+                                  || (task.pendingAssignee?.name ? `Pending: ${task.pendingAssignee.name}` : 'Unassigned')}
                               </span>
                             </div>
                           </td>

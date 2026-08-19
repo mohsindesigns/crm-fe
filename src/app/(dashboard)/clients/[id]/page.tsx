@@ -487,6 +487,48 @@ export default function ClientDetailPage() {
                     </div>
                   );
                 })()}
+
+                {/* Same client-wide billingMode flag as the badge in the header
+                    banner and the checkboxes in the Contacts tab — surfaced here
+                    too so it doesn't require opening a contact's edit form to see
+                    or change how this client pays. */}
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Pay via CRM</p>
+                    <p className="text-xs text-gray-400">
+                      {payViaCrm ? 'This client is billed through Stripe.' : 'This client is billed manually (bank transfer, Payoneer, Wise, etc.).'}
+                    </p>
+                  </div>
+                  <label
+                    title={canSetBillingMode ? undefined : 'Only an administrator can change how a client pays.'}
+                    className={cn(
+                      'flex items-center gap-2 text-sm text-gray-700',
+                      canSetBillingMode && !billingModeMutation.isPending ? 'cursor-pointer' : 'cursor-not-allowed',
+                    )}
+                  >
+                    <input type="checkbox" checked={payViaCrm}
+                      disabled={!canSetBillingMode || billingModeMutation.isPending}
+                      onChange={(e) => billingModeMutation.mutate(e.target.checked ? 'stripe' : 'manual')}
+                      className="w-4 h-4 rounded accent-brand-700" />
+                    {billingModeMutation.isPending && <span className="text-xs text-gray-400">saving…</span>}
+                  </label>
+                </div>
+
+                {/* Read-only: which legal entity actually prints on this
+                    client's invoices/quotations, derived from the Pay via CRM
+                    flag above (Stripe → the LLC, everyone else → the LLP —
+                    see letterhead.billingCompanyFor). Not editable here. */}
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+                  <p className="text-xs text-gray-400">Invoices &amp; quotations issued by</p>
+                  {client.billingCompany ? (
+                    <span className="text-sm font-medium text-gray-900">
+                      {client.billingCompany.legalName}
+                      <span className="text-gray-400 font-normal"> ({client.billingCompany.code})</span>
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-400">No company configured — using default letterhead</span>
+                  )}
+                </div>
               </div>
             )}
           </div>

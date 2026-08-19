@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, FileText, LogOut, Bell, CheckCheck, CreditCard, FileCheck, MessagesSquare } from 'lucide-react';
+import { LayoutDashboard, FileText, LogOut, Bell, CheckCheck, CreditCard, FileCheck, MessagesSquare, Target } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePortalStore } from '@/store/portal';
 import NotificationBridge from '@/components/NotificationBridge';
@@ -209,6 +209,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       ? [{ href: '/portal/messages', label: 'Messages', icon: MessagesSquare, exact: false }]
       : []),
     { href: '/portal/invoices', label: 'Invoices', icon: FileText, exact: false },
+    { href: '/portal/leads', label: 'Leads', icon: Target, exact: false },
   ];
 
   return (

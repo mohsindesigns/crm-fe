@@ -109,6 +109,8 @@ export default function TaskDetailModal({
   const [uploading, setUploading] = useState(false);
   const [rejectNote, setRejectNote] = useState('');
   const [showReject, setShowReject] = useState(false);
+  const [auditNote, setAuditNote] = useState('');
+  const [showAuditReject, setShowAuditReject] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const { data: task, isLoading } = useQuery({
@@ -147,6 +149,22 @@ export default function TaskDetailModal({
       toast.success(labels[vars.status] || 'Task updated.');
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Could not update task.'),
+  });
+
+  const auditDecision = useMutation({
+    mutationFn: ({ approve, note }: { approve: boolean; note?: string }) =>
+      api.post(`/projects/${projectId}/tasks/${taskId}/audit-${approve ? 'approve' : 'reject'}`, approve ? undefined : { note })
+        .then((r) => r.data),
+    onSuccess: async (_data, vars) => {
+      await invalidateMany(qc, [
+        ['task-detail', projectId, taskId],
+        ...afterTaskChange(projectId),
+      ]);
+      setShowAuditReject(false);
+      setAuditNote('');
+      toast.success(vars.approve ? 'Technical audit approved — assignee notified.' : 'Technical audit rejected.');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Could not update technical audit status.'),
   });
 
   // Deactivates rather than destroys — the stored file stays reachable for anyone
@@ -216,6 +234,7 @@ export default function TaskDetailModal({
   const canMarkComplete = !usesReviewPipeline
     && !isDone
     && (isAssignee || isAdmin || isEffectiveReviewer);
+  const awaitingAudit = !!task?.requiresTechnicalAudit && task?.auditStatus === 'pending';
 
   // Backend returns events oldest→newest. Keep that for the timeline; only the
   // latest event is needed for the duplicate "Approved/Completed" footer guard.
@@ -237,7 +256,10 @@ export default function TaskDetailModal({
     task?.stageKey ? titleCase(task.stageKey) : null,
   ].filter(Boolean).join(' / ');
 
-  const showActions = !!task && !isDone && (canSubmit || (awaitingReview && canReview) || canMarkComplete || showReject);
+  const showActions = !!task && !isDone && (
+    canSubmit || (awaitingReview && canReview) || canMarkComplete || showReject
+    || (awaitingAudit && isAdmin) || showAuditReject
+  );
 
   const reviewerDisplay = task?.reviewer?.name
     || (task?.createdBy && task.createdBy === effectiveReviewerId ? task.creator?.name : null)
@@ -310,12 +332,27 @@ export default function TaskDetailModal({
                     <span className={cn('inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full', STATUS_COLORS[task.status] || 'bg-gray-100 text-gray-500')}>
                       {titleCase(task.status || 'todo')}
                     </span>
+                    {awaitingAudit && (
+                      <span className="ml-2 inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-700">
+                        Awaiting technical audit
+                      </span>
+                    )}
+                    {task.requiresTechnicalAudit && task.auditStatus === 'rejected' && (
+                      <span className="ml-2 inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700">
+                        Technical audit rejected
+                      </span>
+                    )}
                   </MetaRow>
                   <MetaRow icon={User} label="Assignee">
                     {task.assignee?.name ? (
                       <span className="inline-flex items-center gap-2 min-w-0">
                         <Avatar name={task.assignee.name} src={task.assignee.avatarUrl} size="xs" />
                         <span className="truncate font-medium">{task.assignee.name}</span>
+                      </span>
+                    ) : awaitingAudit && task.pendingAssignee?.name ? (
+                      <span className="inline-flex items-center gap-2 min-w-0">
+                        <Avatar name={task.pendingAssignee.name} src={task.pendingAssignee.avatarUrl} size="xs" />
+                        <span className="truncate text-gray-500">Pending: {task.pendingAssignee.name}</span>
                       </span>
                     ) : (
                       <span className="text-gray-400">Unassigned</span>
@@ -555,7 +592,56 @@ export default function TaskDetailModal({
             {/* Sticky actions */}
             {showActions && (
               <div className="shrink-0 border-t border-gray-100 px-5 sm:px-6 py-3.5 bg-white">
-                {showReject ? (
+                {showAuditReject ? (
+                  <div className="space-y-2.5">
+                    <textarea
+                      value={auditNote}
+                      onChange={(e) => setAuditNote(e.target.value)}
+                      rows={2}
+                      placeholder="Why is this technical audit being rejected? (optional but recommended)"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={auditDecision.isPending}
+                        onClick={() => auditDecision.mutate({ approve: false, note: auditNote.trim() || undefined })}
+                        className="inline-flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg"
+                      >
+                        <XCircle className="w-4 h-4" />
+                        Reject technical audit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowAuditReject(false)}
+                        className="text-sm font-medium text-gray-500 hover:text-gray-700 px-3 py-2"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : awaitingAudit && isAdmin ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => auditDecision.mutate({ approve: true })}
+                      disabled={auditDecision.isPending}
+                      className="inline-flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      Approve technical audit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAuditReject(true)}
+                      disabled={auditDecision.isPending}
+                      className="inline-flex items-center gap-1.5 bg-white hover:bg-red-50 text-red-700 text-sm font-medium px-4 py-2 rounded-lg border border-red-200"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      Reject
+                    </button>
+                  </div>
+                ) : showReject ? (
                   <div className="space-y-2.5">
                     <textarea
                       value={rejectNote}
