@@ -49,11 +49,14 @@ const NAV_ITEMS = [
 
 // Mirrors the view switcher on the Tasks page itself (src/app/(dashboard)/tasks/page.tsx)
 // — 'all' is filtered out below for anyone without projects.manage, same gate
-// that page uses for its own "All Tasks" pill.
+// that page uses for its own "All Tasks" pill. 'overdue' has no permission gate:
+// everyone gets the tab, but the page itself scopes it to org-wide vs. just-mine
+// the same way it already does for Approvals/Completed.
 const TASK_SUB_ITEMS = [
   { label: 'My Tasks',       view: 'mine' },
   { label: 'Assigned by me', view: 'assigned_by_me' },
   { label: 'All Tasks',      view: 'all', permission: 'projects.manage' },
+  { label: 'Overdue',        view: 'overdue' },
   { label: 'Approvals',      view: 'approvals' },
   { label: 'Completed',      view: 'completed' },
 ];

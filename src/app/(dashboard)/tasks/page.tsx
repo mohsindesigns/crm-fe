@@ -82,7 +82,7 @@ function taskTimestamps(task: any) {
   return lines;
 }
 
-const TASK_VIEWS = ['mine', 'assigned_by_me', 'all', 'approvals', 'completed'] as const;
+const TASK_VIEWS = ['mine', 'assigned_by_me', 'all', 'overdue', 'approvals', 'completed'] as const;
 type TaskView = typeof TASK_VIEWS[number];
 
 export default function TasksPage() {
@@ -143,9 +143,9 @@ export default function TasksPage() {
   // task modal the project board uses instead.
   const [openTask, setOpenTask] = useState<{ projectId: string; taskId: string } | null>(null);
 
-  // Approvals and Completed are org-wide for admins (same permission as All
-  // Tasks) but stay a personal tracking view for everyone else.
-  const useAllEndpoint = view === 'all' || ((view === 'approvals' || view === 'completed') && canSeeAllTasks);
+  // Approvals, Completed and Overdue are org-wide for admins (same permission
+  // as All Tasks) but stay a personal tracking view for everyone else.
+  const useAllEndpoint = view === 'all' || ((view === 'approvals' || view === 'completed' || view === 'overdue') && canSeeAllTasks);
 
   const filterParams = useMemo(() => {
     const params: Record<string, string> = {};
@@ -161,7 +161,10 @@ export default function TasksPage() {
     }
     if (projectFilter) params.projectId = projectFilter;
     if (typeFilter) params.type = typeFilter;
-    if (dueFilter) params.due = dueFilter;
+    // Overdue tab forces the due filter regardless of the dropdown — the tab
+    // IS the filter, same as Approvals/Completed forcing their own status.
+    if (view === 'overdue') params.due = 'overdue';
+    else if (dueFilter) params.due = dueFilter;
     if (sort) params.sort = sort;
     if (search.trim()) params.search = search.trim();
     // "Assignee" narrows who the task sits on — meaningless on My Tasks (that's
@@ -313,6 +316,7 @@ export default function TasksPage() {
             { key: 'mine' as const, label: 'My Tasks' },
             { key: 'assigned_by_me' as const, label: 'Assigned by me' },
             ...(canSeeAllTasks ? [{ key: 'all' as const, label: 'All Tasks' }] : []),
+            { key: 'overdue' as const, label: 'Overdue' },
             { key: 'approvals' as const, label: 'Approvals' },
             { key: 'completed' as const, label: 'Completed' },
           ]).map((v) => (
@@ -433,15 +437,19 @@ export default function TasksPage() {
               ))}
             </select>
 
-            <select
-              value={dueFilter}
-              onChange={(e) => setDueFilter(e.target.value)}
-              className={selectClass}
-            >
-              {DUE_FILTERS.map((opt) => (
-                <option key={opt.value || 'any'} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+            {/* Overdue tab already forces this — a dropdown that could switch it
+                to "Due today" would just fight the tab you're standing on. */}
+            {view !== 'overdue' && (
+              <select
+                value={dueFilter}
+                onChange={(e) => setDueFilter(e.target.value)}
+                className={selectClass}
+              >
+                {DUE_FILTERS.map((opt) => (
+                  <option key={opt.value || 'any'} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            )}
 
             <select
               value={sort}
@@ -690,24 +698,29 @@ export default function TasksPage() {
               <h3 className="text-sm font-semibold text-gray-900">
                 {view === 'all' ? 'All tasks'
                   : view === 'assigned_by_me' ? 'Assigned by me'
-                    : view === 'approvals' ? 'Approvals'
-                      : view === 'completed' ? 'Completed'
-                        : 'My tasks'}
+                    : view === 'overdue' ? 'Overdue'
+                      : view === 'approvals' ? 'Approvals'
+                        : view === 'completed' ? 'Completed'
+                          : 'My tasks'}
               </h3>
               <p className="text-xs text-gray-400 mt-0.5">
                 {view === 'all'
                   ? 'Every task across projects.'
                   : view === 'assigned_by_me'
                     ? 'Tasks you created and assigned — track status, remarks, and who is working on them.'
-                    : view === 'approvals'
+                    : view === 'overdue'
                       ? (useAllEndpoint
-                        ? 'Tasks flagged for technical audit, awaiting your approval before they can be assigned.'
-                        : 'Tasks you flagged for technical audit, or that are waiting on you as the pending assignee — an administrator still needs to approve them.')
-                      : view === 'completed'
+                        ? 'Every unfinished task across the org whose due date has passed.'
+                        : 'Your unfinished tasks whose due date has passed.')
+                      : view === 'approvals'
                         ? (useAllEndpoint
-                          ? 'Every completed or approved task across the org.'
-                          : 'Tasks assigned to you or under your review that are done or approved.')
-                        : 'Tasks assigned to you or waiting for your review.'}
+                          ? 'Tasks flagged for technical audit, awaiting your approval before they can be assigned.'
+                          : 'Tasks you flagged for technical audit, or that are waiting on you as the pending assignee — an administrator still needs to approve them.')
+                        : view === 'completed'
+                          ? (useAllEndpoint
+                            ? 'Every completed or approved task across the org.'
+                            : 'Tasks assigned to you or under your review that are done or approved.')
+                          : 'Tasks assigned to you or waiting for your review.'}
               </p>
             </div>
             <span className="text-xs text-gray-400">{tasks.length} task{tasks.length !== 1 ? 's' : ''}</span>
