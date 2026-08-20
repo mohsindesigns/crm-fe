@@ -9,6 +9,7 @@ import { invalidateMany, afterLeadFormChange } from '@/lib/queryInvalidation';
 import { useAuthStore } from '@/store/auth';
 import LeadFormRenderer, { type FieldType, type FormField } from '@/components/leads/LeadFormRenderer';
 import { DEFAULT_THEME, BORDER_RADIUS_OPTIONS, type BorderRadius, type LeadFormTheme } from '@/lib/leadFormTheme';
+import ColorInput from '@/components/ColorInput';
 
 const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: 'text', label: 'Short text' },
@@ -28,38 +29,6 @@ interface FieldDraft {
 }
 
 const BLANK_FIELD: FieldDraft = { label: '', type: 'text', required: false, options: '', hidden: false };
-
-function ColorInput({ label, value, onChange, fallback }: { label: string; value: string; onChange: (v: string) => void; fallback: string }) {
-  return (
-    <div>
-      <label className="block text-xs font-medium text-gray-700 mb-1.5">{label}</label>
-      <div className="flex items-center gap-2">
-        <input
-          type="color"
-          value={value || fallback}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-9 h-9 rounded-lg border border-gray-300 cursor-pointer shrink-0 p-0.5"
-        />
-        <input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={fallback}
-          className="flex-1 min-w-0 px-2.5 py-1.5 text-xs font-mono border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-600"
-        />
-        {value && (
-          <button
-            type="button"
-            onClick={() => onChange('')}
-            title="Reset to default"
-            className="text-[11px] text-gray-400 hover:text-gray-700 shrink-0"
-          >
-            Reset
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
 
 export default function LeadFormModal({
   form, // existing LeadForm to edit, or null to create

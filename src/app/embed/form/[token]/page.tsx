@@ -30,16 +30,8 @@ export default function EmbedLeadFormPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [result, setResult] = useState<{ message: string; redirectUrl: string | null } | null>(null);
-  const [captcha, setCaptcha] = useState<{ question: string; captchaToken: string } | null>(null);
-  const [captchaAnswer, setCaptchaAnswer] = useState('');
-
-  function fetchCaptcha() {
-    if (!token) return;
-    fetch(`${apiBase}/public/lead-forms/${token}/captcha`)
-      .then((res) => res.json())
-      .then((data) => setCaptcha(data))
-      .catch(() => {});
-  }
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
 
   useEffect(() => {
     if (!token) return;
@@ -50,7 +42,6 @@ export default function EmbedLeadFormPage() {
       })
       .then((data: FormSchema) => setSchema(data))
       .catch((e) => setLoadError(e.message || 'This form is no longer available.'));
-    fetchCaptcha();
   }, [token]);
 
   useEffect(() => {
@@ -72,8 +63,7 @@ export default function EmbedLeadFormPage() {
         body: JSON.stringify({
           answers,
           _hp: honeypot,
-          captchaToken: captcha?.captchaToken,
-          captchaAnswer,
+          turnstileToken,
         }),
       });
       const data = await res.json();
@@ -81,10 +71,11 @@ export default function EmbedLeadFormPage() {
       setResult({ message: data.message, redirectUrl: data.redirectUrl || null });
     } catch (err: any) {
       setSubmitError(err.message || 'Something went wrong — please try again.');
-      // The token may now be expired, wrong, or (harmlessly) already spent —
-      // hand back a fresh challenge either way so retrying doesn't just repeat the same error.
-      setCaptchaAnswer('');
-      fetchCaptcha();
+      // The Turnstile token is single-use and short-lived — clear it so a
+      // retry doesn't resubmit an already-spent/expired token; the widget
+      // itself reruns its challenge on the next render.
+      setTurnstileToken('');
+      setTurnstileResetKey((k) => k + 1);
     } finally {
       setSubmitting(false);
     }
@@ -121,9 +112,9 @@ export default function EmbedLeadFormPage() {
         successMessage={result?.message || null}
         honeypotValue={honeypot}
         onHoneypotChange={setHoneypot}
-        captchaQuestion={captcha?.question}
-        captchaAnswer={captchaAnswer}
-        onCaptchaAnswerChange={setCaptchaAnswer}
+        turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+        onTurnstileToken={setTurnstileToken}
+        turnstileResetKey={turnstileResetKey}
       />
     </div>
   );

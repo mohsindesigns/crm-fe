@@ -37,16 +37,8 @@ export default function ClientRequestPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [captcha, setCaptcha] = useState<{ question: string; captchaToken: string } | null>(null);
-  const [captchaAnswer, setCaptchaAnswer] = useState('');
-
-  function fetchCaptcha() {
-    if (!token) return;
-    fetch(`${apiBase}/public/client-requests/${token}/captcha`)
-      .then((res) => res.json())
-      .then((data) => setCaptcha(data))
-      .catch(() => {});
-  }
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
 
   useEffect(() => {
     if (!token) return;
@@ -67,7 +59,6 @@ export default function ClientRequestPage() {
         }
       })
       .catch((e) => setLoadError(e.message || 'This form is no longer available.'));
-    fetchCaptcha();
   }, [token]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -82,8 +73,7 @@ export default function ClientRequestPage() {
         body: JSON.stringify({
           answers,
           _hp: honeypot,
-          captchaToken: captcha?.captchaToken,
-          captchaAnswer,
+          turnstileToken,
         }),
       });
       const data = await res.json();
@@ -91,10 +81,10 @@ export default function ClientRequestPage() {
       setSuccessMessage(data.message);
     } catch (err: any) {
       setSubmitError(err.message || 'Something went wrong — please try again.');
-      // The captcha token may now be spent or expired — hand back a fresh
-      // challenge so retrying doesn't just repeat the same error.
-      setCaptchaAnswer('');
-      fetchCaptcha();
+      // The Turnstile token is single-use and short-lived — clear it and
+      // remount the widget so retrying gets a fresh challenge.
+      setTurnstileToken('');
+      setTurnstileResetKey((k) => k + 1);
     } finally {
       setSubmitting(false);
     }
@@ -147,9 +137,9 @@ export default function ClientRequestPage() {
           submitError={submitError}
           honeypotValue={honeypot}
           onHoneypotChange={setHoneypot}
-          captchaQuestion={captcha?.question}
-          captchaAnswer={captchaAnswer}
-          onCaptchaAnswerChange={setCaptchaAnswer}
+          turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+          onTurnstileToken={setTurnstileToken}
+          turnstileResetKey={turnstileResetKey}
           enablePhoneCountryCode
         />
       )}

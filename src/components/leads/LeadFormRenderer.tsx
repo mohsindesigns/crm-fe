@@ -1,9 +1,72 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { LeadFormTheme } from '@/lib/leadFormTheme';
 import { RADIUS_PX } from '@/lib/leadFormTheme';
 import { PHONE_COUNTRIES, digitRange } from '@/lib/phoneCountries';
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (container: HTMLElement, options: {
+        sitekey: string;
+        callback: (token: string) => void;
+        'expired-callback'?: () => void;
+        'error-callback'?: () => void;
+      }) => string;
+      reset: (widgetId?: string) => void;
+    };
+    onTurnstileLoad?: () => void;
+  }
+}
+
+const TURNSTILE_SCRIPT_ID = 'cf-turnstile-script';
+
+/** Loads Cloudflare's Turnstile script once per page and renders the widget
+ *  into a div ref. Kept self-contained here (rather than a global <script> in
+ *  the root layout) since only the two public embed pages need it. */
+function TurnstileWidget({ siteKey, onToken }: { siteKey: string; onToken: (token: string) => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const widgetId = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    function renderWidget() {
+      if (cancelled || !containerRef.current || !window.turnstile || widgetId.current) return;
+      widgetId.current = window.turnstile.render(containerRef.current, {
+        sitekey: siteKey,
+        callback: onToken,
+        'expired-callback': () => onToken(''),
+        'error-callback': () => onToken(''),
+      });
+    }
+
+    if (window.turnstile) {
+      renderWidget();
+    } else if (!document.getElementById(TURNSTILE_SCRIPT_ID)) {
+      window.onTurnstileLoad = renderWidget;
+      const script = document.createElement('script');
+      script.id = TURNSTILE_SCRIPT_ID;
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad&render=explicit';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    } else {
+      // Script tag already exists (e.g. a second widget on the same page) —
+      // poll briefly for window.turnstile to be ready rather than re-adding it.
+      const interval = setInterval(() => {
+        if (window.turnstile) { clearInterval(interval); renderWidget(); }
+      }, 100);
+      return () => clearInterval(interval);
+    }
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteKey]);
+
+  return <div ref={containerRef} />;
+}
 
 export type FieldType = 'text' | 'email' | 'phone' | 'textarea' | 'select' | 'checkbox';
 export interface FormField {
@@ -33,10 +96,13 @@ interface LeadFormRendererProps {
   successMessage?: string | null;
   honeypotValue?: string;
   onHoneypotChange?: (v: string) => void;
-  /** Anti-bot math challenge, e.g. "3 + 7 = ?" — omit to hide the captcha row (used by the builder preview, which has no live token to solve against). */
-  captchaQuestion?: string;
-  captchaAnswer?: string;
-  onCaptchaAnswerChange?: (v: string) => void;
+  /** Cloudflare Turnstile site key — omit to hide the widget (used by the
+   *  builder preview, which has no live submit to protect). */
+  turnstileSiteKey?: string;
+  onTurnstileToken?: (token: string) => void;
+  /** Bump this after a failed submit to force the widget to remount and
+   *  issue a fresh token — a spent/expired token can't be reused. */
+  turnstileResetKey?: number;
   /** Renders phone fields as a country-code select + digit-limited number input
    *  instead of one free-text box, storing "+<dial> <digits>" as the answer.
    *  Off by default — only the client-requirements forms opt in (see
@@ -125,9 +191,9 @@ export default function LeadFormRenderer({
   successMessage,
   honeypotValue = '',
   onHoneypotChange,
-  captchaQuestion,
-  captchaAnswer = '',
-  onCaptchaAnswerChange,
+  turnstileSiteKey,
+  onTurnstileToken,
+  turnstileResetKey,
   enablePhoneCountryCode = false,
 }: LeadFormRendererProps) {
   const radius = RADIUS_PX[theme.borderRadius];
@@ -246,20 +312,9 @@ export default function LeadFormRenderer({
               </div>
             ))}
 
-            {captchaQuestion && (
+            {turnstileSiteKey && !isPreview && (
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>
-                  Quick check: {captchaQuestion}<span style={{ color: '#DC2626' }}> *</span>
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  required
-                  disabled={isPreview}
-                  value={captchaAnswer}
-                  onChange={(e) => onCaptchaAnswerChange?.(e.target.value)}
-                  style={inputStyle}
-                />
+                <TurnstileWidget key={turnstileResetKey} siteKey={turnstileSiteKey} onToken={(token) => onTurnstileToken?.(token)} />
               </div>
             )}
 

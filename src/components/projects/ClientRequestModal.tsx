@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Plus, Trash2, GripVertical, Mail, Save } from 'lucide-react';
+import { X, Plus, Trash2, GripVertical, Mail, Save, Palette, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import LeadFormRenderer, { type FieldType, type FormField } from '@/components/leads/LeadFormRenderer';
-import { DEFAULT_THEME } from '@/lib/leadFormTheme';
+import { DEFAULT_THEME, BORDER_RADIUS_OPTIONS, type BorderRadius, type LeadFormTheme } from '@/lib/leadFormTheme';
+import ColorInput from '@/components/ColorInput';
 
 // Compose + send a requirements form to the project's client. Three things in
 // one modal, in the order staff actually do them: pick the questions (from a
@@ -52,6 +53,7 @@ interface Template {
   defaultMessage: string | null;
   successMessage: string | null;
   serviceTypeKey: string | null;
+  theme: Partial<LeadFormTheme> | null;
 }
 
 export default function ClientRequestModal({
@@ -84,6 +86,20 @@ export default function ClientRequestModal({
   const [successMessage, setSuccessMessage] = useState('');
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
+
+  // Appearance — same builder as LeadFormModal's, same "blank = no override,
+  // fall back to org branding / a sensible default" rule as
+  // RequirementFormService#effectiveTheme.
+  const [showAppearance, setShowAppearance] = useState(false);
+  const [themeHeadline, setThemeHeadline] = useState('');
+  const [themeDescription, setThemeDescription] = useState('');
+  const [themeButtonText, setThemeButtonText] = useState('');
+  const [themePrimaryColor, setThemePrimaryColor] = useState('');
+  const [themeBackgroundColor, setThemeBackgroundColor] = useState('');
+  const [themeShowLogo, setThemeShowLogo] = useState(true);
+  const [themeShowName, setThemeShowName] = useState(true);
+  const [themeShowHeadline, setThemeShowHeadline] = useState(true);
+  const [themeBorderRadius, setThemeBorderRadius] = useState<BorderRadius>('rounded');
 
   const { data: templates = [] } = useQuery<Template[]>({
     queryKey: ['requirement-form-templates'],
@@ -120,6 +136,18 @@ export default function ClientRequestModal({
     if (t.defaultSubject) setSubject(t.defaultSubject);
     if (t.defaultMessage) setMessage(t.defaultMessage);
     setSuccessMessage(t.successMessage || '');
+
+    const theme = t.theme || {};
+    setThemeHeadline(theme.headline || '');
+    setThemeDescription(theme.description || '');
+    setThemeButtonText(theme.buttonText || '');
+    setThemePrimaryColor(theme.primaryColor || '');
+    setThemeBackgroundColor(theme.backgroundColor || '');
+    setThemeShowLogo(theme.showLogo !== undefined ? theme.showLogo : true);
+    setThemeShowName(theme.showName !== undefined ? theme.showName : true);
+    setThemeShowHeadline(theme.showHeadline !== undefined ? theme.showHeadline : true);
+    setThemeBorderRadius(theme.borderRadius || 'rounded');
+    if (Object.keys(theme).length > 0) setShowAppearance(true);
   }
 
   function updateField(i: number, patch: Partial<FieldDraft>) {
@@ -146,12 +174,29 @@ export default function ClientRequestModal({
       }))
   ), [fields]);
 
-  const previewTheme = {
-    ...DEFAULT_THEME,
-    headline: subject || `Project requirements — ${projectName}`,
-    description: message,
-    buttonText: 'Submit requirements',
-    primaryColor: brandColor || DEFAULT_THEME.primaryColor,
+  // Same fallback chain as the backend's effectiveTheme (RequirementFormService)
+  // — the preview renders exactly what the client would see if sent right now.
+  const themePayload = {
+    headline: themeHeadline,
+    description: themeDescription,
+    buttonText: themeButtonText,
+    primaryColor: themePrimaryColor,
+    backgroundColor: themeBackgroundColor,
+    showLogo: themeShowLogo,
+    showName: themeShowName,
+    showHeadline: themeShowHeadline,
+    borderRadius: themeBorderRadius,
+  };
+  const previewTheme: LeadFormTheme = {
+    headline: themeHeadline.trim() || subject.trim() || `Project requirements — ${projectName}`,
+    description: themeDescription || message,
+    buttonText: themeButtonText.trim() || 'Submit requirements',
+    primaryColor: themePrimaryColor || brandColor || DEFAULT_THEME.primaryColor,
+    backgroundColor: themeBackgroundColor || DEFAULT_THEME.backgroundColor,
+    showLogo: themeShowLogo,
+    showName: themeShowName,
+    showHeadline: themeShowHeadline,
+    borderRadius: themeBorderRadius,
   };
 
   const recipientEmail = contactId
@@ -166,6 +211,7 @@ export default function ClientRequestModal({
         await api.post('/requirement-forms', {
           name: newTemplateName.trim(),
           fields: payloadFields,
+          theme: themePayload,
           defaultSubject: subject,
           defaultMessage: message || null,
           successMessage: successMessage || null,
@@ -175,6 +221,7 @@ export default function ClientRequestModal({
       const { data } = await api.post(`/projects/${projectId}/client-requests`, {
         templateId: templateId || null,
         fields: payloadFields,
+        theme: themePayload,
         contactId: contactId || null,
         recipientEmail: contactId ? null : manualEmail.trim() || null,
         ccEmails: ccEmails.trim() || null,
@@ -378,12 +425,103 @@ export default function ClientRequestModal({
 
             <div className="border-t border-gray-100" />
 
-            {/* 3. Optionally keep these questions for next time */}
+            {/* 3. Appearance — same builder as the lead-form one, so a
+                requirements page can be branded/customized the same way a
+                lead-capture form can. */}
+            <section className="border border-gray-200 rounded-xl overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowAppearance((v) => !v)}
+                className="w-full flex items-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100"
+              >
+                <Palette className="w-3.5 h-3.5 text-gray-400" /> Appearance
+                <span className="ml-auto text-gray-400 font-normal">{showAppearance ? 'Hide' : 'Customize'}</span>
+              </button>
+              {showAppearance && (
+                <div className="p-3.5 space-y-3.5">
+                  <div className={themeShowHeadline ? undefined : 'opacity-50'}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-medium text-gray-700">Public headline</label>
+                      <button
+                        type="button"
+                        onClick={() => setThemeShowHeadline((v) => !v)}
+                        title={themeShowHeadline ? 'Hide the headline on the public form' : 'Hidden from the public form — click to show'}
+                        className={`p-1 rounded shrink-0 ${themeShowHeadline ? 'text-gray-300 hover:text-gray-700 hover:bg-gray-100' : 'text-amber-500 hover:text-amber-600 hover:bg-amber-50'}`}
+                      >
+                        {themeShowHeadline ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <input
+                      value={themeHeadline}
+                      onChange={(e) => setThemeHeadline(e.target.value)}
+                      placeholder={subject || 'What the client sees at the top of the form'}
+                      className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    />
+                    {!themeHeadline.trim() && (
+                      <p className="text-[11px] text-gray-400 mt-1">Blank uses the Subject above as the headline.</p>
+                    )}
+                    {!themeShowHeadline && <p className="text-[11px] text-amber-600 mt-1">Hidden — won&apos;t appear on the public form.</p>}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Description (optional)</label>
+                    <textarea
+                      value={themeDescription}
+                      onChange={(e) => setThemeDescription(e.target.value)}
+                      placeholder="A short line under the headline."
+                      rows={2}
+                      className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    />
+                    {!themeDescription.trim() && (
+                      <p className="text-[11px] text-gray-400 mt-1">Blank uses the Message above.</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Button text</label>
+                    <input
+                      value={themeButtonText}
+                      onChange={(e) => setThemeButtonText(e.target.value)}
+                      placeholder="Submit requirements"
+                      className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <ColorInput label="Accent color" value={themePrimaryColor} onChange={setThemePrimaryColor} fallback={brandColor || DEFAULT_THEME.primaryColor} />
+                    <ColorInput label="Background" value={themeBackgroundColor} onChange={setThemeBackgroundColor} fallback={DEFAULT_THEME.backgroundColor} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 items-end">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1.5">Corner style</label>
+                      <select
+                        value={themeBorderRadius}
+                        onChange={(e) => setThemeBorderRadius(e.target.value as BorderRadius)}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                      >
+                        {BORDER_RADIUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1.5 pb-2">
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="checkbox" checked={themeShowLogo} onChange={(e) => setThemeShowLogo(e.target.checked)} />
+                        Show your logo
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="checkbox" checked={themeShowName} onChange={(e) => setThemeShowName(e.target.checked)} />
+                        Show your name
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            <div className="border-t border-gray-100" />
+
+            {/* 4. Optionally keep these questions for next time */}
             <section>
               <label className="flex items-center gap-2 text-xs font-medium text-gray-700">
                 <input type="checkbox" checked={saveAsTemplate} onChange={(e) => setSaveAsTemplate(e.target.checked)} />
                 <Save className="w-3.5 h-3.5 text-gray-400" />
-                Also save these questions as a reusable form
+                Also save these questions &amp; appearance as a reusable form
               </label>
               {saveAsTemplate && (
                 <input

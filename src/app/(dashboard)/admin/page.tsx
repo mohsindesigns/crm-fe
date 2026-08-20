@@ -15,6 +15,8 @@ import CompaniesTab from '@/components/admin/CompaniesTab';
 import PaymentMethodsTab from '@/components/admin/PaymentMethodsTab';
 import ActiveToggle from '@/components/ActiveToggle';
 import ShowInactiveToggle, { useShowInactive } from '@/components/ShowInactiveToggle';
+import ColorInput from '@/components/ColorInput';
+import { BORDER_RADIUS_OPTIONS, type BorderRadius } from '@/lib/leadFormTheme';
 import { useAuthStore } from '@/store/auth';
 import { cn, titleCase, uploadErrorMessage, inactiveRow } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -1807,6 +1809,86 @@ function ClientReqFieldsEditor({ fields, onChange }: { fields: ClientReqFieldDra
   );
 }
 
+interface ClientReqThemeDraft {
+  headline: string; description: string; buttonText: string;
+  primaryColor: string; backgroundColor: string;
+  showLogo: boolean; showName: boolean; showHeadline: boolean;
+  borderRadius: BorderRadius;
+}
+const CLIENT_REQ_BLANK_THEME: ClientReqThemeDraft = {
+  headline: '', description: '', buttonText: '', primaryColor: '', backgroundColor: '',
+  showLogo: true, showName: true, showHeadline: true, borderRadius: 'rounded',
+};
+
+/** Same Appearance builder as ClientRequestModal's (the compose screen) and
+ *  LeadFormModal's — a boilerplate's theme is just the starting point a send
+ *  pre-fills, so it needs the identical set of controls. */
+function ClientReqAppearanceEditor({ theme, onChange }: { theme: ClientReqThemeDraft; onChange: (next: ClientReqThemeDraft) => void }) {
+  const [expanded, setExpanded] = useState(Object.entries(theme).some(([k, v]) => (
+    k === 'primaryColor' || k === 'backgroundColor' || k === 'headline' || k === 'description' || k === 'buttonText'
+  ) && !!v));
+
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100"
+      >
+        Appearance
+        <span className="ml-auto text-gray-400 font-normal">{expanded ? 'Hide' : 'Customize'}</span>
+      </button>
+      {expanded && (
+        <div className="p-3.5 space-y-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Public headline</label>
+              <input value={theme.headline} onChange={(e) => onChange({ ...theme, headline: e.target.value })}
+                placeholder="Falls back to the send's subject" className={inp} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Button text</label>
+              <input value={theme.buttonText} onChange={(e) => onChange({ ...theme, buttonText: e.target.value })}
+                placeholder="Submit requirements" className={inp} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Description (optional)</label>
+            <textarea value={theme.description} onChange={(e) => onChange({ ...theme, description: e.target.value })}
+              placeholder="Falls back to the send's message" rows={2} className={inp} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <ColorInput label="Accent color" value={theme.primaryColor} onChange={(v) => onChange({ ...theme, primaryColor: v })} fallback="#0B1D5E" />
+            <ColorInput label="Background" value={theme.backgroundColor} onChange={(v) => onChange({ ...theme, backgroundColor: v })} fallback="#FFFFFF" />
+          </div>
+          <div className="grid grid-cols-2 gap-3 items-end">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Corner style</label>
+              <select value={theme.borderRadius} onChange={(e) => onChange({ ...theme, borderRadius: e.target.value as BorderRadius })} className={inp}>
+                {BORDER_RADIUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5 pb-2">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={theme.showLogo} onChange={(e) => onChange({ ...theme, showLogo: e.target.checked })} />
+                Show your logo
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={theme.showName} onChange={(e) => onChange({ ...theme, showName: e.target.checked })} />
+                Show your name
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={theme.showHeadline} onChange={(e) => onChange({ ...theme, showHeadline: e.target.checked })} />
+                Show headline
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ClientReqBoilerplateTab() {
   const qc = useQueryClient();
   const inactive = useShowInactive();
@@ -1815,7 +1897,11 @@ function ClientReqBoilerplateTab() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState('');
 
-  const blankForm = { name: '', description: '', serviceTypeKey: '', defaultSubject: '', defaultMessage: '', successMessage: '', fields: [{ ...CLIENT_REQ_BLANK_FIELD }] as ClientReqFieldDraft[] };
+  const blankForm = {
+    name: '', description: '', serviceTypeKey: '', defaultSubject: '', defaultMessage: '', successMessage: '',
+    fields: [{ ...CLIENT_REQ_BLANK_FIELD }] as ClientReqFieldDraft[],
+    theme: { ...CLIENT_REQ_BLANK_THEME },
+  };
   const [form, setForm] = useState(blankForm);
   const [editForm, setEditForm] = useState(blankForm);
 
@@ -1843,6 +1929,7 @@ function ClientReqBoilerplateTab() {
       defaultMessage: form.defaultMessage || null,
       successMessage: form.successMessage || null,
       fields: draftToFieldPayload(form.fields),
+      theme: form.theme,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['requirement-form-templates-admin'] });
@@ -1863,6 +1950,7 @@ function ClientReqBoilerplateTab() {
       defaultMessage: editForm.defaultMessage || null,
       successMessage: editForm.successMessage || null,
       fields: draftToFieldPayload(editForm.fields),
+      theme: editForm.theme,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['requirement-form-templates-admin'] });
@@ -1900,6 +1988,7 @@ function ClientReqBoilerplateTab() {
       defaultMessage: tmpl.defaultMessage || '',
       successMessage: tmpl.successMessage || '',
       fields: fieldsToDraft(tmpl.fields),
+      theme: { ...CLIENT_REQ_BLANK_THEME, ...(tmpl.theme || {}) },
     });
   }
 
@@ -1963,6 +2052,7 @@ function ClientReqBoilerplateTab() {
               <textarea value={form.defaultMessage} onChange={(e) => setForm({ ...form, defaultMessage: e.target.value })}
                 rows={3} className={inp} />
             </div>
+            <ClientReqAppearanceEditor theme={form.theme} onChange={(theme) => setForm({ ...form, theme })} />
             <div className="flex gap-2">
               <button onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !canCreate} className={btnPrimary}>
                 {createMutation.isPending ? 'Saving…' : 'Save'}
@@ -1998,6 +2088,7 @@ function ClientReqBoilerplateTab() {
                   </div>
                   <textarea value={editForm.defaultMessage} onChange={(e) => setEditForm({ ...editForm, defaultMessage: e.target.value })}
                     rows={3} placeholder="Default email message" className={inp} />
+                  <ClientReqAppearanceEditor theme={editForm.theme} onChange={(theme) => setEditForm({ ...editForm, theme })} />
                   <div className="flex items-center gap-2">
                     <button onClick={() => updateMutation.mutate(tmpl.id)} disabled={updateMutation.isPending || !canSave} className={btnPrimary}>
                       <Save className="w-3.5 h-3.5" />{updateMutation.isPending ? 'Saving…' : 'Save'}
