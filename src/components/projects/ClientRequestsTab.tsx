@@ -62,6 +62,7 @@ export default function ClientRequestsTab({
   brandName,
   brandLogoUrl,
   brandColor,
+  serviceTypeKey,
   canSend,
 }: {
   projectId: string;
@@ -69,6 +70,7 @@ export default function ClientRequestsTab({
   brandName: string;
   brandLogoUrl: string | null;
   brandColor: string;
+  serviceTypeKey?: string | null;
   canSend: boolean;
 }) {
   const qc = useQueryClient();
@@ -235,6 +237,7 @@ export default function ClientRequestsTab({
           brandName={brandName}
           brandLogoUrl={brandLogoUrl}
           brandColor={brandColor}
+          serviceTypeKey={serviceTypeKey}
           onClose={() => setComposing(false)}
         />
       )}

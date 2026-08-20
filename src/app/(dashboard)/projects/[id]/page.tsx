@@ -4392,6 +4392,7 @@ export default function ProjectDetailPage() {
               brandName={branding?.brandName || 'Your agency'}
               brandLogoUrl={branding?.logoUrl || null}
               brandColor={branding?.primaryColor || '#0B1D5E'}
+              serviceTypeKey={project.serviceTypeKey}
               canSend={canEmailClient}
             />
           )}

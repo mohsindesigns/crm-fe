@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Plus, Trash2, GripVertical, Mail, Save } from 'lucide-react';
 import { toast } from 'sonner';
@@ -51,6 +51,7 @@ interface Template {
   defaultSubject: string | null;
   defaultMessage: string | null;
   successMessage: string | null;
+  serviceTypeKey: string | null;
 }
 
 export default function ClientRequestModal({
@@ -59,6 +60,7 @@ export default function ClientRequestModal({
   brandName,
   brandLogoUrl,
   brandColor,
+  serviceTypeKey,
   onClose,
 }: {
   projectId: string;
@@ -66,6 +68,7 @@ export default function ClientRequestModal({
   brandName: string;
   brandLogoUrl: string | null;
   brandColor: string;
+  serviceTypeKey?: string | null;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -91,6 +94,17 @@ export default function ClientRequestModal({
     queryKey: ['client-request-recipients', projectId],
     queryFn: () => api.get(`/projects/${projectId}/client-requests/recipients`).then((r) => r.data),
   });
+
+  // Auto-select the project's service's default boilerplate the first time
+  // templates load, so the common case is "open modal, questions already
+  // there". Only fires once (templateId is still unset) — never overrides a
+  // choice the sender already made, e.g. by re-firing after a refetch.
+  useEffect(() => {
+    if (templateId || !serviceTypeKey || templates.length === 0) return;
+    const defaultTemplate = templates.find((t) => t.serviceTypeKey === serviceTypeKey);
+    if (defaultTemplate) applyTemplate(defaultTemplate.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templates, serviceTypeKey]);
 
   function applyTemplate(id: string) {
     setTemplateId(id);
@@ -293,7 +307,7 @@ export default function ClientRequestModal({
                     {contactsLoading ? 'Loading contacts…' : contacts.length ? 'Someone else…' : 'No client contacts with an email'}
                   </option>
                   {contacts.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name} · {c.email}{c.role ? ` (${c.role})` : ''}</option>
+                    <option key={c.id} value={c.id}>{c.name}{c.role ? ` (${c.role})` : ''}</option>
                   ))}
                 </select>
                 {!contactId && (
@@ -314,6 +328,7 @@ export default function ClientRequestModal({
                   placeholder="someone@example.com, another@example.com"
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
                 />
+                <p className="text-[11px] text-gray-400 mt-1">Your team's own contact address is CC'd on every send automatically — no need to add it here.</p>
               </div>
 
               <div>
@@ -390,6 +405,7 @@ export default function ClientRequestModal({
                 theme={previewTheme}
                 branding={{ brandName, logoUrl: brandLogoUrl }}
                 fields={payloadFields}
+                enablePhoneCountryCode
               />
             </div>
           </div>

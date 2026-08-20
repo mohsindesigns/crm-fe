@@ -127,25 +127,76 @@ export default function ClientRequestPage() {
           Please complete this by <strong>{dueLabel}</strong>.
         </div>
       )}
-      <LeadFormRenderer
-        mode="live"
-        theme={schema.theme}
-        branding={schema.branding}
-        fields={schema.fields}
-        answers={answers}
-        onAnswerChange={(key, value) => setAnswers((a) => ({ ...a, [key]: value }))}
-        onSubmit={handleSubmit}
-        submitting={submitting}
-        submitError={submitError}
-        successMessage={successMessage}
-        honeypotValue={honeypot}
-        onHoneypotChange={setHoneypot}
-        // Hide the captcha row once we're showing a success/already-answered
-        // state — there's no form left to protect.
-        captchaQuestion={successMessage ? undefined : captcha?.question}
-        captchaAnswer={captchaAnswer}
-        onCaptchaAnswerChange={setCaptchaAnswer}
-      />
+      {successMessage ? (
+        <ThankYouScreen
+          message={successMessage}
+          brandName={schema.branding.brandName}
+          logoUrl={schema.branding.logoUrl}
+          primaryColor={schema.theme.primaryColor}
+        />
+      ) : (
+        <LeadFormRenderer
+          mode="live"
+          theme={schema.theme}
+          branding={schema.branding}
+          fields={schema.fields}
+          answers={answers}
+          onAnswerChange={(key, value) => setAnswers((a) => ({ ...a, [key]: value }))}
+          onSubmit={handleSubmit}
+          submitting={submitting}
+          submitError={submitError}
+          honeypotValue={honeypot}
+          onHoneypotChange={setHoneypot}
+          captchaQuestion={captcha?.question}
+          captchaAnswer={captchaAnswer}
+          onCaptchaAnswerChange={setCaptchaAnswer}
+          enablePhoneCountryCode
+        />
+      )}
+    </div>
+  );
+}
+
+// Shown once the form is submitted (or was already answered on a repeat
+// visit). Counts down and attempts to close the tab — this only works when
+// the tab was opened via script (window.open), which most mail-client "open
+// link" actions don't do, so browsers commonly ignore the close and the
+// countdown just settles on "you can close this tab now" instead.
+function ThankYouScreen({
+  message, brandName, logoUrl, primaryColor,
+}: { message: string; brandName: string; logoUrl: string | null; primaryColor: string }) {
+  const [secondsLeft, setSecondsLeft] = useState(5);
+
+  useEffect(() => {
+    if (secondsLeft <= 0) {
+      window.close();
+      return;
+    }
+    const t = setTimeout(() => setSecondsLeft((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [secondsLeft]);
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'system-ui, -apple-system, sans-serif', background: '#F9FAFB' }}>
+      <div style={{ maxWidth: 440, width: '100%', textAlign: 'center', background: '#fff', border: '1px solid #E5E7EB', borderRadius: 16, padding: '44px 32px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+        {logoUrl ? (
+          <img src={logoUrl} alt={brandName} style={{ height: 32, margin: '0 auto 22px', display: 'block', objectFit: 'contain' }} />
+        ) : (
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: primaryColor, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 17, margin: '0 auto 22px' }}>
+            {(brandName || '?').charAt(0)}
+          </div>
+        )}
+        <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px' }}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M20 6L9 17L4 12" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <h1 style={{ fontSize: 19, fontWeight: 700, color: '#111827', margin: '0 0 8px' }}>Thank you!</h1>
+        <p style={{ fontSize: 14, color: '#4B5563', lineHeight: 1.6, margin: '0 0 24px', whiteSpace: 'pre-wrap' }}>{message}</p>
+        <p style={{ fontSize: 12, color: '#9CA3AF' }}>
+          {secondsLeft > 0 ? `This tab will close automatically in ${secondsLeft}s…` : 'You can close this tab now.'}
+        </p>
+      </div>
     </div>
   );
 }

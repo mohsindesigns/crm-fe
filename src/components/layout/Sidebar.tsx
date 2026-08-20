@@ -8,6 +8,7 @@ import {
   Briefcase, ClipboardList, BarChart2, UserCog, Receipt, DollarSign, RefreshCw,
   Palette, Workflow, Shield, Package, X, FileSignature, ScrollText, Clock, MessagesSquare,
   Building2, CreditCard, Target, ChevronLeft, ChevronRight, PieChart, History,
+  ClipboardCheck,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
@@ -70,6 +71,7 @@ const ADMIN_SUB_ITEMS = [
   { label: 'Roles',      tab: 'roles',      icon: Shield   },
   { label: 'Packages',   tab: 'packages',   icon: Package  },
   { label: 'Document Templates', tab: 'templates', icon: ScrollText },
+  { label: 'Client Req Boilerplate', tab: 'client-req-forms', icon: ClipboardCheck },
 ];
 
 export default function Sidebar() {
@@ -83,6 +85,25 @@ export default function Sidebar() {
   // Gold accent contrasts on the dark navy sidebar; primary navy blends into #0F172A.
   const activeIconColor = BRAND.accent;
   const activeBg = `${primaryColor}55`;
+
+  // Collapsed-rail hover tooltip. Rendered as a `fixed` sibling of <aside>
+  // further down, not inline next to each icon — the aside scrolls
+  // (overflow-y-auto), and that CSS overflow-pairing rule computes overflow-x
+  // to `auto` too (see the edge-toggle-button comment below), which would
+  // clip any absolutely-positioned tooltip trying to poke out past the rail's
+  // right edge. Tracking {label, top} here and rendering one `fixed` element
+  // outside the aside sidesteps that the same way the edge toggle does.
+  const [railTooltip, setRailTooltip] = useState<{ label: string; top: number } | null>(null);
+  function showRailTooltip(label: string) {
+    return (e: React.MouseEvent<HTMLElement>) => {
+      if (!collapsed) return;
+      const r = e.currentTarget.getBoundingClientRect();
+      setRailTooltip({ label, top: r.top + r.height / 2 });
+    };
+  }
+  function hideRailTooltip() {
+    setRailTooltip(null);
+  }
 
   const isAdminPath = pathname.startsWith('/admin');
   const [adminOpen, setAdminOpen] = useState(isAdminPath);
@@ -302,7 +323,9 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              title={item.label}
+              title={collapsed ? undefined : item.label}
+              onMouseEnter={showRailTooltip(item.label)}
+              onMouseLeave={hideRailTooltip}
               className={cn(
                 'flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all',
                 collapsed && 'md:justify-center md:px-0',
@@ -363,8 +386,10 @@ export default function Sidebar() {
                 the panel instead — same single-click-to-navigate pattern as
                 every other rail icon. */}
             <button
-              title="Admin Panel"
+              title={collapsed ? undefined : 'Admin Panel'}
               onClick={() => (collapsed ? router.push('/admin?tab=branding') : setAdminOpen((v) => !v))}
+              onMouseEnter={showRailTooltip('Admin Panel')}
+              onMouseLeave={hideRailTooltip}
               className={cn(
                 'flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all w-full',
                 collapsed && 'md:justify-center md:px-0',
@@ -435,6 +460,17 @@ export default function Sidebar() {
     >
       {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
     </button>
+
+    {/* Collapsed-rail hover tooltip — see railTooltip state comment above for
+        why this can't just be an absolutely-positioned span next to each icon. */}
+    {collapsed && railTooltip && (
+      <span
+        className="hidden md:block fixed left-[86px] z-[60] -translate-y-1/2 whitespace-nowrap rounded-lg bg-[#111827] px-2.5 py-1.5 text-xs font-medium text-white shadow-lg pointer-events-none"
+        style={{ top: railTooltip.top }}
+      >
+        {railTooltip.label}
+      </span>
+    )}
     </>
   );
 }

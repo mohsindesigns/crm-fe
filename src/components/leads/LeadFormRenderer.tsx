@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import type { LeadFormTheme } from '@/lib/leadFormTheme';
 import { RADIUS_PX } from '@/lib/leadFormTheme';
+import { PHONE_COUNTRIES, digitRange } from '@/lib/phoneCountries';
 
 export type FieldType = 'text' | 'email' | 'phone' | 'textarea' | 'select' | 'checkbox';
 export interface FormField {
@@ -35,6 +37,74 @@ interface LeadFormRendererProps {
   captchaQuestion?: string;
   captchaAnswer?: string;
   onCaptchaAnswerChange?: (v: string) => void;
+  /** Renders phone fields as a country-code select + digit-limited number input
+   *  instead of one free-text box, storing "+<dial> <digits>" as the answer.
+   *  Off by default — only the client-requirements forms opt in (see
+   *  crm-fe/src/lib/phoneCountries.ts); lead-capture forms keep the plain input. */
+  enablePhoneCountryCode?: boolean;
+}
+
+/** Splits a stored "+<dial> <digits>" value back into a country + digit string
+ *  so the field can be re-rendered from an existing answer. Falls back to the
+ *  first country in the list when nothing matches. */
+function parsePhoneValue(value: string): { iso: string; digits: string } {
+  const trimmed = (value || '').trim();
+  const fallback = { iso: PHONE_COUNTRIES[0].iso, digits: trimmed.replace(/[^\d]/g, '') };
+  if (!trimmed.startsWith('+')) return fallback;
+  const digitsOnly = trimmed.replace(/[^\d]/g, '');
+  const match = [...PHONE_COUNTRIES].sort((a, b) => b.dial.length - a.dial.length)
+    .find((c) => digitsOnly.startsWith(c.dial));
+  if (!match) return fallback;
+  return { iso: match.iso, digits: digitsOnly.slice(match.dial.length) };
+}
+
+function PhoneFieldInput({
+  value, onChange, disabled, required, inputStyle,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  required?: boolean;
+  inputStyle: React.CSSProperties;
+}) {
+  const initial = parsePhoneValue(value);
+  const [iso, setIso] = useState(initial.iso);
+  const [digits, setDigits] = useState(initial.digits);
+  const country = PHONE_COUNTRIES.find((c) => c.iso === iso) || PHONE_COUNTRIES[0];
+  const [minDigits, maxDigits] = digitRange(country);
+
+  function emit(nextIso: string, nextDigits: string) {
+    const c = PHONE_COUNTRIES.find((x) => x.iso === nextIso) || PHONE_COUNTRIES[0];
+    onChange(nextDigits ? `+${c.dial} ${nextDigits}` : '');
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      <select
+        value={iso}
+        disabled={disabled}
+        onChange={(e) => { setIso(e.target.value); emit(e.target.value, digits); }}
+        style={{ ...inputStyle, width: 100, flexShrink: 0, paddingLeft: 8, paddingRight: 4 }}
+      >
+        {PHONE_COUNTRIES.map((c) => <option key={c.iso} value={c.iso}>+{c.dial} {c.iso}</option>)}
+      </select>
+      <input
+        type="tel"
+        inputMode="numeric"
+        required={required}
+        disabled={disabled}
+        maxLength={maxDigits}
+        placeholder={minDigits === maxDigits ? `${minDigits} digits` : `${minDigits}-${maxDigits} digits`}
+        value={digits}
+        onChange={(e) => {
+          const clean = e.target.value.replace(/[^\d]/g, '').slice(0, maxDigits);
+          setDigits(clean);
+          emit(iso, clean);
+        }}
+        style={{ ...inputStyle, flex: 1 }}
+      />
+    </div>
+  );
 }
 
 /** Renders a lead form exactly as it appears live — used both for the actual
@@ -58,6 +128,7 @@ export default function LeadFormRenderer({
   captchaQuestion,
   captchaAnswer = '',
   onCaptchaAnswerChange,
+  enablePhoneCountryCode = false,
 }: LeadFormRendererProps) {
   const radius = RADIUS_PX[theme.borderRadius];
   const isPreview = mode === 'preview';
@@ -152,6 +223,14 @@ export default function LeadFormRenderer({
                     />
                     Yes
                   </label>
+                ) : field.type === 'phone' && enablePhoneCountryCode ? (
+                  <PhoneFieldInput
+                    value={answers[field.key] || ''}
+                    onChange={(v) => onAnswerChange?.(field.key, v)}
+                    disabled={isPreview}
+                    required={field.required}
+                    inputStyle={inputStyle}
+                  />
                 ) : (
                   <input
                     type={field.type === 'email' ? 'email' : field.type === 'phone' ? 'tel' : 'text'}
