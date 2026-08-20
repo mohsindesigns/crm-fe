@@ -93,7 +93,9 @@ export default function LeadFormRenderer({
           </div>
         )}
 
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 6px' }}>{theme.headline}</h1>
+        {theme.showHeadline && (
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#111827', margin: '0 0 6px' }}>{theme.headline}</h1>
+        )}
         {theme.description && (
           <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 18px', lineHeight: 1.5 }}>{theme.description}</p>
         )}

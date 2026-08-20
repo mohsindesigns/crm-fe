@@ -47,6 +47,17 @@ const NAV_ITEMS = [
   { label: 'Activity Logs', href: '/activity-logs' as const, icon: History },
 ].map((item) => ({ ...item, permission: requiredPermissionFor(item.href.split('?')[0]) }));
 
+// Mirrors the view switcher on the Tasks page itself (src/app/(dashboard)/tasks/page.tsx)
+// — 'all' is filtered out below for anyone without projects.manage, same gate
+// that page uses for its own "All Tasks" pill.
+const TASK_SUB_ITEMS = [
+  { label: 'My Tasks',       view: 'mine' },
+  { label: 'Assigned by me', view: 'assigned_by_me' },
+  { label: 'All Tasks',      view: 'all', permission: 'projects.manage' },
+  { label: 'Approvals',      view: 'approvals' },
+  { label: 'Completed',      view: 'completed' },
+];
+
 const ADMIN_SUB_ITEMS = [
   { label: 'Branding',   tab: 'branding',   icon: Palette  },
   { label: 'Companies',  tab: 'companies',  icon: Building2 },
@@ -73,10 +84,16 @@ export default function Sidebar() {
   const isAdminPath = pathname.startsWith('/admin');
   const [adminOpen, setAdminOpen] = useState(isAdminPath);
 
-  // Auto-expand when navigating to admin
+  const isTasksPath = pathname.startsWith('/tasks');
+  const [tasksOpen, setTasksOpen] = useState(isTasksPath);
+
+  // Auto-expand when navigating to admin / tasks
   useEffect(() => {
     if (isAdminPath) setAdminOpen(true);
   }, [isAdminPath]);
+  useEffect(() => {
+    if (isTasksPath) setTasksOpen(true);
+  }, [isTasksPath]);
 
   // Close drawer on navigation
   useEffect(() => {
@@ -88,6 +105,12 @@ export default function Sidebar() {
   const visibleNav = NAV_ITEMS.filter((i) => (!i.permission || hasPermission(i.permission))
     && (!('attendanceOnly' in i && i.attendanceOnly) || canSeeAttendance));
   const showAdmin  = hasPermission('admin.access');
+
+  // Same permission the Tasks page itself gates "All Tasks" on, and the same
+  // rule it uses to pick which view a bare /tasks (no ?view=) lands on.
+  const canSeeAllTasksNav = hasPermission('projects.manage');
+  const visibleTaskSubItems = TASK_SUB_ITEMS.filter((i) => !i.permission || hasPermission(i.permission));
+  const activeTaskView = searchParams.get('view') || (canSeeAllTasksNav ? 'all' : 'mine');
 
   const canSeeMessages = hasPermission('projects.read');
 
@@ -219,6 +242,59 @@ export default function Sidebar() {
             && (hrefTab || !searchParams.get('tab'));
           const showDot = collapsed
             && ((item.href === '/messages' && unreadMessages > 0) || (item.href === '/notifications' && unreadNotifications > 0));
+
+          // Tasks gets an expandable submenu (My Tasks / Assigned by me / All
+          // Tasks / Approvals / Completed) instead of a plain link, same pattern
+          // as Admin Panel below. Collapsed rail has no room for a submenu, so it
+          // falls back to a direct link like every other rail icon.
+          if (item.href === '/tasks' && !collapsed) {
+            return (
+              <div key={item.href}>
+                <button
+                  type="button"
+                  title={item.label}
+                  onClick={() => setTasksOpen((v) => !v)}
+                  className={cn(
+                    'flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all w-full',
+                    isTasksPath
+                      ? 'text-white shadow-sm'
+                      : 'text-white/75 hover:text-white hover:bg-white/6',
+                  )}
+                  style={isTasksPath ? { backgroundColor: activeBg, color: '#fff' } : {}}
+                >
+                  <item.icon className="w-4 h-4 shrink-0" style={isTasksPath ? { color: activeIconColor } : {}} />
+                  <span className="flex-1 text-left truncate">{item.label}</span>
+                  <ChevronDown
+                    className={cn('w-3.5 h-3.5 transition-transform duration-200', tasksOpen && 'rotate-180')}
+                    style={isTasksPath ? { color: activeIconColor } : { color: 'rgba(255,255,255,0.4)' }}
+                  />
+                </button>
+                {tasksOpen && (
+                  <div className="ml-3 pl-3 border-l border-white/[0.07] space-y-0.5 mt-0.5">
+                    {visibleTaskSubItems.map((sub) => {
+                      const subActive = isTasksPath && activeTaskView === sub.view;
+                      return (
+                        <Link
+                          key={sub.view}
+                          href={`/tasks?view=${sub.view}`}
+                          className={cn(
+                            'flex items-center px-3 py-2 rounded-lg text-xs font-medium transition-all',
+                            subActive
+                              ? 'text-white'
+                              : 'text-white/60 hover:text-white hover:bg-white/6',
+                          )}
+                          style={subActive ? { backgroundColor: `${primaryColor}40`, color: '#fff' } : {}}
+                        >
+                          {sub.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
           return (
             <Link
               key={item.href}

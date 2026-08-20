@@ -84,6 +84,7 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
   const legacyShowBranding = (savedTheme as any).showBranding;
   const [showLogo, setShowLogo] = useState(savedTheme.showLogo !== undefined ? savedTheme.showLogo : legacyShowBranding !== undefined ? legacyShowBranding : true);
   const [showName, setShowName] = useState(savedTheme.showName !== undefined ? savedTheme.showName : legacyShowBranding !== undefined ? legacyShowBranding : true);
+  const [showHeadline, setShowHeadline] = useState(savedTheme.showHeadline !== undefined ? savedTheme.showHeadline : true);
   const [borderRadius, setBorderRadius] = useState<BorderRadius>(savedTheme.borderRadius || 'rounded');
 
   function updateField(i: number, patch: Partial<FieldDraft>) {
@@ -112,7 +113,7 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
       }));
   }
 
-  const themePayload = { headline, description, buttonText, primaryColor, backgroundColor, showLogo, showName, borderRadius };
+  const themePayload = { headline, description, buttonText, primaryColor, backgroundColor, showLogo, showName, showHeadline, borderRadius };
 
   const save = useMutation({
     mutationFn: () => {
@@ -145,6 +146,7 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
     backgroundColor: backgroundColor || DEFAULT_THEME.backgroundColor,
     showLogo,
     showName,
+    showHeadline,
     borderRadius,
   };
   const previewBranding = { brandName: orgBranding.brandName, logoUrl: orgBranding.logoUrl };
@@ -233,10 +235,24 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
               </button>
               {showAppearance && (
                 <div className="p-3.5 space-y-3.5">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Public headline</label>
+                  <div className={showHeadline ? undefined : 'opacity-50'}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-medium text-gray-700">Public headline</label>
+                      <button
+                        type="button"
+                        onClick={() => setShowHeadline((v) => !v)}
+                        title={showHeadline ? 'Hide the headline on the public form' : 'Hidden from the public form — click to show'}
+                        className={`p-1 rounded shrink-0 ${showHeadline ? 'text-gray-300 hover:text-gray-700 hover:bg-gray-100' : 'text-amber-500 hover:text-amber-600 hover:bg-amber-50'}`}
+                      >
+                        {showHeadline ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
                     <input value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder={name || 'What visitors see at the top of the form'}
                       className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
+                    {!headline.trim() && (
+                      <p className="text-[11px] text-gray-400 mt-1">Blank uses your Form name (&quot;{name.trim() || 'Untitled form'}&quot;) as the headline.</p>
+                    )}
+                    {!showHeadline && <p className="text-[11px] text-amber-600 mt-1">Hidden — won&apos;t appear on the public form.</p>}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1.5">Description (optional)</label>

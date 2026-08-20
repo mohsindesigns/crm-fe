@@ -18,6 +18,7 @@ import { invalidateMany, afterProjectChange, afterTaskChange } from '@/lib/query
 import { usersForRoleSlot } from '@/lib/projectTeam';
 import { useState, useRef, useMemo, useEffect, Fragment } from 'react';
 import { useAuthStore } from '@/store/auth';
+import ClientRequestsTab from '@/components/projects/ClientRequestsTab';
 import { useSidebarStore } from '@/store/sidebar';
 import ProjectStatusPanel from '@/components/projects/ProjectStatusPanel';
 
@@ -168,8 +169,8 @@ function titleFromFileText(text: string) {
   return null;
 }
 
-type Tab = 'overview' | 'keywords' | 'backlinks' | 'content' | 'blogs' | 'reporting' | 'comments';
-const VALID_TABS: Tab[] = ['overview', 'keywords', 'backlinks', 'content', 'blogs', 'reporting', 'comments'];
+type Tab = 'overview' | 'keywords' | 'backlinks' | 'content' | 'blogs' | 'reporting' | 'comments' | 'client-requests';
+const VALID_TABS: Tab[] = ['overview', 'keywords', 'backlinks', 'content', 'blogs', 'reporting', 'comments', 'client-requests'];
 const SEO_WORKFLOW_TABS: Tab[] = ['keywords', 'backlinks', 'content', 'blogs', 'reporting'];
 const GMB_WORKFLOW_TABS: Tab[] = ['keywords', 'reporting'];
 const WORKFLOW_TAB_LABELS: Record<string, string> = {
@@ -186,6 +187,7 @@ export default function ProjectDetailPage() {
   const searchParams = useSearchParams();
   const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
+  const branding = useAuthStore((s) => s.branding);
   const [reportLetterheadFields, setReportLetterheadFields] = useState<string[]>(DEFAULT_REPORT_LETTERHEAD_FIELDS);
   function toggleReportLetterheadField(key: string) {
     setReportLetterheadFields((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
@@ -1357,6 +1359,9 @@ export default function ProjectDetailPage() {
 
   const isAdminUser = user?.role?.key === 'super_admin' || user?.role?.key === 'admin';
   const canManageTeam = isAdminUser || !!user?.role?.permissions?.['projects.manage'];
+  // Mirrors the backend gate on POST /projects/:id/client-requests
+  // (rbac('projects.act')) — hiding the button alone wouldn't protect the route.
+  const canEmailClient = isAdminUser || !!user?.role?.permissions?.['projects.act'];
   // SEO sheet import / row edits — any role with projects.act (SEO, link builder, employee, etc.)
   const canActOnProject = canManageTeam || !!user?.role?.permissions?.['projects.act'];
   const stages = timeline?.stages || [];
@@ -1424,10 +1429,11 @@ export default function ProjectDetailPage() {
   const visibleWorkflowTabs = specialistTabs
     ? projectWorkflowTabs.filter((t) => specialistTabs.includes(t))
     : projectWorkflowTabs;
-  const allowedTabs: Tab[] = ['overview', 'comments', ...visibleWorkflowTabs];
+  const allowedTabs: Tab[] = ['overview', 'comments', 'client-requests', ...visibleWorkflowTabs];
   const TABS: { key: Tab; label: string }[] = [
     { key: 'overview', label: 'Overview' },
     ...visibleWorkflowTabs.map((key) => ({ key, label: WORKFLOW_TAB_LABELS[key] })),
+    { key: 'client-requests', label: 'Client Requirements' },
     { key: 'comments', label: 'Comments' },
   ];
 
@@ -4379,6 +4385,17 @@ export default function ProjectDetailPage() {
           })()}
 
           {/* Comments tab */}
+          {tab === 'client-requests' && (
+            <ClientRequestsTab
+              projectId={id}
+              projectName={project.name}
+              brandName={branding?.brandName || 'Your agency'}
+              brandLogoUrl={branding?.logoUrl || null}
+              brandColor={branding?.primaryColor || '#0B1D5E'}
+              canSend={canEmailClient}
+            />
+          )}
+
           {tab === 'comments' && (
             <div className="space-y-4">
               <div className="bg-white rounded-xl border border-gray-200">

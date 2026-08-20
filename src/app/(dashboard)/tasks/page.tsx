@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckSquare, Search, AlertTriangle, Plus, X, Bell, MessageSquareText, Upload, Paperclip, Trash2, Calendar, Flag, CircleDot } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
@@ -82,8 +82,12 @@ function taskTimestamps(task: any) {
   return lines;
 }
 
+const TASK_VIEWS = ['mine', 'assigned_by_me', 'all', 'approvals', 'completed'] as const;
+type TaskView = typeof TASK_VIEWS[number];
+
 export default function TasksPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const qc = useQueryClient();
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const currentUser = useAuthStore((s) => s.user);
@@ -117,44 +121,77 @@ export default function TasksPage() {
     () => () => newTaskPreviews.forEach((url) => url && URL.revokeObjectURL(url)),
     [newTaskPreviews],
   );
-  const [view, setView] = useState<'mine' | 'assigned_by_me' | 'all'>('mine');
+  // The sidebar's Tasks submenu links to /tasks?view=<key> — a real, bookmarkable
+  // subpage per the sidebar's expandable-submenu pattern (same as Admin Panel's
+  // ?tab=). The URL is the single source of truth (no local state to drift out
+  // of sync with it) — "all" only counts as valid when the viewer can actually
+  // use it, so a stale/typed link doesn't strand a non-admin on an empty query.
+  function isValidView(v: string | null): v is TaskView {
+    return !!v && (TASK_VIEWS as readonly string[]).includes(v) && !(v === 'all' && !canSeeAllTasks);
+  }
+  const viewParam = searchParams.get('view');
+  // Admins land on the org-wide view by default — "My Tasks" as a first screen
+  // reads as a filtered/empty inbox for someone whose job is to see everything.
+  const defaultView: TaskView = canSeeAllTasks ? 'all' : 'mine';
+  const view: TaskView = isValidView(viewParam) ? viewParam : defaultView;
+
+  function setView(v: TaskView) {
+    router.replace(`/tasks?view=${v}`);
+  }
   // Clicking a row used to jump to the whole project page, which left custom tasks
   // with nowhere to attach a deliverable or mark themselves complete. Open the same
   // task modal the project board uses instead.
   const [openTask, setOpenTask] = useState<{ projectId: string; taskId: string } | null>(null);
 
+  // Approvals and Completed are org-wide for admins (same permission as All
+  // Tasks) but stay a personal tracking view for everyone else.
+  const useAllEndpoint = view === 'all' || ((view === 'approvals' || view === 'completed') && canSeeAllTasks);
+
   const filterParams = useMemo(() => {
     const params: Record<string, string> = {};
-    if (statusFilter) params.status = statusFilter;
+    if (view === 'approvals') {
+      // Forced regardless of the status chips (hidden for this view anyway) —
+      // an approvals queue that could be filtered to "done" makes no sense.
+      params.requiresTechnicalAudit = 'true';
+      params.auditStatus = 'pending';
+    } else if (view === 'completed') {
+      params.status = 'completed';
+    } else if (statusFilter) {
+      params.status = statusFilter;
+    }
     if (projectFilter) params.projectId = projectFilter;
     if (typeFilter) params.type = typeFilter;
     if (dueFilter) params.due = dueFilter;
     if (sort) params.sort = sort;
     if (search.trim()) params.search = search.trim();
     // "Assignee" narrows who the task sits on — meaningless on My Tasks (that's
-    // always me). "Assigned by" narrows who created it — meaningless on Assigned
-    // by me (that's always me). Each view only sends the filter it can use.
-    if (view !== 'mine' && assigneeFilter) params.assigneeId = assigneeFilter;
+    // always me) and on Approvals (the pending task has no assignee yet).
+    // "Assigned by" narrows who created it — meaningless on Assigned by me
+    // (that's always me). Each view only sends the filter it can use.
+    if (view !== 'mine' && view !== 'approvals' && assigneeFilter) params.assigneeId = assigneeFilter;
     if (view !== 'assigned_by_me' && createdByFilter) params.createdBy = createdByFilter;
     if (view === 'assigned_by_me') params.scope = 'assigned_by_me';
+    // Only reached for employees — canSeeAllTasks admins hit /tasks instead,
+    // which has no notion of scope.
+    if (view === 'approvals' && !useAllEndpoint) params.scope = 'approvals';
     return params;
-  }, [statusFilter, projectFilter, typeFilter, dueFilter, sort, search, assigneeFilter, createdByFilter, view]);
+  }, [statusFilter, projectFilter, typeFilter, dueFilter, sort, search, assigneeFilter, createdByFilter, view, useAllEndpoint]);
 
   const { data: myTasks = [], isLoading: loadingMine } = useQuery({
     queryKey: ['my-tasks', view, filterParams],
     queryFn: () => api.get('/tasks/mine', { params: filterParams }).then((r) => r.data),
-    enabled: view === 'mine' || view === 'assigned_by_me',
+    enabled: !useAllEndpoint,
   });
 
   const { data: allTasks = [], isLoading: loadingAll } = useQuery({
-    queryKey: ['all-tasks', filterParams],
+    queryKey: ['all-tasks', view, filterParams],
     queryFn: () => api.get('/tasks', { params: filterParams }).then((r) => r.data),
-    enabled: view === 'all' && canSeeAllTasks,
+    enabled: useAllEndpoint && canSeeAllTasks,
   });
 
-  const tasks = view === 'all' ? allTasks : myTasks;
-  const isLoading = view === 'all' ? loadingAll : loadingMine;
-  const showAssigneeCol = view === 'all' || view === 'assigned_by_me';
+  const tasks = useAllEndpoint ? allTasks : myTasks;
+  const isLoading = useAllEndpoint ? loadingAll : loadingMine;
+  const showAssigneeCol = view !== 'mine';
 
   const { data: projectsResp } = useQuery({
     queryKey: ['tasks-page-projects'],
@@ -276,6 +313,8 @@ export default function TasksPage() {
             { key: 'mine' as const, label: 'My Tasks' },
             { key: 'assigned_by_me' as const, label: 'Assigned by me' },
             ...(canSeeAllTasks ? [{ key: 'all' as const, label: 'All Tasks' }] : []),
+            { key: 'approvals' as const, label: 'Approvals' },
+            { key: 'completed' as const, label: 'Completed' },
           ]).map((v) => (
             <button
               key={v.key}
@@ -313,22 +352,27 @@ export default function TasksPage() {
             </button>
           </div>
 
-          <div className="-mx-4 sm:mx-0 px-4 sm:px-0 flex gap-1 overflow-x-auto scrollbar-hide sm:flex-wrap">
-            {STATUS_FILTERS.map((opt) => (
-              <button
-                key={opt.value || 'open'}
-                onClick={() => setStatusFilter(opt.value)}
-                className={cn(
-                  'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors',
-                  statusFilter === opt.value
-                    ? 'bg-brand-700 text-white'
-                    : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          {/* Approvals is always "pending" and Completed is always "done or
+              approved" — a status chip row that can't actually change anything
+              would just be confusing next to the tab that already says so. */}
+          {view !== 'approvals' && view !== 'completed' && (
+            <div className="-mx-4 sm:mx-0 px-4 sm:px-0 flex gap-1 overflow-x-auto scrollbar-hide sm:flex-wrap">
+              {STATUS_FILTERS.map((opt) => (
+                <button
+                  key={opt.value || 'open'}
+                  onClick={() => setStatusFilter(opt.value)}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors',
+                    statusFilter === opt.value
+                      ? 'bg-brand-700 text-white'
+                      : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-2">
             <select
@@ -342,7 +386,7 @@ export default function TasksPage() {
               ))}
             </select>
 
-            {view !== 'mine' && (
+            {view !== 'mine' && view !== 'approvals' && (
               <select
                 value={assigneeFilter}
                 onChange={(e) => setAssigneeFilter(e.target.value)}
@@ -644,14 +688,26 @@ export default function TasksPage() {
           <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-semibold text-gray-900">
-                {view === 'all' ? 'All tasks' : view === 'assigned_by_me' ? 'Assigned by me' : 'My tasks'}
+                {view === 'all' ? 'All tasks'
+                  : view === 'assigned_by_me' ? 'Assigned by me'
+                    : view === 'approvals' ? 'Approvals'
+                      : view === 'completed' ? 'Completed'
+                        : 'My tasks'}
               </h3>
               <p className="text-xs text-gray-400 mt-0.5">
                 {view === 'all'
                   ? 'Every task across projects.'
                   : view === 'assigned_by_me'
                     ? 'Tasks you created and assigned — track status, remarks, and who is working on them.'
-                    : 'Tasks assigned to you or waiting for your review.'}
+                    : view === 'approvals'
+                      ? (useAllEndpoint
+                        ? 'Tasks flagged for technical audit, awaiting your approval before they can be assigned.'
+                        : 'Tasks you flagged for technical audit, or that are waiting on you as the pending assignee — an administrator still needs to approve them.')
+                      : view === 'completed'
+                        ? (useAllEndpoint
+                          ? 'Every completed or approved task across the org.'
+                          : 'Tasks assigned to you or under your review that are done or approved.')
+                        : 'Tasks assigned to you or waiting for your review.'}
               </p>
             </div>
             <span className="text-xs text-gray-400">{tasks.length} task{tasks.length !== 1 ? 's' : ''}</span>

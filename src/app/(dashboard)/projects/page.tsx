@@ -43,7 +43,7 @@ function SkeletonRows() {
               <div className="h-4 bg-gray-100 rounded w-40" />
             </div>
           </td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-28" /></td>
+          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
           <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
           <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16" /></td>
           <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-24" /></td>
@@ -320,9 +320,9 @@ export default function ProjectsPage() {
           <table className="w-full min-w-[900px]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/50">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Service</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Package</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Type</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Stage</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Strategist</th>
@@ -362,12 +362,12 @@ export default function ProjectsPage() {
                               : <FolderKanban className="w-4 h-4 text-brand-700" />}
                           </div>
                           <span className={cn('text-sm font-medium transition-colors', isNavigating ? 'text-brand-700' : 'text-gray-900')}>
-                            {project.name}
+                            {project.client?.name || '—'}
                           </span>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{project.client?.name || '—'}</td>
                       <td className="px-5 py-3.5 text-sm text-gray-600 capitalize">{project.serviceTypeKey}</td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">{project.package?.name || '—'}</td>
                       <td className="px-5 py-3.5">
                         <span className={cn('px-2 py-0.5 text-xs font-medium rounded-full', project.isRecurring ? 'bg-violet-100 text-violet-700' : 'bg-gray-100 text-gray-500')}>
                           {project.isRecurring ? 'Recurring' : 'One-time'}

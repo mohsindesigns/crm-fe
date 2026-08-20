@@ -13,6 +13,7 @@ export interface LeadFormTheme {
   backgroundColor: string;
   showLogo: boolean;
   showName: boolean;
+  showHeadline: boolean;
   borderRadius: BorderRadius;
 }
 
@@ -36,5 +37,6 @@ export const DEFAULT_THEME: LeadFormTheme = {
   backgroundColor: '#FFFFFF',
   showLogo: true,
   showName: true,
+  showHeadline: true,
   borderRadius: 'rounded',
 };
