@@ -66,6 +66,19 @@ const ICONS: Record<string, LucideIcon> = {
 const FALLBACK_ICON = Sparkles;
 
 /**
+ * The login hero's blue — the single value everything on the dark panel is
+ * derived from: the gradient, both glows, and the accent on the icons, the
+ * rule and the "under one roof." line. Changing the brand's blue is a one-line
+ * edit here; nothing else needs touching.
+ *
+ * Deliberately NOT read from WhiteLabelConfig.primaryColor. That field also
+ * paints the sign-in button on the LIGHT right-hand panel, where a dark colour
+ * is the right answer, and an org that sets it to a near-grey turns this whole
+ * panel grey — which is exactly what happened on the deployed instance.
+ */
+const HERO_BLUE = '#1B3E9E';
+
+/**
  * #rrggbb -> HSL. Returns null for anything unparseable so callers fall back
  * to a fixed palette rather than emitting `hsl(NaN ...)`, which paints nothing
  * and would leave the hero panel transparent.
@@ -93,18 +106,18 @@ function hexToHsl(hex: string): { h: number; s: number; l: number } | null {
 }
 
 /**
- * Turns the org's brand colour into the hero panel's palette.
+ * Expands one blue into the hero panel's full palette.
  *
- * The panel and the accent are BOTH derived from the same hue, with lightness
- * pinned to fixed values rather than taken from the brand colour — that is what
- * guarantees contrast. A tenant whose colour is near-black and one whose colour
- * is neon both get a dark panel and a legibly bright accent on top of it; the
- * hue is the only thing that actually varies. (The previous version painted a
- * fixed #0B1220 panel and lightened the accent with `filter: brightness()`,
- * which for a dark navy brand left icons and text sunk into the background.)
+ * The panel and the accent share a hue but have their LIGHTNESS pinned to fixed
+ * stops rather than inherited from the input — that is what guarantees contrast
+ * survives a colour change. Feed it any blue and you still get a panel dark
+ * enough for white body text and an accent light enough to read against it.
+ *
+ * The stops sit high enough (36% for the mid) that the panel reads as an actual
+ * blue rather than a near-black with a hint of blue in it.
  */
 function heroPalette(brandColor: string) {
-  const hsl = hexToHsl(brandColor) || { h: 226, s: 79, l: 21 };
+  const hsl = hexToHsl(brandColor) || { h: 224, s: 71, l: 36 };
   // A greyscale brand colour must stay greyscale — clamping its saturation up
   // would invent a hue it doesn't have (pure grey reads as h=0, i.e. red).
   const greyish = hsl.s < 10;
@@ -112,14 +125,17 @@ function heroPalette(brandColor: string) {
   // ~15 digits of float noise into every style attribute on the page.
   const h = Math.round(hsl.h);
   const panelSat = Math.round(greyish ? hsl.s : Math.min(Math.max(hsl.s, 45), 85));
-  const accentSat = Math.round(greyish ? Math.max(hsl.s, 4) : Math.min(Math.max(hsl.s, 70), 95));
+  // The accent is BOOSTED past the input's saturation, not merely clamped into
+  // a range: a pale tint of an already-muted blue reads as washed-out grey.
+  const accentSat = Math.round(greyish ? Math.max(hsl.s, 4) : Math.min(Math.max(hsl.s * 1.4, 70), 100));
   return {
-    top: `hsl(${h} ${panelSat}% 17%)`,
-    mid: `hsl(${h} ${panelSat}% 21%)`,
-    bottom: `hsl(${h} ${panelSat}% 9%)`,
-    // Sits around #60A5FA for the seeded navy. Bright enough to read as a
-    // colour against the panel instead of disappearing into it.
-    accent: `hsl(${h} ${accentSat}% 68%)`,
+    top: `hsl(${h} ${panelSat}% 28%)`,
+    mid: `hsl(${h} ${panelSat}% 36%)`,
+    bottom: `hsl(${h} ${panelSat}% 16%)`,
+    // Pale sky blue. Has to be this light: an accent only a little brighter
+    // than a mid-blue panel is the exact mistake that made the first version
+    // unreadable.
+    accent: `hsl(${h} ${accentSat}% 79%)`,
   };
 }
 
@@ -206,23 +222,10 @@ export default function LoginPage() {
 
   const accentColor = brand.primaryColor || '#0B1D5E';
   const services = brand.services || [];
-  // `accentColor` stays the button/focus-ring colour on the LIGHT right-hand
-  // panel, where the dark brand navy is exactly right. `hero.accent` is its
-  // bright counterpart, used only on the dark left panel.
-  const hero = heroPalette(accentColor);
-
-  const Logo = ({ className }: { className: string }) => (
-    brand.logoUrl
-      ? <img src={brand.logoUrl} alt={brand.brandName} className={className} />
-      : (
-        <div
-          className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-          style={{ backgroundColor: accentColor }}
-        >
-          <span className="text-white font-bold text-base">{brand.brandName.charAt(0)}</span>
-        </div>
-      )
-  );
+  // `accentColor` (the org's primaryColor) stays the button/focus-ring colour on
+  // the LIGHT right-hand panel, where a dark colour is what's wanted. The dark
+  // left panel is driven entirely by HERO_BLUE instead — see its comment.
+  const hero = heroPalette(HERO_BLUE);
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
@@ -260,9 +263,32 @@ export default function LoginPage() {
           }}
         />
 
+        {/* Brand lockup. The wordmark is IN the logo artwork, so repeating the
+            brand name beside it just said the same thing twice — the text now
+            only appears when there is no logo to show. */}
         <div className="relative flex items-center gap-3">
-          <Logo className="h-9 w-auto" />
-          <span className="text-white font-semibold text-lg tracking-tight">{brand.brandName}</span>
+          {brand.logoUrl ? (
+            // White plate behind the logo. The mark is blue and so is this
+            // panel; without the plate a blue-on-transparent logo sinks into
+            // the background. The plate also means artwork of ANY colour stays
+            // legible, which matters because the logo is swapped from Admin
+            // without anyone revisiting this file.
+            <span className="inline-flex items-center rounded-xl bg-white px-4 py-2.5 shadow-lg shadow-black/25">
+              <img src={brand.logoUrl} alt={brand.brandName} className="h-7 w-auto" />
+            </span>
+          ) : (
+            <>
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                style={{ backgroundColor: hero.accent }}
+              >
+                <span className="font-bold text-base" style={{ color: hero.bottom }}>
+                  {brand.brandName.charAt(0)}
+                </span>
+              </div>
+              <span className="text-white font-semibold text-lg tracking-tight">{brand.brandName}</span>
+            </>
+          )}
         </div>
 
         <div className="relative py-8">
@@ -324,10 +350,22 @@ export default function LoginPage() {
       >
         <div className="w-full max-w-sm">
 
-          {/* Mobile-only brand header — the hero panel is hidden below lg. */}
+          {/* Mobile-only brand header — the hero panel is hidden below lg. No
+              white plate needed here: this side is already light. */}
           <div className="flex lg:hidden items-center gap-2.5 mb-6">
-            <Logo className="h-8 w-auto" />
-            <span className="text-gray-900 font-semibold">{brand.brandName}</span>
+            {brand.logoUrl ? (
+              <img src={brand.logoUrl} alt={brand.brandName} className="h-8 w-auto" />
+            ) : (
+              <>
+                <div
+                  className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: accentColor }}
+                >
+                  <span className="text-white font-bold text-sm">{brand.brandName.charAt(0)}</span>
+                </div>
+                <span className="text-gray-900 font-semibold">{brand.brandName}</span>
+              </>
+            )}
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-200/80 shadow-xl shadow-slate-200/60 px-8 py-9">
