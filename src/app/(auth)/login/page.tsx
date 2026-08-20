@@ -7,6 +7,9 @@ import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
 import axios from 'axios';
 import { setFavicon } from '@/lib/utils';
+import TurnstileWidget from '@/components/TurnstileWidget';
+
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 const ORG_SUBDOMAIN = process.env.NEXT_PUBLIC_ORG_SUBDOMAIN || '';
@@ -34,6 +37,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
 
   useEffect(() => {
     if (!ORG_SUBDOMAIN) return;
@@ -60,11 +65,15 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await api.post('/auth/login', { email, password });
+      const res = await api.post('/auth/login', { email, password, turnstileToken });
       setAuth(res.data.user, res.data.branding, res.data.tokens);
       router.push('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Login failed. Please try again.');
+      // The Turnstile token is single-use and short-lived — remount the
+      // widget so retrying gets a fresh one.
+      setTurnstileToken('');
+      setTurnstileResetKey((k) => k + 1);
     } finally {
       setLoading(false);
     }
@@ -190,6 +199,10 @@ export default function LoginPage() {
                 </div>
               </div>
 
+              {TURNSTILE_SITE_KEY && (
+                <TurnstileWidget key={turnstileResetKey} siteKey={TURNSTILE_SITE_KEY} onToken={setTurnstileToken} />
+              )}
+
               {error && (
                 <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
                   {error}
@@ -198,7 +211,7 @@ export default function LoginPage() {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || (!!TURNSTILE_SITE_KEY && !turnstileToken)}
                 className="w-full flex items-center justify-center gap-2 text-white font-semibold text-sm py-3 rounded-xl transition-all disabled:opacity-60 hover:opacity-90 active:scale-[0.99]"
                 style={{ backgroundColor: accentColor }}
               >

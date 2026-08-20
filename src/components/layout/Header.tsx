@@ -69,6 +69,9 @@ function notificationHref(n: any): string | null {
       return `/projects/${n.refId}?tab=blogs`;
     }
     if (n.type === 'content_rejected') return `/projects/${n.refId}?tab=content`;
+    // The client-requirements approval queue — the approve/reject buttons and
+    // the composed email both live on this tab.
+    if (n.type?.startsWith('client_request_')) return `/projects/${n.refId}?tab=client-requests`;
   }
   if (n.type === 'appraisal_recorded' || n.refTable === 'appraisals') return '/self-service?tab=appraisals';
   if (n.type === 'leave_approved' || n.type === 'leave_rejected') return '/self-service?tab=leaves';

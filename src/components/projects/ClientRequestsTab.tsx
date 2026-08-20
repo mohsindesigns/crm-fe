@@ -2,15 +2,23 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Mail, Link2, Bell, XCircle, CheckCircle2, Clock, Eye } from 'lucide-react';
+import { Mail, Link2, Bell, XCircle, CheckCircle2, Clock, Eye, ShieldCheck, ShieldAlert, Ban } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
+import { useAuthStore } from '@/store/auth';
 import { formatDate } from '@/lib/utils';
 import ClientRequestModal from '@/components/projects/ClientRequestModal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
 // "Has the client sent their requirements back yet?" — the whole point of this
 // tab. Each row is one emailed form; a responded row expands to the answers.
+//
+// It's also the approval queue. A form composed by non-admin staff arrives here
+// as `pending_approval` — nothing emailed, link dead — and an admin releases it
+// with Approve (which is what sends the email) or turns it down with Reject and
+// a reason. Both buttons are admin-only on the server too
+// (routes/clientRequests.js chains adminOnly); hiding them here is presentation,
+// not the access control.
 
 interface FormFieldDef { key: string; label: string; type: string; required: boolean; options?: string[] }
 interface ClientRequest {
@@ -20,20 +28,37 @@ interface ClientRequest {
   recipientName: string | null;
   recipientEmail: string;
   ccEmails: string[] | null;
-  status: 'sent' | 'responded' | 'cancelled';
+  status: 'pending_approval' | 'rejected' | 'sent' | 'responded' | 'cancelled';
   dueAt: string | null;
   sentAt: string | null;
   viewedAt: string | null;
   respondedAt: string | null;
+  approvedAt: string | null;
+  rejectionReason: string | null;
   remindersSent: number;
   fields: FormFieldDef[];
   responseData: Record<string, string> | null;
   formUrl: string;
   sender?: { id: string; name: string } | null;
+  approver?: { id: string; name: string } | null;
   template?: { id: string; name: string } | null;
 }
 
 function StatusBadge({ request }: { request: ClientRequest }) {
+  if (request.status === 'pending_approval') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700">
+        <ShieldAlert className="w-3 h-3" /> Awaiting approval
+      </span>
+    );
+  }
+  if (request.status === 'rejected') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-700">
+        <Ban className="w-3 h-3" /> Rejected
+      </span>
+    );
+  }
   if (request.status === 'responded') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-50 text-green-700">
@@ -74,9 +99,13 @@ export default function ClientRequestsTab({
   canSend: boolean;
 }) {
   const qc = useQueryClient();
+  const isAdmin = useAuthStore((s) => s.isAdmin());
   const [composing, setComposing] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<ClientRequest | null>(null);
+  const [approveTarget, setApproveTarget] = useState<ClientRequest | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<ClientRequest | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const { data: requests = [], isLoading } = useQuery<ClientRequest[]>({
     queryKey: ['client-requests', projectId],
@@ -91,6 +120,31 @@ export default function ClientRequestsTab({
       else toast.warning(data.message);
     },
     onError: (err: any) => toast.error(err?.response?.data?.message || 'Could not send the reminder.'),
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/projects/${projectId}/client-requests/${id}/approve`).then((r) => r.data),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['client-requests', projectId] });
+      // Approving is what sends the email, so the server still reports a 200
+      // when SMTP refused it — say which one actually happened.
+      if (data.emailSent) toast.success(data.message);
+      else toast.warning(data.message);
+      setApproveTarget(null);
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Could not approve the request.'),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.post(`/projects/${projectId}/client-requests/${id}/reject`, { reason }).then((r) => r.data),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['client-requests', projectId] });
+      toast.success(data.message);
+      setRejectTarget(null);
+      setRejectReason('');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Could not reject the request.'),
   });
 
   const cancelMutation = useMutation({
@@ -111,6 +165,12 @@ export default function ClientRequestsTab({
 
   const awaiting = requests.filter((r) => r.status === 'sent').length;
   const replied = requests.filter((r) => r.status === 'responded').length;
+  const pending = requests.filter((r) => r.status === 'pending_approval').length;
+  const summary = [
+    `${replied} replied`,
+    `${awaiting} awaiting reply`,
+    ...(pending ? [`${pending} awaiting approval`] : []),
+  ].join(' · ');
 
   return (
     <div className="space-y-4">
@@ -121,7 +181,7 @@ export default function ClientRequestsTab({
             <p className="text-[11px] text-gray-400 mt-0.5">
               {requests.length === 0
                 ? 'Email the client a form and their answers land back here.'
-                : `${replied} replied · ${awaiting} awaiting reply`}
+                : summary}
             </p>
           </div>
           {canSend && (
@@ -133,6 +193,17 @@ export default function ClientRequestsTab({
             </button>
           )}
         </div>
+
+        {pending > 0 && (
+          <div className={`px-5 py-2.5 flex items-center gap-2 border-b border-indigo-100 ${isAdmin ? 'bg-indigo-50' : 'bg-gray-50'}`}>
+            <ShieldAlert className={`w-3.5 h-3.5 shrink-0 ${isAdmin ? 'text-indigo-600' : 'text-gray-400'}`} />
+            <p className={`text-[11px] ${isAdmin ? 'text-indigo-900' : 'text-gray-500'}`}>
+              {isAdmin
+                ? `${pending} form${pending === 1 ? '' : 's'} waiting on you. Nothing has been emailed to the client yet.`
+                : `${pending} form${pending === 1 ? '' : 's'} waiting on an admin to approve. Nothing has been emailed to the client yet.`}
+            </p>
+          </div>
+        )}
 
         <div className="divide-y divide-gray-100">
           {isLoading ? (
@@ -153,19 +224,29 @@ export default function ClientRequestsTab({
                         <StatusBadge request={r} />
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
-                        To {r.recipientName ? `${r.recipientName} · ` : ''}{r.recipientEmail}
-                        {r.sender?.name ? ` · sent by ${r.sender.name}` : ''}
-                        {r.sentAt ? ` · ${formatDate(r.sentAt)}` : ''}
+                        {r.status === 'pending_approval' ? 'For ' : 'To '}
+                        {r.recipientName ? `${r.recipientName} · ` : ''}{r.recipientEmail}
+                        {r.sender?.name ? ` · written by ${r.sender.name}` : ''}
+                        {r.sentAt ? ` · emailed ${formatDate(r.sentAt)}` : ''}
                       </p>
                       <p className="text-[11px] text-gray-400 mt-0.5">
-                        {r.status === 'responded' && r.respondedAt
-                          ? `Replied ${formatDate(r.respondedAt)}`
-                          : r.viewedAt
-                            ? `Opened ${formatDate(r.viewedAt)}, not submitted yet`
-                            : r.status === 'sent' ? 'Not opened yet' : ''}
+                        {r.status === 'pending_approval'
+                          ? 'Not sent — waiting for an admin to approve'
+                          : r.status === 'rejected'
+                            ? `Rejected${r.approver?.name ? ` by ${r.approver.name}` : ''}${r.approvedAt ? ` ${formatDate(r.approvedAt)}` : ''} — never emailed`
+                            : r.status === 'responded' && r.respondedAt
+                              ? `Replied ${formatDate(r.respondedAt)}`
+                              : r.viewedAt
+                                ? `Opened ${formatDate(r.viewedAt)}, not submitted yet`
+                                : r.status === 'sent' ? 'Not opened yet' : ''}
                         {r.dueAt ? ` · due ${formatDate(r.dueAt)}` : ''}
                         {r.remindersSent > 0 ? ` · ${r.remindersSent} reminder${r.remindersSent === 1 ? '' : 's'} sent` : ''}
                       </p>
+                      {r.status === 'rejected' && r.rejectionReason && (
+                        <p className="mt-2 text-xs text-red-800 bg-red-50 border border-red-100 rounded-lg px-3 py-2 whitespace-pre-wrap break-words">
+                          <span className="font-semibold">Reason: </span>{r.rejectionReason}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
@@ -177,7 +258,36 @@ export default function ClientRequestsTab({
                           <Eye className="w-3.5 h-3.5" /> {expanded ? 'Hide' : 'View answers'}
                         </button>
                       )}
-                      {r.status !== 'cancelled' && (
+                      {/* An approver can't sensibly approve what they can't
+                          read, so a pending row opens to the actual email and
+                          questions. Available on any unanswered row, not just
+                          pending ones — same panel serves "what did we send?". */}
+                      {r.status !== 'responded' && (
+                        <button
+                          onClick={() => setExpandedId(expanded ? null : r.id)}
+                          className="flex items-center gap-1 text-xs font-medium text-brand-700 hover:text-brand-800 px-2 py-1.5 rounded-lg hover:bg-brand-50"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> {expanded ? 'Hide' : r.status === 'pending_approval' ? 'Review' : 'View'}
+                        </button>
+                      )}
+                      {isAdmin && r.status === 'pending_approval' && (
+                        <>
+                          <button
+                            onClick={() => setApproveTarget(r)}
+                            disabled={approveMutation.isPending}
+                            className="flex items-center gap-1 text-xs font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 px-2.5 py-1.5 rounded-lg"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5" /> Approve &amp; send
+                          </button>
+                          <button
+                            onClick={() => { setRejectTarget(r); setRejectReason(''); }}
+                            className="flex items-center gap-1 text-xs font-medium text-red-700 hover:bg-red-50 px-2.5 py-1.5 rounded-lg"
+                          >
+                            <Ban className="w-3.5 h-3.5" /> Reject
+                          </button>
+                        </>
+                      )}
+                      {(r.status === 'sent' || r.status === 'responded') && (
                         <button
                           onClick={() => copyLink(r.formUrl)}
                           title="Copy the client's link"
@@ -187,26 +297,60 @@ export default function ClientRequestsTab({
                         </button>
                       )}
                       {canSend && r.status === 'sent' && (
-                        <>
-                          <button
-                            onClick={() => remindMutation.mutate(r.id)}
-                            disabled={remindMutation.isPending}
-                            title="Send a reminder"
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 disabled:opacity-50"
-                          >
-                            <Bell className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => setCancelTarget(r)}
-                            title="Cancel this request"
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50"
-                          >
-                            <XCircle className="w-3.5 h-3.5" />
-                          </button>
-                        </>
+                        <button
+                          onClick={() => remindMutation.mutate(r.id)}
+                          disabled={remindMutation.isPending}
+                          title="Send a reminder"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 disabled:opacity-50"
+                        >
+                          <Bell className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {canSend && (r.status === 'sent' || r.status === 'pending_approval') && (
+                        <button
+                          onClick={() => setCancelTarget(r)}
+                          title={r.status === 'pending_approval' ? 'Withdraw this request' : 'Cancel this request'}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                        </button>
                       )}
                     </div>
                   </div>
+
+                  {expanded && r.status !== 'responded' && (
+                    <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 overflow-hidden">
+                      <div className="px-4 py-3 bg-white border-b border-gray-200">
+                        <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Email subject</p>
+                        <p className="text-sm text-gray-900 mt-1 break-words">{r.subject}</p>
+                        <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mt-3">
+                          Message the client will read
+                        </p>
+                        <p className={`text-sm mt-1 whitespace-pre-wrap break-words ${r.message ? 'text-gray-900' : 'text-gray-400 italic'}`}>
+                          {r.message || 'No message'}
+                        </p>
+                        {r.ccEmails && r.ccEmails.length > 0 && (
+                          <>
+                            <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mt-3">CC</p>
+                            <p className="text-sm text-gray-900 mt-1 break-words">{r.ccEmails.join(', ')}</p>
+                          </>
+                        )}
+                      </div>
+                      <div className="px-4 py-3">
+                        <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-2">
+                          {r.fields.length} question{r.fields.length === 1 ? '' : 's'}
+                        </p>
+                        <ol className="space-y-1.5 list-decimal list-inside">
+                          {r.fields.map((f) => (
+                            <li key={f.key} className="text-sm text-gray-800 break-words">
+                              {f.label}
+                              <span className="text-[11px] text-gray-400"> · {f.type}{f.required ? ' · required' : ''}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    </div>
+                  )}
 
                   {expanded && r.status === 'responded' && (
                     <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 divide-y divide-gray-200">
@@ -243,12 +387,68 @@ export default function ClientRequestsTab({
       )}
 
       <ConfirmDialog
-        open={!!cancelTarget}
-        title="Cancel this request?"
-        message={cancelTarget
-          ? `The link sent to ${cancelTarget.recipientEmail} will stop working and they won't be able to submit their answers. Nothing is deleted — the request stays here as history.`
+        open={!!approveTarget}
+        title="Approve and email the client?"
+        message={approveTarget
+          ? `${approveTarget.recipientName || approveTarget.recipientEmail} will be emailed the requirements form straight away, at ${approveTarget.recipientEmail}. Read the message above first — it goes out exactly as written.`
           : ''}
-        confirmLabel="Cancel request"
+        confirmLabel="Approve & send"
+        cancelLabel="Not yet"
+        onConfirm={() => approveTarget && approveMutation.mutate(approveTarget.id)}
+        onCancel={() => setApproveTarget(null)}
+      />
+
+      {/* Reject needs a typed reason, so it's its own dialog rather than a
+          ConfirmDialog — the backend rejects an empty one. */}
+      {rejectTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setRejectTarget(null)} />
+          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-5">
+            <h3 className="text-sm font-semibold text-gray-900">Reject this request?</h3>
+            <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
+              Nothing will be emailed to {rejectTarget.recipientEmail}.
+              {rejectTarget.sender?.name ? ` ${rejectTarget.sender.name} gets` : ' The sender gets'} a notification
+              with your reason and can compose a new one.
+            </p>
+            <label className="block text-xs font-medium text-gray-700 mt-4 mb-1.5">
+              Why? <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={3}
+              autoFocus
+              placeholder="e.g. Drop the budget question and soften the second paragraph."
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand-600"
+            />
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <button
+                onClick={() => setRejectTarget(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => rejectMutation.mutate({ id: rejectTarget.id, reason: rejectReason.trim() })}
+                disabled={!rejectReason.trim() || rejectMutation.isPending}
+                className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+              >
+                {rejectMutation.isPending ? 'Rejecting…' : 'Reject request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={!!cancelTarget}
+        title={cancelTarget?.status === 'pending_approval' ? 'Withdraw this request?' : 'Cancel this request?'}
+        message={cancelTarget
+          ? cancelTarget.status === 'pending_approval'
+            ? `It will be taken out of the approval queue and never sent to ${cancelTarget.recipientEmail}. Nothing is deleted — it stays here as history.`
+            : `The link sent to ${cancelTarget.recipientEmail} will stop working and they won't be able to submit their answers. Nothing is deleted — the request stays here as history.`
+          : ''}
+        confirmLabel={cancelTarget?.status === 'pending_approval' ? 'Withdraw it' : 'Cancel request'}
         cancelLabel="Keep it"
         onConfirm={() => cancelTarget && cancelMutation.mutate(cancelTarget.id)}
         onCancel={() => setCancelTarget(null)}
