@@ -47,11 +47,11 @@ function notificationHref(n: any): string | null {
   if (n.type === 'chat_mention' || n.refTable === 'chat_rooms') {
     return n.refId ? `/messages/${n.refId}` : '/messages';
   }
-  // Task notifications: "projectId:taskId" → open project Overview with the task dialog.
+  // Task notifications: "projectId:taskId" → the task's own page.
   if (n.refTable === 'project_tasks' && n.refId && String(n.refId).includes(':')) {
     const [projectId, taskId] = String(n.refId).split(':');
     if (projectId && taskId) {
-      return `/projects/${projectId}?tab=overview&task=${taskId}`;
+      return `/tasks/${projectId}/${taskId}`;
     }
   }
   if (

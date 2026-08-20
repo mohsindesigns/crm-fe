@@ -436,7 +436,7 @@ export default function DashboardPage() {
                         return (
                           <tr key={t.id} className="hover:bg-gray-50 transition-colors">
                             <td className="px-5 py-2.5 w-full">
-                              <Link href={`/projects/${t.projectId}`} className="block min-w-0">
+                              <Link href={`/tasks/${t.projectId}/${t.id}`} className="block min-w-0">
                                 <p className="text-sm font-medium text-gray-900 truncate">{t.title}</p>
                                 <p className="text-xs text-gray-400 truncate">{t.project?.client?.name && `${t.project.client.name} · `}{t.project?.name}</p>
                               </Link>
@@ -479,7 +479,7 @@ export default function DashboardPage() {
                       {doneTasks.slice(0, 8).map((t: any) => (
                         <tr key={t.id} className="hover:bg-gray-50 transition-colors">
                           <td className="px-5 py-2.5 w-full">
-                            <Link href={`/projects/${t.projectId}`} className="block min-w-0">
+                            <Link href={`/tasks/${t.projectId}/${t.id}`} className="block min-w-0">
                               <p className="text-sm font-medium text-gray-900 truncate">{t.title}</p>
                               <p className="text-xs text-gray-400 truncate">{t.project?.client?.name && `${t.project.client.name} · `}{t.project?.name}</p>
                             </Link>

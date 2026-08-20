@@ -9,7 +9,6 @@ import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import Avatar from '@/components/Avatar';
 import Linkify from '@/components/Linkify';
-import TaskDetailModal from '@/components/TaskDetailModal';
 import { cn, formatDate, titleCase, uploadErrorMessage, formatFileSize } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
 
@@ -138,10 +137,13 @@ export default function TasksPage() {
   function setView(v: TaskView) {
     router.replace(`/tasks?view=${v}`);
   }
-  // Clicking a row used to jump to the whole project page, which left custom tasks
-  // with nowhere to attach a deliverable or mark themselves complete. Open the same
-  // task modal the project board uses instead.
-  const [openTask, setOpenTask] = useState<{ projectId: string; taskId: string } | null>(null);
+  // Clicking a row opens the full task page (/tasks/:projectId/:taskId) — the
+  // same destination the project board uses. It used to jump to the whole project
+  // page, which left custom tasks with nowhere to attach a deliverable or mark
+  // themselves complete.
+  function openTask(task: { projectId: string; id: string }) {
+    router.push(`/tasks/${task.projectId}/${task.id}`);
+  }
 
   // Approvals, Completed and Overdue are org-wide for admins (same permission
   // as All Tasks) but stay a personal tracking view for everyone else.
@@ -746,7 +748,7 @@ export default function TasksPage() {
                   return (
                     <div
                       key={task.id}
-                      onClick={() => setOpenTask({ projectId: task.projectId, taskId: task.id })}
+                      onClick={() => openTask(task)}
                       className={cn('px-4 py-3 space-y-2 cursor-pointer hover:bg-gray-50/80 transition-colors', isOverdue && 'bg-red-50/40')}
                     >
                       <div className="flex items-start gap-2">
@@ -870,7 +872,7 @@ export default function TasksPage() {
                     return (
                       <tr
                         key={task.id}
-                        onClick={() => setOpenTask({ projectId: task.projectId, taskId: task.id })}
+                        onClick={() => openTask(task)}
                         className={cn('cursor-pointer hover:bg-gray-50/80 transition-colors align-top', isOverdue && 'bg-red-50/40')}
                       >
                         <td className="px-5 py-3.5">
@@ -978,14 +980,6 @@ export default function TasksPage() {
           )}
         </div>
 
-        {openTask && (
-          <TaskDetailModal
-            projectId={openTask.projectId}
-            taskId={openTask.taskId}
-            allowOpenInProject
-            onClose={() => setOpenTask(null)}
-          />
-        )}
       </div>
     </div>
   );

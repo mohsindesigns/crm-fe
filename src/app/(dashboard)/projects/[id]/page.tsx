@@ -7,7 +7,6 @@ import { toast } from 'sonner';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import Avatar from '@/components/Avatar';
-import TaskDetailModal from '@/components/TaskDetailModal';
 import Linkify from '@/components/Linkify';
 import ActiveToggle from '@/components/ActiveToggle';
 import ShowInactiveToggle, { useShowInactive } from '@/components/ShowInactiveToggle';
@@ -960,30 +959,18 @@ export default function ProjectDetailPage() {
 
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', assigneeId: '', dueAt: '', remarks: '', requiresTechnicalAudit: false });
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  // Tasks open on their own page now (/tasks/:projectId/:taskId) rather than in a
+  // dialog stacked over the board.
+  function openProjectTask(taskId: string) {
+    router.push(`/tasks/${id}/${taskId}`);
+  }
 
-  // Deep-link: /projects/:id?task=… opens the same TaskDetailModal as row click.
+  // Back-compat for links minted before that move — notifications and anything
+  // else still pointing at /projects/:id?task=… land here and get forwarded.
   useEffect(() => {
     const fromUrl = searchParams.get('task');
-    if (fromUrl) setOpenTaskId(fromUrl);
-  }, [searchParams]);
-
-  function openProjectTask(taskId: string) {
-    setOpenTaskId(taskId);
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('tab', tab || 'overview');
-    params.set('task', taskId);
-    router.replace(`/projects/${id}?${params.toString()}`, { scroll: false });
-  }
-
-  function closeProjectTask() {
-    setOpenTaskId(null);
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete('task');
-    const qs = params.toString();
-    router.replace(qs ? `/projects/${id}?${qs}` : `/projects/${id}`, { scroll: false });
-    qc.invalidateQueries({ queryKey: ['project-tasks', id] });
-  }
+    if (fromUrl) router.replace(`/tasks/${id}/${fromUrl}`);
+  }, [searchParams, id, router]);
 
   const createTask = useMutation({
     mutationFn: (payload: typeof newTask) =>
@@ -1740,6 +1727,24 @@ export default function ProjectDetailPage() {
             </div>
           </div>
 
+          {/* Tabs */}
+          <div className="flex gap-1 border-b border-gray-200 overflow-x-auto overflow-y-hidden">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={cn(
+                  'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0',
+                  tab === t.key
+                    ? 'border-brand-700 text-brand-800'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
           {/* Action panel — only shown to the stage owner */}
           {project.status === 'active' && isAssigned && (
             <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -1899,24 +1904,6 @@ export default function ProjectDetailPage() {
               You are not assigned to act on this stage ({titleCase(currentStage?.ownerRoleSlot)}).
             </div>
           )}
-
-          {/* Tabs */}
-          <div className="flex gap-1 border-b border-gray-200 overflow-x-auto overflow-y-hidden">
-            {TABS.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={cn(
-                  'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0',
-                  tab === t.key
-                    ? 'border-brand-700 text-brand-800'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
 
           {/* Overview tab */}
           {tab === 'overview' && (
@@ -4450,13 +4437,6 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      {openTaskId && (
-        <TaskDetailModal
-          projectId={id}
-          taskId={openTaskId}
-          onClose={closeProjectTask}
-        />
-      )}
     </div>
   );
 }

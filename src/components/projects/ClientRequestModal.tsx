@@ -59,6 +59,13 @@ const STARTER_FIELDS: FieldDraft[] = [
   { label: 'Best contact number', type: 'phone', required: false, options: '' },
 ];
 
+// Default wording for the email body and the post-submit thank-you — both
+// boxes start filled in rather than empty, since Message is required and a
+// blank required field is a worse default than "here's a draft, edit it".
+// A template's own defaultMessage/successMessage still wins when one is picked.
+const STARTER_MESSAGE = 'Hi — we need a few details from you. The form below covers everything and should only take a couple of minutes to fill in.';
+const STARTER_SUCCESS_MESSAGE = 'Thanks — we\'ve received your details. Our team will review them and be in touch shortly.';
+
 const STEPS = [
   { n: 1, label: 'Questions' },
   { n: 2, label: 'Email' },
@@ -112,7 +119,7 @@ function EmailPreview({
           : <p className="text-sm font-bold text-gray-900 mb-4">{brandName}</p>}
         <p className="text-sm text-gray-700 mb-3">Hi <strong>{recipientName || 'there'}</strong>,</p>
         <p className="text-sm text-gray-700 leading-relaxed">
-          To get started on <strong>{projectName}</strong>, we need a few details from you.
+          For <strong>{projectName}</strong>, we need a few details from you.
           {fieldCount > 0 && ` The form below has ${fieldCount} question${fieldCount === 1 ? '' : 's'} and takes just a couple of minutes.`}
         </p>
         {message.trim() ? (
@@ -173,9 +180,9 @@ export default function ClientRequestModal({
   const [manualEmail, setManualEmail] = useState('');
   const [ccEmails, setCcEmails] = useState('');
   const [subject, setSubject] = useState(`Project requirements — ${projectName}`);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(STARTER_MESSAGE);
   const [dueAt, setDueAt] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState(STARTER_SUCCESS_MESSAGE);
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
 
@@ -227,7 +234,7 @@ export default function ClientRequestModal({
     })));
     if (t.defaultSubject) setSubject(t.defaultSubject);
     if (t.defaultMessage) setMessage(t.defaultMessage);
-    setSuccessMessage(t.successMessage || '');
+    if (t.successMessage) setSuccessMessage(t.successMessage);
 
     const theme = t.theme || {};
     setThemeHeadline(theme.headline || '');
@@ -633,7 +640,7 @@ export default function ClientRequestModal({
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     rows={7}
-                    placeholder="Hi — before we start on your project we need a few details from you. The form below covers everything; it should only take a couple of minutes…"
+                    placeholder="Hi — we need a few details from you. The form below covers everything; it should only take a couple of minutes…"
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand-600"
                   />
                   {message.trim()
