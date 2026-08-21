@@ -47,7 +47,7 @@ export default function AttendanceBoard() {
   // record this month" to "every active worker's status on this one day"
   // (including the ones with no record at all, so it's actually possible to see
   // who hasn't marked).
-  const [logDate, setLogDate] = useState('');
+  const [logDate, setLogDate] = useState(() => nowInKarachi().date);
 
   const { data: workers = [], isLoading: loadingWorkers } = useQuery({
     queryKey: ['hr-workers'],

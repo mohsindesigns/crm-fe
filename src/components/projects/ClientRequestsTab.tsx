@@ -180,7 +180,7 @@ export default function ClientRequestsTab({
             <h3 className="text-sm font-semibold text-gray-900">Client requirements</h3>
             <p className="text-[11px] text-gray-400 mt-0.5">
               {requests.length === 0
-                ? 'Email the client a form and their answers land back here.'
+                ? 'Send the client a requirements form and their answers land back here.'
                 : summary}
             </p>
           </div>
@@ -189,7 +189,7 @@ export default function ClientRequestsTab({
               onClick={() => setComposing(true)}
               className="flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 text-white text-sm font-medium px-3.5 py-2 rounded-lg shrink-0"
             >
-              <Mail className="w-3.5 h-3.5" /> Email the client
+              <Mail className="w-3.5 h-3.5" /> Request requirements
             </button>
           )}
         </div>
@@ -210,7 +210,7 @@ export default function ClientRequestsTab({
             <p className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</p>
           ) : requests.length === 0 ? (
             <p className="px-5 py-8 text-sm text-gray-400 text-center">
-              Nothing sent yet.{canSend ? ' Use “Email the client” to ask for what you need to start.' : ''}
+              Nothing sent yet.{canSend ? ' Use “Request requirements” to ask for what you need to start.' : ''}
             </p>
           ) : (
             requests.map((r) => {

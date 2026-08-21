@@ -13,6 +13,12 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { href: '/projects', permission: 'projects.read' },
   { href: '/clients', permission: 'clients.read' },
   { href: '/tasks', permission: null },
+  // Unrestricted on purpose: the approvals inbox is a cross-cutting queue whose
+  // *contents* are gated per source by the backend (projects.read for task/SEO
+  // queues, hr.read — or simply having a Worker row — for HR ones). Any single
+  // permission here would lock out the employee whose own leave request is the
+  // one thing they can see on it. See crm-be/src/routes/approvals.js.
+  { href: '/approvals', permission: null },
   { href: '/messages', permission: 'projects.read' },
   { href: '/leads', permission: 'leads.read' },
   { href: '/notifications', permission: null },
@@ -22,6 +28,7 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { href: '/retainers', permission: 'billing.read' },
   { href: '/team', permission: 'users.read' },
   { href: '/hr', permission: 'hr.read' },
+  { href: '/policies', permission: 'hr.read' },
   { href: '/self-service', permission: null },
   { href: '/analytics', permission: 'admin.access' },
   { href: '/reports', permission: 'reports.read' },

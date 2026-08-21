@@ -8,7 +8,7 @@ import {
   Briefcase, ClipboardList, BarChart2, UserCog, Receipt, DollarSign, RefreshCw,
   Palette, Workflow, Shield, Package, X, FileSignature, ScrollText, Clock, MessagesSquare,
   Building2, CreditCard, Target, ChevronLeft, ChevronRight, PieChart, History,
-  ClipboardCheck,
+  ClipboardCheck, ShieldCheck,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
@@ -29,6 +29,7 @@ const NAV_ITEMS = [
   { label: 'Projects',     href: '/projects' as const,      icon: FolderKanban },
   { label: 'Clients',      href: '/clients' as const,       icon: Briefcase },
   { label: 'Tasks',        href: '/tasks' as const,         icon: ClipboardList },
+  { label: 'Approvals',    href: '/approvals' as const,     icon: ClipboardCheck },
   { label: 'Messages',     href: '/messages' as const,      icon: MessagesSquare },
   { label: 'Leads',        href: '/leads' as const,         icon: Target },
   { label: 'Notifications', href: '/notifications' as const, icon: Bell },
@@ -38,6 +39,10 @@ const NAV_ITEMS = [
   { label: 'Retainers',    href: '/retainers' as const,     icon: RefreshCw },
   { label: 'Team',         href: '/team' as const,          icon: Users },
   { label: 'HR & Payroll', href: '/hr' as const,            icon: UserCog },
+  // Org-wide policy config, gathered in one place instead of scattered across
+  // settings screens — the timing here is the default every current
+  // employee's attendance is judged against (no per-employee override).
+  { label: 'Policies',     href: '/policies/attendance' as const, icon: ShieldCheck },
   { label: 'My Payroll',   href: '/self-service' as const,  icon: Receipt },
   // Personal attendance marking — hidden for roles that don't clock in (see
   // marksAttendance), unless they can review everyone's attendance, in which
@@ -60,6 +65,13 @@ const TASK_SUB_ITEMS = [
   { label: 'Overdue',        view: 'overdue' },
   { label: 'Approvals',      view: 'approvals' },
   { label: 'Completed',      view: 'completed' },
+];
+
+// Only one policy area exists today (Attendance), but this is structured as
+// a submenu — not a plain link — so future policy pages (leave, holidays,
+// etc.) have an obvious place to land without another sidebar redesign.
+const POLICY_SUB_ITEMS = [
+  { label: 'Attendance', href: '/policies/attendance' as const, icon: Clock },
 ];
 
 const ADMIN_SUB_ITEMS = [
@@ -111,13 +123,19 @@ export default function Sidebar() {
   const isTasksPath = pathname.startsWith('/tasks');
   const [tasksOpen, setTasksOpen] = useState(isTasksPath);
 
-  // Auto-expand when navigating to admin / tasks
+  const isPoliciesPath = pathname.startsWith('/policies');
+  const [policiesOpen, setPoliciesOpen] = useState(isPoliciesPath);
+
+  // Auto-expand when navigating to admin / tasks / policies
   useEffect(() => {
     if (isAdminPath) setAdminOpen(true);
   }, [isAdminPath]);
   useEffect(() => {
     if (isTasksPath) setTasksOpen(true);
   }, [isTasksPath]);
+  useEffect(() => {
+    if (isPoliciesPath) setPoliciesOpen(true);
+  }, [isPoliciesPath]);
 
   // Close drawer on navigation
   useEffect(() => {
@@ -152,6 +170,16 @@ export default function Sidebar() {
     refetchInterval: 30_000,
   });
   const unreadNotifications = (notifications as any[]).filter((n) => !n.isRead).length;
+
+  // Pending-approval badge. `/approvals/summary` is a counts-only endpoint and
+  // is scoped per source by the backend, so this is the same number the user
+  // will actually see on the page — no permission filtering needed here.
+  const { data: approvalSummary } = useQuery<{ totals: { pending: number } }>({
+    queryKey: ['approvals-summary'],
+    queryFn: () => api.get('/approvals/summary').then((r) => r.data),
+    refetchInterval: 60_000,
+  });
+  const pendingApprovals = approvalSummary?.totals?.pending || 0;
 
   return (
     <>
@@ -265,7 +293,9 @@ export default function Sidebar() {
             && (!hrefTab || searchParams.get('tab') === hrefTab)
             && (hrefTab || !searchParams.get('tab'));
           const showDot = collapsed
-            && ((item.href === '/messages' && unreadMessages > 0) || (item.href === '/notifications' && unreadNotifications > 0));
+            && ((item.href === '/messages' && unreadMessages > 0)
+              || (item.href === '/notifications' && unreadNotifications > 0)
+              || (item.href === '/approvals' && pendingApprovals > 0));
 
           // Tasks gets an expandable submenu (My Tasks / Assigned by me / All
           // Tasks / Approvals / Completed) instead of a plain link, same pattern
@@ -309,6 +339,58 @@ export default function Sidebar() {
                           )}
                           style={subActive ? { backgroundColor: `${primaryColor}40`, color: '#fff' } : {}}
                         >
+                          {sub.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          // Policies gets the same expandable-submenu treatment as Tasks
+          // above — collapsed rail still links straight through since
+          // there's only one policy page today.
+          if (item.href === '/policies/attendance' && !collapsed) {
+            return (
+              <div key={item.href}>
+                <button
+                  type="button"
+                  title={item.label}
+                  onClick={() => setPoliciesOpen((v) => !v)}
+                  className={cn(
+                    'flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all w-full',
+                    isPoliciesPath
+                      ? 'text-white shadow-sm'
+                      : 'text-white/75 hover:text-white hover:bg-white/6',
+                  )}
+                  style={isPoliciesPath ? { backgroundColor: activeBg, color: '#fff' } : {}}
+                >
+                  <item.icon className="w-4 h-4 shrink-0" style={isPoliciesPath ? { color: activeIconColor } : {}} />
+                  <span className="flex-1 text-left truncate">{item.label}</span>
+                  <ChevronDown
+                    className={cn('w-3.5 h-3.5 transition-transform duration-200', policiesOpen && 'rotate-180')}
+                    style={isPoliciesPath ? { color: activeIconColor } : { color: 'rgba(255,255,255,0.4)' }}
+                  />
+                </button>
+                {policiesOpen && (
+                  <div className="ml-3 pl-3 border-l border-white/[0.07] space-y-0.5 mt-0.5">
+                    {POLICY_SUB_ITEMS.map((sub) => {
+                      const subActive = pathname === sub.href || pathname.startsWith(`${sub.href}/`);
+                      return (
+                        <Link
+                          key={sub.href}
+                          href={sub.href}
+                          className={cn(
+                            'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all',
+                            subActive
+                              ? 'text-white'
+                              : 'text-white/60 hover:text-white hover:bg-white/6',
+                          )}
+                          style={subActive ? { backgroundColor: `${primaryColor}40`, color: '#fff' } : {}}
+                        >
+                          <sub.icon className="w-3.5 h-3.5 shrink-0" style={subActive ? { color: activeIconColor } : {}} />
                           {sub.label}
                         </Link>
                       );
@@ -365,6 +447,14 @@ export default function Sidebar() {
                     style={{ backgroundColor: primaryColor }}
                   >
                     {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                  </span>
+                )}
+                {item.href === '/approvals' && pendingApprovals > 0 && (
+                  <span
+                    className="ml-auto text-[10px] font-bold min-w-[1.15rem] h-[1.15rem] px-1 rounded-full flex items-center justify-center text-white"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    {pendingApprovals > 99 ? '99+' : pendingApprovals}
                   </span>
                 )}
               </span>

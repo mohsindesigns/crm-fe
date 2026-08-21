@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/auth';
 import Sidebar from '@/components/layout/Sidebar';
 import NotificationBridge from '@/components/NotificationBridge';
 import MessagesWidget from '@/components/messages/MessagesWidget';
+import StaleCheckoutGate from '@/components/attendance/StaleCheckoutGate';
 import api from '@/lib/api';
 import { requiredPermissionFor } from '@/lib/routePermissions';
 import { toast } from 'sonner';
@@ -128,6 +129,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Session-wide, so message alerts reach you on any screen — not only
           while Messages is open. Renders nothing. */}
       <NotificationBridge />
+      {/* Blocking "forgot to check out" popup — mounted here (not on any one
+          page) so it's the first thing in front of the user on whichever
+          page they land on next. Renders nothing unless a stale open
+          session exists. */}
+      <StaleCheckoutGate />
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <main className="flex-1 overflow-y-auto overflow-x-hidden min-w-0">{children}</main>

@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  X, Plus, Trash2, GripVertical, Mail, Save, Palette, Eye, EyeOff,
-  ArrowLeft, ArrowRight, ShieldCheck, Check,
+  X, Plus, Trash2, Mail, Save, Palette, Eye, EyeOff, AlertCircle,
+  ArrowLeft, ArrowRight, ShieldCheck, Check, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
@@ -65,6 +65,13 @@ const STARTER_FIELDS: FieldDraft[] = [
 // A template's own defaultMessage/successMessage still wins when one is picked.
 const STARTER_MESSAGE = 'Hi — we need a few details from you. The form below covers everything and should only take a couple of minutes to fill in.';
 const STARTER_SUCCESS_MESSAGE = 'Thanks — we\'ve received your details. Our team will review them and be in touch shortly.';
+
+// One definition per control, used by every field in the wizard. Three steps
+// worth of inputs styled ad hoc is what made this screen look assembled rather
+// than designed — add a variant here rather than a one-off className below.
+const INPUT = 'w-full px-3 py-2 text-sm text-gray-900 bg-white border border-gray-300 rounded-lg placeholder:text-gray-400 focus:outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/20 transition-colors';
+const LABEL = 'block text-[13px] font-medium text-gray-800 mb-1.5';
+const HINT = 'mt-1.5 text-xs text-gray-500';
 
 const STEPS = [
   { n: 1, label: 'Questions' },
@@ -171,6 +178,13 @@ export default function ClientRequestModal({
   // Mirrors the backend's auto-approve shortcut (ClientRequestService#send):
   // only changes the wording here, never who is actually allowed to do what.
   const isAdmin = useAuthStore((s) => s.isAdmin());
+  // Authoring a reusable template is org-level project configuration, gated on
+  // projects.manage server-side (routes/requirementForms.js POST /). Sending a
+  // form only needs projects.act, which every specialist role holds — so most
+  // senders can compose and submit but cannot save a template. Offering them
+  // the checkbox anyway 403'd the template POST and, because it runs first,
+  // took the whole send down with it.
+  const canSaveTemplate = useAuthStore((s) => s.hasPermission('projects.manage'));
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -196,8 +210,12 @@ export default function ClientRequestModal({
   const [themePrimaryColor, setThemePrimaryColor] = useState('');
   const [themeBackgroundColor, setThemeBackgroundColor] = useState('');
   const [themeShowLogo, setThemeShowLogo] = useState(true);
-  const [themeShowName, setThemeShowName] = useState(true);
-  const [themeShowHeadline, setThemeShowHeadline] = useState(true);
+  // Name and headline start hidden: the logo already identifies the agency, and
+  // the email subject is repeated as the headline, so showing all three stacks
+  // the same information three times on the client's page. Both are one click
+  // away under Appearance for the sends that want them.
+  const [themeShowName, setThemeShowName] = useState(false);
+  const [themeShowHeadline, setThemeShowHeadline] = useState(false);
   const [themeBorderRadius, setThemeBorderRadius] = useState<BorderRadius>('rounded');
 
   const { data: templates = [] } = useQuery<Template[]>({
@@ -243,8 +261,10 @@ export default function ClientRequestModal({
     setThemePrimaryColor(theme.primaryColor || '');
     setThemeBackgroundColor(theme.backgroundColor || '');
     setThemeShowLogo(theme.showLogo !== undefined ? theme.showLogo : true);
-    setThemeShowName(theme.showName !== undefined ? theme.showName : true);
-    setThemeShowHeadline(theme.showHeadline !== undefined ? theme.showHeadline : true);
+    // A template that never stated these falls back to the compose defaults
+    // above, not to on — templates saved from here always state both.
+    setThemeShowName(theme.showName !== undefined ? theme.showName : false);
+    setThemeShowHeadline(theme.showHeadline !== undefined ? theme.showHeadline : false);
     setThemeBorderRadius(theme.borderRadius || 'rounded');
     if (Object.keys(theme).length > 0) setShowAppearance(true);
   }
@@ -311,17 +331,23 @@ export default function ClientRequestModal({
   const sendMutation = useMutation({
     mutationFn: async () => {
       // Saving the template first means a submit that fails doesn't also lose
-      // the questions the sender just wrote.
-      if (saveAsTemplate && newTemplateName.trim()) {
-        await api.post('/requirement-forms', {
-          name: newTemplateName.trim(),
-          fields: payloadFields,
-          theme: themePayload,
-          defaultSubject: subject,
-          defaultMessage: message || null,
-          successMessage: successMessage || null,
-        });
-        qc.invalidateQueries({ queryKey: ['requirement-form-templates'] });
+      // the questions the sender just wrote. Its own failure, though, must not
+      // take the send down with it — the template is a convenience, the form
+      // going out is the point — so it warns and carries on.
+      if (canSaveTemplate && saveAsTemplate && newTemplateName.trim()) {
+        try {
+          await api.post('/requirement-forms', {
+            name: newTemplateName.trim(),
+            fields: payloadFields,
+            theme: themePayload,
+            defaultSubject: subject,
+            defaultMessage: message || null,
+            successMessage: successMessage || null,
+          });
+          qc.invalidateQueries({ queryKey: ['requirement-form-templates'] });
+        } catch (err: any) {
+          toast.warning(err?.response?.data?.message || 'Could not save these questions as a reusable form — carrying on with the send.');
+        }
       }
       const { data } = await api.post(`/projects/${projectId}/client-requests`, {
         templateId: templateId || null,
@@ -351,158 +377,235 @@ export default function ClientRequestModal({
       toast.error(err?.response?.data?.message || err?.response?.data?.error || 'Could not submit the form.');
     },
   });
+  /** Reorder without a drag library. The old grip handle implied drag-to-sort
+   *  and did nothing — an affordance that lies is worse than none. */
+  function moveField(i: number, dir: -1 | 1) {
+    const j = i + dir;
+    if (j < 0 || j >= fields.length) return;
+    setFields((fs) => {
+      const next = [...fs];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  }
 
   const submitLabel = isAdmin ? 'Send to client' : 'Submit for approval';
+  // Shown beside a disabled primary button so it is never a dead end.
+  const blockedReason = step === 1 && !step1Done
+    ? 'Add at least one question to continue.'
+    : step === 2 && !step2Done
+      ? 'A recipient, a subject and a message are all required.'
+      : '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col">
-        <div className="border-b border-gray-100 px-5 py-4 flex items-center justify-between gap-4 shrink-0">
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-gray-900">Email the client a requirements form</h3>
-            <p className="text-[11px] text-gray-400 mt-0.5 truncate">{projectName}</p>
+      <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl ring-1 ring-gray-900/5 w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col">
+
+        {/* ── Header: title, then the stepper on its own full-width row ── */}
+        <div className="shrink-0 border-b border-gray-200">
+          <div className="px-5 sm:px-6 pt-4 pb-3 flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h3 className="text-base font-semibold text-gray-900 leading-tight">Request requirements</h3>
+              <p className="text-xs text-gray-500 mt-0.5 truncate">{projectName}</p>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="p-1.5 -m-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
 
-          {/* Step indicator — a completed step is clickable so you can jump
-              back to fix something without losing your place. */}
-          <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+          {/* A completed step stays clickable, so going back to fix something
+              never costs you your place. */}
+          <nav className="px-5 sm:px-6 pb-3 flex items-center gap-2">
             {STEPS.map((s, i) => {
               const done = s.n < step;
               const current = s.n === step;
               const reachable = s.n < step || (s.n === 2 && step1Done) || (s.n === 3 && step1Done && step2Done);
               return (
-                <div key={s.n} className="flex items-center gap-1.5">
-                  {i > 0 && <span className="w-4 h-px bg-gray-200" />}
+                <div key={s.n} className="flex items-center gap-2 min-w-0 flex-1 last:flex-none">
                   <button
                     type="button"
                     disabled={!reachable || current}
                     onClick={() => setStep(s.n)}
-                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors ${
-                      current ? 'bg-brand-50 text-brand-800'
-                        : reachable ? 'text-gray-500 hover:bg-gray-100'
-                          : 'text-gray-300 cursor-default'
+                    aria-current={current ? 'step' : undefined}
+                    className={`flex items-center gap-2 rounded-lg px-1.5 py-1 -ml-1.5 shrink-0 transition-colors ${
+                      reachable && !current ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'
                     }`}
                   >
-                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
-                      done ? 'bg-green-600 text-white'
-                        : current ? 'bg-brand-700 text-white'
-                          : 'bg-gray-200 text-gray-500'
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-semibold transition-colors ${
+                      done ? 'bg-brand-700 text-white'
+                        : current ? 'bg-brand-700 text-white ring-4 ring-brand-100'
+                          : 'bg-gray-100 text-gray-400 ring-1 ring-inset ring-gray-200'
                     }`}>
-                      {done ? <Check className="w-2.5 h-2.5" /> : s.n}
+                      {done ? <Check className="w-3 h-3" /> : s.n}
                     </span>
-                    {s.label}
+                    <span className={`text-[13px] font-medium ${
+                      current ? 'text-gray-900' : done ? 'text-gray-600' : 'text-gray-400'
+                    }`}>
+                      {s.label}
+                    </span>
                   </button>
+                  {i < STEPS.length - 1 && (
+                    <span className={`h-px flex-1 min-w-[16px] ${done ? 'bg-brand-200' : 'bg-gray-200'}`} />
+                  )}
                 </div>
               );
             })}
-          </div>
-
-          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 shrink-0">
-            <X className="w-4 h-4" />
-          </button>
+          </nav>
         </div>
 
         <div className="flex-1 overflow-hidden flex flex-col lg:flex-row min-h-0">
           {/* ── Compose ── */}
-          <div className="flex-1 min-w-0 overflow-y-auto p-5 space-y-5 lg:max-w-lg">
+          <div className="flex-1 min-w-0 overflow-y-auto px-5 sm:px-6 py-5 space-y-6 lg:max-w-[26rem] xl:max-w-lg">
 
             {/* ════ Step 1 — the questions ════ */}
             {step === 1 && (
               <>
-                <section className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Start from a saved form</label>
-                    <select
-                      value={templateId}
-                      onChange={(e) => applyTemplate(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                <section>
+                  <label className={LABEL} htmlFor="cr-template">Start from a saved form</label>
+                  <select
+                    id="cr-template"
+                    value={templateId}
+                    onChange={(e) => applyTemplate(e.target.value)}
+                    className={INPUT}
+                  >
+                    <option value="">Compose from scratch</option>
+                    {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                  <p className={HINT}>Edits here apply to this send only — the saved form is left untouched.</p>
+                </section>
+
+                <section>
+                  <div className="flex items-baseline justify-between gap-3 mb-2">
+                    <div>
+                      <h4 className="text-[13px] font-semibold text-gray-900">Questions for the client</h4>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {payloadFields.length === 0
+                          ? 'None yet'
+                          : `${payloadFields.length} question${payloadFields.length === 1 ? '' : 's'} · ${payloadFields.filter((f) => f.required).length} required`}
+                      </p>
+                    </div>
+                    <button
+                      onClick={addField}
+                      className="flex items-center gap-1 text-[13px] font-medium text-brand-700 hover:text-brand-800 shrink-0"
                     >
-                      <option value="">Compose from scratch</option>
-                      {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                    <p className="text-[11px] text-gray-400 mt-1">
-                      Picking one fills in the questions and email — edits here only affect this send — the saved form stays as it is.
-                    </p>
+                      <Plus className="w-4 h-4" /> Add
+                    </button>
                   </div>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="text-xs font-medium text-gray-700">Questions for the client</label>
-                      <button onClick={addField} className="flex items-center gap-1 text-xs font-medium text-brand-700 hover:text-brand-800">
-                        <Plus className="w-3.5 h-3.5" /> Add question
-                      </button>
-                    </div>
-                    <div className="space-y-2">
-                      {fields.map((f, i) => (
-                        <div key={i} className="border border-gray-200 rounded-lg p-2.5 space-y-2">
-                          <div className="flex items-center gap-2">
-                            <GripVertical className="w-3.5 h-3.5 text-gray-300 shrink-0" />
+                  <div className="space-y-2">
+                    {fields.map((f, i) => (
+                      <div key={i} className="rounded-xl border border-gray-200 bg-white p-2.5 hover:border-gray-300 transition-colors">
+                        <div className="flex items-start gap-2.5">
+                          <span className="mt-1.5 w-6 h-6 shrink-0 rounded-md bg-gray-100 text-[11px] font-semibold text-gray-500 flex items-center justify-center">
+                            {i + 1}
+                          </span>
+
+                          <div className="flex-1 min-w-0 space-y-2">
                             <input
                               value={f.label}
                               onChange={(e) => updateField(i, { label: e.target.value })}
                               placeholder="What should we ask?"
-                              className="flex-1 min-w-0 text-sm border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-600"
+                              className={INPUT}
                             />
+                            <div className="flex flex-wrap items-center gap-2">
+                              <select
+                                value={f.type}
+                                onChange={(e) => updateField(i, { type: e.target.value as FieldType })}
+                                className="px-2.5 py-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-md focus:outline-none focus:border-brand-600 focus:ring-2 focus:ring-brand-600/20"
+                              >
+                                {FIELD_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                              </select>
+                              <button
+                                type="button"
+                                aria-pressed={f.required}
+                                onClick={() => updateField(i, { required: !f.required })}
+                                className={`px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors ${
+                                  f.required
+                                    ? 'border-brand-200 bg-brand-50 text-brand-800'
+                                    : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                                }`}
+                              >
+                                Required
+                              </button>
+                            </div>
+                            {f.type === 'select' && (
+                              <input
+                                value={f.options}
+                                onChange={(e) => updateField(i, { options: e.target.value })}
+                                placeholder="Options, comma separated"
+                                className={INPUT}
+                              />
+                            )}
+                          </div>
+
+                          <div className="flex flex-col shrink-0">
                             <button
+                              type="button"
+                              onClick={() => moveField(i, -1)}
+                              disabled={i === 0}
+                              aria-label="Move question up"
+                              className="p-1 rounded text-gray-300 enabled:hover:text-gray-700 enabled:hover:bg-gray-100 disabled:opacity-40"
+                            >
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveField(i, 1)}
+                              disabled={i === fields.length - 1}
+                              aria-label="Move question down"
+                              className="p-1 rounded text-gray-300 enabled:hover:text-gray-700 enabled:hover:bg-gray-100 disabled:opacity-40"
+                            >
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => removeField(i)}
-                              className="p-1 rounded shrink-0 text-gray-300 hover:text-red-600 hover:bg-red-50"
-                              title="Remove question"
+                              aria-label="Remove question"
+                              className="p-1 rounded text-gray-300 hover:text-red-600 hover:bg-red-50"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
-                          <div className="flex items-center gap-2 pl-6">
-                            <select
-                              value={f.type}
-                              onChange={(e) => updateField(i, { type: e.target.value as FieldType })}
-                              className="text-sm border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-600"
-                            >
-                              {FIELD_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                            </select>
-                            <label className="flex items-center gap-1 text-xs text-gray-500 shrink-0 whitespace-nowrap">
-                              <input type="checkbox" checked={f.required} onChange={(e) => updateField(i, { required: e.target.checked })} />
-                              Required
-                            </label>
-                          </div>
-                          {f.type === 'select' && (
-                            <input
-                              value={f.options}
-                              onChange={(e) => updateField(i, { options: e.target.value })}
-                              placeholder="Options, comma separated"
-                              className="w-full text-sm border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-600"
-                            />
-                          )}
                         </div>
-                      ))}
-                      {fields.length === 0 && (
-                        <p className="text-xs text-gray-400 text-center py-4 border border-dashed border-gray-200 rounded-lg">
-                          Add at least one question.
-                        </p>
-                      )}
-                    </div>
+                      </div>
+                    ))}
+
+                    {fields.length === 0 && (
+                      <button
+                        onClick={addField}
+                        className="w-full py-6 rounded-xl border border-dashed border-gray-300 text-[13px] text-gray-500 hover:border-brand-300 hover:text-brand-700 hover:bg-brand-50/40 transition-colors"
+                      >
+                        Add your first question
+                      </button>
+                    )}
                   </div>
                 </section>
 
-                <div className="border-t border-gray-100" />
-
-                {/* Appearance — same builder as the lead-form one, so a
-                    requirements page can be branded/customized the same way a
-                    lead-capture form can. */}
-                <section className="border border-gray-200 rounded-xl overflow-hidden">
+                {/* Appearance — the same controls as the lead-form builder, so a
+                    requirements page can be branded the same way. */}
+                <section className="rounded-xl border border-gray-200 overflow-hidden">
                   <button
                     type="button"
                     onClick={() => setShowAppearance((v) => !v)}
-                    className="w-full flex items-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100"
+                    className="w-full flex items-center gap-2 px-3.5 py-3 text-[13px] font-medium text-gray-800 hover:bg-gray-50 transition-colors"
                   >
-                    <Palette className="w-3.5 h-3.5 text-gray-400" /> Appearance
-                    <span className="ml-auto text-gray-400 font-normal">{showAppearance ? 'Hide' : 'Customize'}</span>
+                    <Palette className="w-4 h-4 text-gray-400" />
+                    Appearance
+                    <span className="ml-auto flex items-center gap-1 text-xs font-normal text-gray-500">
+                      {showAppearance ? 'Hide' : 'Customize'}
+                      {showAppearance ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </span>
                   </button>
                   {showAppearance && (
-                    <div className="p-3.5 space-y-3.5">
-                      <div className={themeShowHeadline ? undefined : 'opacity-50'}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <label className="block text-xs font-medium text-gray-700">Public headline</label>
+                    <div className="px-3.5 pb-4 pt-4 space-y-4 border-t border-gray-100">
+                      <div className={themeShowHeadline ? undefined : 'opacity-60'}>
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <label className="text-[13px] font-medium text-gray-800">Public headline</label>
                           <button
                             type="button"
                             onClick={() => setThemeShowHeadline((v) => !v)}
@@ -516,56 +619,57 @@ export default function ClientRequestModal({
                           value={themeHeadline}
                           onChange={(e) => setThemeHeadline(e.target.value)}
                           placeholder={subject || 'What the client sees at the top of the form'}
-                          className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                          className={INPUT}
                         />
-                        {!themeHeadline.trim() && (
-                          <p className="text-[11px] text-gray-400 mt-1">Blank uses the email Subject as the headline.</p>
-                        )}
-                        {!themeShowHeadline && <p className="text-[11px] text-amber-600 mt-1">Hidden — won&apos;t appear on the public form.</p>}
+                        {!themeShowHeadline
+                          ? <p className="mt-1.5 text-xs text-amber-600">Hidden — it will not appear on the public form.</p>
+                          : !themeHeadline.trim() && <p className={HINT}>Blank uses the email subject.</p>}
                       </div>
+
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1.5">Description (optional)</label>
+                        <label className={LABEL}>Description</label>
                         <textarea
                           value={themeDescription}
                           onChange={(e) => setThemeDescription(e.target.value)}
                           placeholder="A short line under the headline."
                           rows={2}
-                          className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand-600"
+                          className={`${INPUT} resize-none`}
                         />
-                        {!themeDescription.trim() && (
-                          <p className="text-[11px] text-gray-400 mt-1">Blank uses the email Message.</p>
-                        )}
+                        {!themeDescription.trim() && <p className={HINT}>Blank uses the email message.</p>}
                       </div>
+
                       <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1.5">Button text</label>
+                        <label className={LABEL}>Button text</label>
                         <input
                           value={themeButtonText}
                           onChange={(e) => setThemeButtonText(e.target.value)}
                           placeholder="Submit requirements"
-                          className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                          className={INPUT}
                         />
                       </div>
+
                       <div className="grid grid-cols-2 gap-3">
                         <ColorInput label="Accent color" value={themePrimaryColor} onChange={setThemePrimaryColor} fallback={brandColor || DEFAULT_THEME.primaryColor} />
                         <ColorInput label="Background" value={themeBackgroundColor} onChange={setThemeBackgroundColor} fallback={DEFAULT_THEME.backgroundColor} />
                       </div>
-                      <div className="grid grid-cols-2 gap-3 items-end">
+
+                      <div className="grid grid-cols-2 gap-3 items-start">
                         <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1.5">Corner style</label>
+                          <label className={LABEL}>Corner style</label>
                           <select
                             value={themeBorderRadius}
                             onChange={(e) => setThemeBorderRadius(e.target.value as BorderRadius)}
-                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                            className={INPUT}
                           >
                             {BORDER_RADIUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                           </select>
                         </div>
-                        <div className="flex flex-col gap-1.5 pb-2">
-                          <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <div className="pt-7 space-y-2">
+                          <label className="flex items-center gap-2 text-[13px] text-gray-700">
                             <input type="checkbox" checked={themeShowLogo} onChange={(e) => setThemeShowLogo(e.target.checked)} />
                             Show your logo
                           </label>
-                          <label className="flex items-center gap-2 text-sm text-gray-700">
+                          <label className="flex items-center gap-2 text-[13px] text-gray-700">
                             <input type="checkbox" checked={themeShowName} onChange={(e) => setThemeShowName(e.target.checked)} />
                             Show your name
                           </label>
@@ -579,120 +683,125 @@ export default function ClientRequestModal({
 
             {/* ════ Step 2 — the email ════ */}
             {step === 2 && (
-              <section className="space-y-3">
-                <div className="rounded-lg bg-brand-50 border border-brand-100 px-3.5 py-2.5">
-                  <p className="text-[11px] text-brand-900 leading-relaxed">
-                    This is the email the client actually reads. Write it in your own words — an admin reviews
-                    this wording before anything is sent.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Send to</label>
-                  <select
-                    value={contactId}
-                    onChange={(e) => setContactId(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-                  >
-                    <option value="">
-                      {contactsLoading ? 'Loading contacts…' : contacts.length ? 'Someone else…' : 'No client contacts with an email'}
-                    </option>
-                    {contacts.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}{c.role ? ` (${c.role})` : ''}</option>
-                    ))}
-                  </select>
-                  {!contactId && (
-                    <input
-                      value={manualEmail}
-                      onChange={(e) => setManualEmail(e.target.value)}
-                      placeholder="client@example.com"
-                      className="w-full mt-2 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-                    />
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">CC (optional)</label>
-                  <input
-                    value={ccEmails}
-                    onChange={(e) => setCcEmails(e.target.value)}
-                    placeholder="someone@example.com, another@example.com"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-                  />
-                  <p className="text-[11px] text-gray-400 mt-1">Your team&apos;s own contact address is CC&apos;d on every send automatically — no need to add it here.</p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Subject</label>
-                  <input
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-                  />
-                  {!subject.trim() && <p className="text-[11px] text-red-600 mt-1">The email needs a subject.</p>}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                    Message to the client <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    rows={7}
-                    placeholder="Hi — we need a few details from you. The form below covers everything; it should only take a couple of minutes…"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand-600"
-                  />
-                  {message.trim()
-                    ? <p className="text-[11px] text-gray-400 mt-1">Appears in the email and above the questions on the client&apos;s page. Preview on the right.</p>
-                    : <p className="text-[11px] text-red-600 mt-1">Write what the client will read — this is what the admin approves.</p>}
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
+              <>
+                <section className="space-y-4">
+                  <h4 className="text-[13px] font-semibold text-gray-900">Recipient</h4>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Reply needed by (optional)</label>
-                    <input
-                      type="date"
-                      value={dueAt}
-                      onChange={(e) => setDueAt(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-                    />
-                    <p className="text-[11px] text-gray-400 mt-1">Used in the email and in automatic reminders.</p>
+                    <label className={LABEL} htmlFor="cr-to">Send to</label>
+                    <select
+                      id="cr-to"
+                      value={contactId}
+                      onChange={(e) => setContactId(e.target.value)}
+                      className={INPUT}
+                    >
+                      <option value="">
+                        {contactsLoading ? 'Loading contacts…' : contacts.length ? 'Someone else…' : 'No client contacts with an email'}
+                      </option>
+                      {contacts.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}{c.role ? ` (${c.role})` : ''}</option>
+                      ))}
+                    </select>
+                    {!contactId && (
+                      <input
+                        value={manualEmail}
+                        onChange={(e) => setManualEmail(e.target.value)}
+                        placeholder="client@example.com"
+                        className={`${INPUT} mt-2`}
+                      />
+                    )}
                   </div>
+
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Thank-you message (optional)</label>
+                    <label className={LABEL} htmlFor="cr-cc">CC <span className="font-normal text-gray-400">optional</span></label>
                     <input
-                      value={successMessage}
-                      onChange={(e) => setSuccessMessage(e.target.value)}
-                      placeholder="Thanks — we'll be in touch."
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                      id="cr-cc"
+                      value={ccEmails}
+                      onChange={(e) => setCcEmails(e.target.value)}
+                      placeholder="someone@example.com, another@example.com"
+                      className={INPUT}
                     />
-                    <p className="text-[11px] text-gray-400 mt-1">Shown after they submit.</p>
+                    <p className={HINT}>Your own contact address is CC&apos;d automatically.</p>
                   </div>
-                </div>
-              </section>
+                </section>
+
+                <section className="space-y-4 border-t border-gray-100 pt-5">
+                  <h4 className="text-[13px] font-semibold text-gray-900">The email</h4>
+                  <div>
+                    <label className={LABEL} htmlFor="cr-subject">Subject</label>
+                    <input
+                      id="cr-subject"
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      className={`${INPUT} ${subject.trim() ? '' : 'border-red-300'}`}
+                    />
+                    {!subject.trim() && <p className="mt-1.5 text-xs text-red-600">The email needs a subject.</p>}
+                  </div>
+
+                  <div>
+                    <label className={LABEL} htmlFor="cr-message">
+                      Message <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      id="cr-message"
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      rows={7}
+                      placeholder="Hi — we need a few details from you. The form below covers everything; it should only take a couple of minutes…"
+                      className={`${INPUT} resize-none ${message.trim() ? '' : 'border-red-300'}`}
+                    />
+                    {message.trim()
+                      ? <p className={HINT}>Appears in the email and above the questions on the client&apos;s page.</p>
+                      : <p className="mt-1.5 text-xs text-red-600">Write what the client will read — this is what the admin approves.</p>}
+                  </div>
+                </section>
+
+                <section className="space-y-4 border-t border-gray-100 pt-5">
+                  <h4 className="text-[13px] font-semibold text-gray-900">
+                    Follow-up <span className="font-normal text-gray-400">optional</span>
+                  </h4>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className={LABEL} htmlFor="cr-due">Reply needed by</label>
+                      <input
+                        id="cr-due"
+                        type="date"
+                        value={dueAt}
+                        onChange={(e) => setDueAt(e.target.value)}
+                        className={INPUT}
+                      />
+                      <p className={HINT}>Drives the automatic reminders.</p>
+                    </div>
+                    <div>
+                      <label className={LABEL} htmlFor="cr-thanks">Thank-you message</label>
+                      <input
+                        id="cr-thanks"
+                        value={successMessage}
+                        onChange={(e) => setSuccessMessage(e.target.value)}
+                        placeholder="Thanks — we will be in touch."
+                        className={INPUT}
+                      />
+                      <p className={HINT}>Shown once they submit.</p>
+                    </div>
+                  </div>
+                </section>
+              </>
             )}
 
             {/* ════ Step 3 — review & submit ════ */}
             {step === 3 && (
-              <section className="space-y-4">
-                <div className={`rounded-xl border px-4 py-3 ${isAdmin ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
-                  <div className="flex items-start gap-2.5">
-                    <ShieldCheck className={`w-4 h-4 mt-0.5 shrink-0 ${isAdmin ? 'text-green-600' : 'text-amber-600'}`} />
-                    <div>
-                      <p className={`text-xs font-semibold ${isAdmin ? 'text-green-900' : 'text-amber-900'}`}>
-                        {isAdmin ? 'This sends straight away' : 'This goes to an admin first'}
-                      </p>
-                      <p className={`text-[11px] mt-0.5 leading-relaxed ${isAdmin ? 'text-green-800' : 'text-amber-800'}`}>
-                        {isAdmin
-                          ? 'You\'re an admin, so no separate approval is needed — submitting emails the client now.'
-                          : 'Nothing is emailed yet. An admin reviews the questions and your message, then approves it — the client is emailed at that point, and you\'ll get a notification either way.'}
-                      </p>
-                    </div>
-                  </div>
+              <section className="space-y-5">
+                <div className={`flex items-start gap-2.5 rounded-lg border px-3.5 py-3 ${
+                  isAdmin ? 'border-gray-200 bg-gray-50' : 'border-amber-200 bg-amber-50'
+                }`}>
+                  <ShieldCheck className={`w-4 h-4 mt-0.5 shrink-0 ${isAdmin ? 'text-gray-400' : 'text-amber-600'}`} />
+                  <p className={`text-xs leading-relaxed ${isAdmin ? 'text-gray-600' : 'text-amber-900'}`}>
+                    {isAdmin
+                      ? <><span className="font-semibold text-gray-800">Sends immediately.</span> As an admin, your request needs no separate approval.</>
+                      : <><span className="font-semibold">Goes to an admin first.</span> Nothing is emailed until they approve it — you will be notified either way.</>}
+                  </p>
                 </div>
 
-                <dl className="rounded-xl border border-gray-200 divide-y divide-gray-100 text-sm">
+                <dl className="rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
                   {[
                     ['To', selectedContact ? `${selectedContact.name} · ${selectedContact.email}` : recipientEmail],
                     ['CC', ccEmails.trim() || '—'],
@@ -700,44 +809,49 @@ export default function ClientRequestModal({
                     ['Questions', `${payloadFields.length} · ${payloadFields.filter((f) => f.required).length} required`],
                     ['Reply by', dueAt ? new Date(`${dueAt}T00:00:00`).toLocaleDateString() : 'No deadline'],
                   ].map(([k, v]) => (
-                    <div key={k} className="px-4 py-2.5 flex items-start gap-3">
-                      <dt className="text-[11px] font-medium text-gray-400 uppercase tracking-wide w-20 shrink-0 pt-0.5">{k}</dt>
-                      <dd className="text-sm text-gray-900 min-w-0 break-words">{v}</dd>
+                    <div key={k} className="px-4 py-3 flex items-start gap-4">
+                      <dt className="text-xs font-medium text-gray-500 w-20 shrink-0 pt-px">{k}</dt>
+                      <dd className="text-[13px] text-gray-900 min-w-0 break-words">{v}</dd>
                     </div>
                   ))}
-                  <div className="px-4 py-2.5 flex items-start gap-3">
-                    <dt className="text-[11px] font-medium text-gray-400 uppercase tracking-wide w-20 shrink-0 pt-0.5">Message</dt>
-                    <dd className="text-sm text-gray-900 min-w-0 whitespace-pre-wrap break-words">{message.trim()}</dd>
+                  <div className="px-4 py-3 flex items-start gap-4">
+                    <dt className="text-xs font-medium text-gray-500 w-20 shrink-0 pt-px">Message</dt>
+                    <dd className="text-[13px] text-gray-700 min-w-0 leading-relaxed whitespace-pre-wrap break-words">{message.trim()}</dd>
                   </div>
                 </dl>
 
-                <div className="border-t border-gray-100" />
-
-                {/* Optionally keep these questions for next time */}
-                <div>
-                  <label className="flex items-center gap-2 text-xs font-medium text-gray-700">
-                    <input type="checkbox" checked={saveAsTemplate} onChange={(e) => setSaveAsTemplate(e.target.checked)} />
-                    <Save className="w-3.5 h-3.5 text-gray-400" />
-                    Also save these questions &amp; appearance as a reusable form
-                  </label>
-                  {saveAsTemplate && (
-                    <input
-                      value={newTemplateName}
-                      onChange={(e) => setNewTemplateName(e.target.value)}
-                      placeholder="e.g. Website Design Intake"
-                      className="w-full mt-2 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-                    />
-                  )}
-                </div>
+                {/* Optionally keep these questions for next time — only for
+                    roles that may author templates (projects.manage). Hiding it
+                    mirrors the server gate; it is not the access control. */}
+                {canSaveTemplate && (
+                  <div className="rounded-xl border border-gray-200 px-4 py-3">
+                    <label className="flex items-center gap-2.5 text-[13px] font-medium text-gray-800 cursor-pointer">
+                      <input type="checkbox" checked={saveAsTemplate} onChange={(e) => setSaveAsTemplate(e.target.checked)} />
+                      <Save className="w-4 h-4 text-gray-400" />
+                      Save these questions as a reusable form
+                    </label>
+                    {saveAsTemplate && (
+                      <input
+                        value={newTemplateName}
+                        onChange={(e) => setNewTemplateName(e.target.value)}
+                        placeholder="e.g. Website Design Intake"
+                        className={`${INPUT} mt-2.5`}
+                      />
+                    )}
+                  </div>
+                )}
               </section>
             )}
           </div>
 
           {/* ── Preview: the email on step 2, the client's page otherwise ── */}
-          <div className="flex-1 min-w-0 bg-gray-50 border-t lg:border-t-0 lg:border-l border-gray-100 overflow-y-auto p-5">
-            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-3">
-              {step === 2 ? 'What the email will look like' : 'What the client will see'}
-            </p>
+          <div className="flex-1 min-w-0 bg-gray-50 border-t lg:border-t-0 lg:border-l border-gray-200 overflow-y-auto px-5 sm:px-6 py-5">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+              <p className="text-xs font-medium text-gray-500">
+                {step === 2 ? 'Preview — the email they receive' : 'Preview — the page they land on'}
+              </p>
+            </div>
             {step === 2 ? (
               <EmailPreview
                 brandName={brandName}
@@ -752,7 +866,7 @@ export default function ClientRequestModal({
                 accent={themePrimaryColor || brandColor || DEFAULT_THEME.primaryColor}
               />
             ) : (
-              <div className="rounded-xl overflow-hidden border border-gray-200 bg-white">
+              <div className="rounded-xl overflow-hidden border border-gray-200 bg-white shadow-sm">
                 <LeadFormRenderer
                   mode="preview"
                   theme={previewTheme}
@@ -765,23 +879,22 @@ export default function ClientRequestModal({
           </div>
         </div>
 
-        <div className="border-t border-gray-100 px-5 py-3.5 flex items-center justify-between gap-3 shrink-0">
-          <p className="text-[11px] text-gray-400 min-w-0 truncate">
-            {step === 1 && 'Step 1 of 3 — what you want to ask the client.'}
-            {step === 2 && 'Step 2 of 3 — the email they receive. Subject and message are both required.'}
-            {step === 3 && (isAdmin
-              ? 'Step 3 of 3 — check it over, then send.'
-              : 'Step 3 of 3 — check it over, then send it for approval.')}
+        {/* ── Footer: navigation, plus why the primary button is disabled ── */}
+        <div className="shrink-0 border-t border-gray-200 bg-gray-50/60 px-5 sm:px-6 py-3 flex items-center justify-between gap-3">
+          <p className="text-xs min-w-0 flex items-center gap-1.5">
+            {blockedReason
+              ? <><AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" /><span className="text-gray-600 truncate">{blockedReason}</span></>
+              : <span className="text-gray-400 truncate">Step {step} of 3</span>}
           </p>
           <div className="flex items-center gap-2 shrink-0">
             {step === 1 ? (
-              <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900">
+              <button onClick={onClose} className="px-3.5 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100">
                 Cancel
               </button>
             ) : (
               <button
                 onClick={() => setStep((s) => (s === 3 ? 2 : 1))}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900"
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100"
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Back
               </button>
@@ -791,18 +904,15 @@ export default function ClientRequestModal({
               <button
                 onClick={() => setStep((s) => (s === 1 ? 2 : 3))}
                 disabled={!canAdvance}
-                title={canAdvance ? undefined : step === 1
-                  ? 'Add at least one question first.'
-                  : 'A recipient, a subject and a message are all needed.'}
-                className="flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg"
+                className="flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
               >
-                {step === 1 ? 'Next: write the email' : 'Next: review'} <ArrowRight className="w-3.5 h-3.5" />
+                Continue <ArrowRight className="w-3.5 h-3.5" />
               </button>
             ) : (
               <button
                 onClick={() => sendMutation.mutate()}
                 disabled={!canSubmit || sendMutation.isPending}
-                className="flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+                className="flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
               >
                 {isAdmin ? <Mail className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />}
                 {sendMutation.isPending ? 'Submitting…' : submitLabel}

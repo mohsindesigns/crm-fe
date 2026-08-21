@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { CheckCircle2, XCircle, FileText, Download, ExternalLink, CreditCard } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { sanitizeRichHtml, richTextProseClass } from '@/lib/richText';
 
 type Branding = {
   brandName: string;
@@ -486,7 +487,8 @@ export default function PublicDocumentReviewPage() {
           {doc.scopeTerms && (
             <div className="order-5 lg:order-4 px-5 sm:px-8 pb-2">
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Terms &amp; Scope of Work</p>
-              <p className="text-sm text-gray-700 whitespace-pre-line">{doc.scopeTerms}</p>
+              <div className={`text-sm text-gray-700 ${richTextProseClass}`}
+                dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(doc.scopeTerms) }} />
             </div>
           )}
 

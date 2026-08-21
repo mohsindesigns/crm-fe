@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -20,6 +20,7 @@ import { BORDER_RADIUS_OPTIONS, type BorderRadius } from '@/lib/leadFormTheme';
 import { useAuthStore } from '@/store/auth';
 import { cn, titleCase, uploadErrorMessage, inactiveRow } from '@/lib/utils';
 import { toast } from 'sonner';
+import RichTextEditor, { type RichTextEditorHandle } from '@/components/RichTextEditor';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -2167,6 +2168,11 @@ function DocumentTemplatesTab() {
   const [form, setForm] = useState({ type: 'quotation', serviceTypeKey: '', name: '', body: '', defaultTerms: '' });
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ type: 'quotation', serviceTypeKey: '', name: '', body: '', defaultTerms: '', isActive: true });
+  // Only one of the "new" / "edit" template forms is ever open at once, so a
+  // single ref per form is enough for the {{token}} chips to reach whichever
+  // RichTextEditor instance is currently mounted.
+  const newBodyEditorRef = useRef<RichTextEditorHandle>(null);
+  const editBodyEditorRef = useRef<RichTextEditorHandle>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const inactive = useShowInactive();
@@ -2230,6 +2236,25 @@ function DocumentTemplatesTab() {
     });
   }
 
+  // Deep link from the New/Edit Document page's "Edit template" link
+  // (?tab=templates&edit=<id>) — jumps straight into that template's edit
+  // form once the list has loaded, instead of leaving the admin to hunt for
+  // it in the list themselves. Only applied once so closing the form (Cancel)
+  // doesn't keep reopening it.
+  const deepLinkEditId = useSearchParams().get('edit');
+  const appliedDeepLinkEdit = useRef(false);
+  useEffect(() => {
+    if (appliedDeepLinkEdit.current || !deepLinkEditId || !(templates as any[]).length) return;
+    const tmpl = (templates as any[]).find((t: any) => t.id === deepLinkEditId);
+    if (tmpl) {
+      appliedDeepLinkEdit.current = true;
+      openEdit(tmpl);
+      requestAnimationFrame(() => {
+        document.querySelector(`[data-template-row="${tmpl.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
+  }, [deepLinkEditId, templates]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-xl border border-gray-200">
@@ -2284,20 +2309,33 @@ function DocumentTemplatesTab() {
               <div className="flex flex-wrap gap-1 mb-1.5">
                 {MERGE_TOKENS.map((t) => (
                   <button key={t} type="button"
-                    onClick={() => insertTokenAtCursor('new-template-body', form.body, t, (v) => setForm({ ...form, body: v }))}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => (form.type === 'service_fragment'
+                      ? insertTokenAtCursor('new-template-body', form.body, t, (v) => setForm({ ...form, body: v }))
+                      : newBodyEditorRef.current?.insertText(`{{${t}}}`))}
                     className="px-1.5 py-0.5 text-[11px] font-mono bg-white border border-gray-200 rounded text-gray-600 hover:border-brand-500 hover:text-brand-800 transition-colors">
                     {`{{${t}}}`}
                   </button>
                 ))}
               </div>
-              <textarea id="new-template-body" value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })}
-                rows={8} placeholder="Dear {{customer_name}}, thank you for considering {{agency_name}} for {{service}}…"
-                className={`${inp} font-mono text-xs`} />
+              {form.type === 'service_fragment' ? (
+                <textarea id="new-template-body" value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })}
+                  rows={8} placeholder="▸ {{service}}{{package}}&#10;  Investment: {{currency}} {{price}}"
+                  className={`${inp} font-mono text-xs`} />
+              ) : (
+                <RichTextEditor ref={newBodyEditorRef} value={form.body} onChange={(html) => setForm({ ...form, body: html })}
+                  placeholder="Dear {{customer_name}}, thank you for considering {{agency_name}} for {{service}}…" minHeight="min-h-48" />
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Default Terms (optional)</label>
-              <textarea value={form.defaultTerms} onChange={(e) => setForm({ ...form, defaultTerms: e.target.value })}
-                rows={3} placeholder="50% upfront, 50% on delivery…" className={inp} />
+              {form.type === 'service_fragment' ? (
+                <textarea value={form.defaultTerms} onChange={(e) => setForm({ ...form, defaultTerms: e.target.value })}
+                  rows={3} placeholder="50% upfront, 50% on delivery…" className={inp} />
+              ) : (
+                <RichTextEditor value={form.defaultTerms} onChange={(html) => setForm({ ...form, defaultTerms: html })}
+                  placeholder="50% upfront, 50% on delivery…" minHeight="min-h-16" />
+              )}
             </div>
             <div className="flex gap-2">
               <button onClick={() => createMutation.mutate()}
@@ -2315,7 +2353,7 @@ function DocumentTemplatesTab() {
             <p className="px-5 py-8 text-sm text-gray-400 text-center">No document templates yet.</p>
           )}
           {(templates as any[]).map((tmpl) => (
-            <div key={tmpl.id} className={cn('px-5 py-3.5', inactiveRow(tmpl.isActive))}>
+            <div key={tmpl.id} data-template-row={tmpl.id} className={cn('px-5 py-3.5', inactiveRow(tmpl.isActive))}>
               {editId === tmpl.id ? (
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2331,16 +2369,29 @@ function DocumentTemplatesTab() {
                   <div className="flex flex-wrap gap-1">
                     {MERGE_TOKENS.map((t) => (
                       <button key={t} type="button"
-                        onClick={() => insertTokenAtCursor(`edit-template-body-${tmpl.id}`, editForm.body, t, (v) => setEditForm({ ...editForm, body: v }))}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => (editForm.type === 'service_fragment'
+                          ? insertTokenAtCursor(`edit-template-body-${tmpl.id}`, editForm.body, t, (v) => setEditForm({ ...editForm, body: v }))
+                          : editBodyEditorRef.current?.insertText(`{{${t}}}`))}
                         className="px-1.5 py-0.5 text-[11px] font-mono bg-gray-50 border border-gray-200 rounded text-gray-600 hover:border-brand-500 hover:text-brand-800 transition-colors">
                         {`{{${t}}}`}
                       </button>
                     ))}
                   </div>
-                  <textarea id={`edit-template-body-${tmpl.id}`} value={editForm.body} onChange={(e) => setEditForm({ ...editForm, body: e.target.value })}
-                    rows={8} className={`${inp} font-mono text-xs`} />
-                  <textarea value={editForm.defaultTerms} onChange={(e) => setEditForm({ ...editForm, defaultTerms: e.target.value })}
-                    rows={3} placeholder="Default terms…" className={inp} />
+                  {editForm.type === 'service_fragment' ? (
+                    <textarea id={`edit-template-body-${tmpl.id}`} value={editForm.body} onChange={(e) => setEditForm({ ...editForm, body: e.target.value })}
+                      rows={8} className={`${inp} font-mono text-xs`} />
+                  ) : (
+                    <RichTextEditor ref={editBodyEditorRef} value={editForm.body} onChange={(html) => setEditForm({ ...editForm, body: html })}
+                      minHeight="min-h-48" />
+                  )}
+                  {editForm.type === 'service_fragment' ? (
+                    <textarea value={editForm.defaultTerms} onChange={(e) => setEditForm({ ...editForm, defaultTerms: e.target.value })}
+                      rows={3} placeholder="Default terms…" className={inp} />
+                  ) : (
+                    <RichTextEditor value={editForm.defaultTerms} onChange={(html) => setEditForm({ ...editForm, defaultTerms: html })}
+                      placeholder="Default terms…" minHeight="min-h-16" />
+                  )}
                   <div className="flex items-center gap-3">
                     <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
                       <input type="checkbox" checked={editForm.isActive}

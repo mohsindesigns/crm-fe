@@ -52,7 +52,7 @@ const DOC_STATUS: Record<string, string> = {
   expired: 'bg-amber-100 text-amber-700',
 };
 
-type Tab = 'overview' | 'contacts' | 'packages' | 'projects' | 'invoices' | 'quotations' | 'agreements';
+type Tab = 'overview' | 'contacts' | 'packages' | 'projects' | 'invoices' | 'quotations' | 'proposals' | 'agreements';
 
 const CP_STATUS: Record<string, string> = {
   active: 'bg-brand-100 text-brand-800',
@@ -154,6 +154,12 @@ export default function ClientDetailPage() {
     queryKey: ['documents', { clientId: id, type: 'agreement' }],
     queryFn: () => api.get(`/documents?clientId=${id}&type=agreement&limit=100`).then((r) => r.data?.data ?? r.data ?? []),
     enabled: canViewDocuments && tab === 'agreements',
+  });
+
+  const { data: proposals } = useQuery({
+    queryKey: ['documents', { clientId: id, type: 'proposal' }],
+    queryFn: () => api.get(`/documents?clientId=${id}&type=proposal&limit=100`).then((r) => r.data?.data ?? r.data ?? []),
+    enabled: canViewDocuments && tab === 'proposals',
   });
 
   const { data: soldPackages = [] } = useQuery({
@@ -415,7 +421,7 @@ export default function ClientDetailPage() {
         <div className="flex gap-1 border-b border-gray-200 overflow-x-auto overflow-y-hidden">
           {([
             'overview', 'contacts', 'packages', 'projects', 'invoices',
-            ...(canViewDocuments ? (['quotations', 'agreements'] as Tab[]) : []),
+            ...(canViewDocuments ? (['quotations', 'proposals', 'agreements'] as Tab[]) : []),
           ] as Tab[]).map((t) => (
             <button
               key={t}
@@ -1524,6 +1530,63 @@ export default function ClientDetailPage() {
                       <td className="px-5 py-3.5">
                         <span className="text-sm font-medium text-gray-900 font-mono flex items-center gap-2">
                           <FileSignature className="w-4 h-4 text-gray-400" />{doc.number}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">
+                        <p className="text-gray-900">{doc.prospectName}</p>
+                        {doc.businessName && <p className="text-xs text-gray-400">{doc.businessName}</p>}
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">{doc.sentAt ? formatDate(doc.sentAt) : '—'}</td>
+                      <td className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
+                        {formatCurrency(doc.amount, doc.currency)}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', DOC_STATUS[doc.status] || 'bg-gray-100 text-gray-600')}>
+                          {doc.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+            </div>
+          </div>
+        )}
+
+        {/* Proposals tab */}
+        {tab === 'proposals' && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="flex items-center justify-end px-5 py-3 border-b border-gray-100">
+              <button
+                onClick={() => router.push(`/documents/new?clientId=${id}&type=proposal`)}
+                className="flex items-center gap-1.5 text-sm font-medium text-white bg-brand-700 hover:bg-brand-800 px-3.5 py-1.5 rounded-lg transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> New Proposal
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-140">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Proposal</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Prospect</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Sent</th>
+                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {!proposals ? (
+                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</td></tr>
+                ) : (proposals as any[]).length === 0 ? (
+                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No proposals for this client.</td></tr>
+                ) : (
+                  (proposals as any[]).map((doc: any) => (
+                    <tr key={doc.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/documents/${doc.id}`)}>
+                      <td className="px-5 py-3.5">
+                        <span className="text-sm font-medium text-gray-900 font-mono flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-gray-400" />{doc.number}
                         </span>
                       </td>
                       <td className="px-5 py-3.5 text-sm text-gray-600">
