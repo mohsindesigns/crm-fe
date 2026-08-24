@@ -1107,12 +1107,21 @@ export default function WorkerDetailPage() {
                   <input
                     type="date"
                     value={onboardForm.joiningDate}
-                    onChange={(e) => setOnboardForm({ ...onboardForm, joiningDate: e.target.value })}
+                    onChange={(e) => {
+                      const joining = e.target.value;
+                      let probation = onboardForm.probationEndDate;
+                      if (joining) {
+                        const d = new Date(joining);
+                        d.setMonth(d.getMonth() + 3);
+                        probation = d.toISOString().slice(0, 10);
+                      }
+                      setOnboardForm({ ...onboardForm, joiningDate: joining, probationEndDate: probation });
+                    }}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Probation End Date</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Probation End Date <span className="text-gray-400 font-normal">(auto: joining + 3 months)</span></label>
                   <input
                     type="date"
                     value={onboardForm.probationEndDate}

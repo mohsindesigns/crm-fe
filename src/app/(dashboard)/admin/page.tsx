@@ -81,6 +81,19 @@ function slugify(s: string) {
   return s.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 }
 
+// Which company details print by default on the Keywords/Backlinks SEO report
+// letterhead (project page → Keywords/Backlinks tabs). Only Logo is checked by
+// default — the full address/tax/contact block used to print unconditionally.
+const SEO_REPORT_FIELD_OPTS = [
+  { key: 'logo',    label: 'Logo' },
+  { key: 'address', label: 'Address' },
+  { key: 'tax',     label: 'Tax/EIN' },
+  { key: 'email',   label: 'Email' },
+  { key: 'phone',   label: 'Phone' },
+  { key: 'website', label: 'Website' },
+  { key: 'note',    label: 'Note' },
+];
+
 // ─── Branding Tab ─────────────────────────────────────────────────────────────
 
 function BrandingTab() {
@@ -99,6 +112,7 @@ function BrandingTab() {
     invoiceNotes: '', invoiceTerms: '',
     legalName: '', usOfficeAddress: '', pkOfficeAddress: '',
     einNumber: '', contactEmail: '', letterheadNote: '',
+    seoReportLetterheadFields: ['logo'] as string[],
   });
 
   // What the PDF renderers fall back to when a letterhead field is left blank —
@@ -124,11 +138,23 @@ function BrandingTab() {
       einNumber: branding.einNumber || '',
       contactEmail: branding.contactEmail || '',
       letterheadNote: branding.letterheadNote || '',
+      seoReportLetterheadFields: typeof branding.seoReportLetterheadFields === 'string' && branding.seoReportLetterheadFields
+        ? branding.seoReportLetterheadFields.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : ['logo'],
     });
   }, [branding]);
 
+  function toggleSeoReportField(key: string) {
+    setForm((prev) => ({
+      ...prev,
+      seoReportLetterheadFields: prev.seoReportLetterheadFields.includes(key)
+        ? prev.seoReportLetterheadFields.filter((k) => k !== key)
+        : [...prev.seoReportLetterheadFields, key],
+    }));
+  }
+
   const mutation = useMutation({
-    mutationFn: () => api.put('/admin/branding', form).then((r) => r.data),
+    mutationFn: () => api.put('/admin/branding', { ...form, seoReportLetterheadFields: form.seoReportLetterheadFields.join(',') }).then((r) => r.data),
     onSuccess: (data) => { updateBranding(data); qc.invalidateQueries({ queryKey: ['branding'] }); },
   });
 
@@ -271,6 +297,24 @@ function BrandingTab() {
             rows={3} placeholder={lhDefaults.letterheadNote || ''} className={`${inp} resize-none`} />
           <p className="text-[11px] text-gray-400 mt-1">Printed in quotes under the address block.</p>
         </div>
+      </div>
+
+      <div className="pt-2 border-t border-gray-100">
+        <h3 className="text-sm font-semibold text-gray-900">SEO Report Letterhead</h3>
+        <p className="text-xs text-gray-500 mt-0.5">
+          Which of the details above print on the Keywords/Backlinks report PDFs (project page → Keywords/Backlinks
+          tabs). Only Logo is checked by default.
+        </p>
+      </div>
+      <div className="flex items-center gap-3 flex-wrap text-sm text-gray-600">
+        {SEO_REPORT_FIELD_OPTS.map((opt) => (
+          <label key={opt.key} className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={form.seoReportLetterheadFields.includes(opt.key)}
+              onChange={() => toggleSeoReportField(opt.key)}
+              className="w-3.5 h-3.5 rounded accent-brand-700" />
+            {opt.label}
+          </label>
+        ))}
       </div>
 
       <div className="pt-2 border-t border-gray-100">

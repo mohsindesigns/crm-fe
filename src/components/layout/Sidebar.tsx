@@ -8,7 +8,7 @@ import {
   Briefcase, ClipboardList, BarChart2, UserCog, Receipt, DollarSign, RefreshCw,
   Palette, Workflow, Shield, Package, X, FileSignature, ScrollText, Clock, MessagesSquare,
   Building2, CreditCard, Target, ChevronLeft, ChevronRight, PieChart, History,
-  ClipboardCheck, ShieldCheck, Download,
+  ClipboardCheck, ShieldCheck, Download, KeyRound,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
@@ -74,6 +74,11 @@ const POLICY_SUB_ITEMS = [
   { label: 'Attendance', href: '/policies/attendance' as const, icon: Clock },
 ];
 
+const REPORTS_SUB_ITEMS = [
+  { label: 'Team Reports',    href: '/reports' as const,          icon: PieChart },
+  { label: 'Keyword Reports', href: '/reports/keywords' as const, icon: KeyRound },
+];
+
 const ADMIN_SUB_ITEMS = [
   { label: 'Branding',   tab: 'branding',   icon: Palette  },
   { label: 'Companies',  tab: 'companies',  icon: Building2 },
@@ -127,7 +132,10 @@ export default function Sidebar() {
   const isPoliciesPath = pathname.startsWith('/policies');
   const [policiesOpen, setPoliciesOpen] = useState(isPoliciesPath);
 
-  // Auto-expand when navigating to admin / tasks / policies
+  const isReportsPath = pathname.startsWith('/reports');
+  const [reportsOpen, setReportsOpen] = useState(isReportsPath);
+
+  // Auto-expand when navigating to admin / tasks / policies / reports
   useEffect(() => {
     if (isAdminPath) setAdminOpen(true);
   }, [isAdminPath]);
@@ -137,6 +145,9 @@ export default function Sidebar() {
   useEffect(() => {
     if (isPoliciesPath) setPoliciesOpen(true);
   }, [isPoliciesPath]);
+  useEffect(() => {
+    if (isReportsPath) setReportsOpen(true);
+  }, [isReportsPath]);
 
   // Close drawer on navigation
   useEffect(() => {
@@ -379,6 +390,64 @@ export default function Sidebar() {
                   <div className="ml-3 pl-3 border-l border-white/[0.07] space-y-0.5 mt-0.5">
                     {POLICY_SUB_ITEMS.map((sub) => {
                       const subActive = pathname === sub.href || pathname.startsWith(`${sub.href}/`);
+                      return (
+                        <Link
+                          key={sub.href}
+                          href={sub.href}
+                          className={cn(
+                            'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all',
+                            subActive
+                              ? 'text-white'
+                              : 'text-white/60 hover:text-white hover:bg-white/6',
+                          )}
+                          style={subActive ? { backgroundColor: `${primaryColor}40`, color: '#fff' } : {}}
+                        >
+                          <sub.icon className="w-3.5 h-3.5 shrink-0" style={subActive ? { color: activeIconColor } : {}} />
+                          {sub.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          // Reports gets the same expandable-submenu treatment as Policies
+          // above — Team Reports (per-member activity) and Keyword Reports
+          // (org-wide keyword sheet) live side by side instead of forcing
+          // Keyword Reports onto its own top-level nav slot.
+          if (item.href === '/reports' && !collapsed) {
+            return (
+              <div key={item.href}>
+                <button
+                  type="button"
+                  title={item.label}
+                  onClick={() => setReportsOpen((v) => !v)}
+                  className={cn(
+                    'flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all w-full',
+                    isReportsPath
+                      ? 'text-white shadow-sm'
+                      : 'text-white/75 hover:text-white hover:bg-white/6',
+                  )}
+                  style={isReportsPath ? { backgroundColor: activeBg, color: '#fff' } : {}}
+                >
+                  <item.icon className="w-4 h-4 shrink-0" style={isReportsPath ? { color: activeIconColor } : {}} />
+                  <span className="flex-1 text-left truncate">{item.label}</span>
+                  <ChevronDown
+                    className={cn('w-3.5 h-3.5 transition-transform duration-200', reportsOpen && 'rotate-180')}
+                    style={isReportsPath ? { color: activeIconColor } : { color: 'rgba(255,255,255,0.4)' }}
+                  />
+                </button>
+                {reportsOpen && (
+                  <div className="ml-3 pl-3 border-l border-white/[0.07] space-y-0.5 mt-0.5">
+                    {REPORTS_SUB_ITEMS.map((sub) => {
+                      // '/reports' is itself a prefix of '/reports/keywords', so a plain
+                      // startsWith would light up both rows at once — Team Reports only
+                      // claims '/reports' and its own '/reports/[id]' detail route.
+                      const subActive = sub.href === '/reports'
+                        ? pathname === '/reports' || (pathname.startsWith('/reports/') && !pathname.startsWith('/reports/keywords'))
+                        : pathname === sub.href || pathname.startsWith(`${sub.href}/`);
                       return (
                         <Link
                           key={sub.href}

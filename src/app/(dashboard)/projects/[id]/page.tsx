@@ -2,7 +2,7 @@
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, XCircle, ChevronRight, Clock, Plus, Upload, Users, Link, Paperclip, ToggleLeft, ToggleRight, Download, Repeat, AlertTriangle, Eye, Pencil, Save, X, Calendar, Bell, Flag, RotateCcw, Trash2, ArrowLeft } from 'lucide-react';
+import { CheckCircle, XCircle, ChevronRight, ChevronDown, Clock, Plus, Upload, Users, Link, Paperclip, ToggleLeft, ToggleRight, Download, Repeat, AlertTriangle, Eye, Pencil, Save, X, Calendar, Bell, Flag, RotateCcw, Trash2, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
@@ -22,23 +22,6 @@ import { useSidebarStore } from '@/store/sidebar';
 import ProjectStatusPanel from '@/components/projects/ProjectStatusPanel';
 
 const KEYWORD_PAGE_SIZE = 10;
-
-/**
- * Which company details print on the keyword/backlink report's letterhead
- * block (logo, office address, tax/EIN number, email, phone, website, the
- * quoted "Note:" paragraph). All checked by default, matching the letterhead
- * every report showed before this existed.
- */
-const REPORT_LETTERHEAD_FIELD_OPTS = [
-  { key: 'logo',    label: 'Logo' },
-  { key: 'address', label: 'Address' },
-  { key: 'tax',     label: 'Tax/EIN' },
-  { key: 'email',   label: 'Email' },
-  { key: 'phone',   label: 'Phone' },
-  { key: 'website', label: 'Website' },
-  { key: 'note',    label: 'Note' },
-];
-const DEFAULT_REPORT_LETTERHEAD_FIELDS = REPORT_LETTERHEAD_FIELD_OPTS.map((o) => o.key);
 
 /** Never render a literal "null"/"undefined" for an empty optional sheet cell. */
 function cellOrDash(value: unknown) {
@@ -187,11 +170,11 @@ export default function ProjectDetailPage() {
   const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const branding = useAuthStore((s) => s.branding);
-  const [reportLetterheadFields, setReportLetterheadFields] = useState<string[]>(DEFAULT_REPORT_LETTERHEAD_FIELDS);
-  function toggleReportLetterheadField(key: string) {
-    setReportLetterheadFields((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
-  }
   const [actionNote, setActionNote] = useState('');
+  // Stage Actions is a lot of vertical space (deliverable uploader, note,
+  // buttons) — collapsed to a summary bar by default so it doesn't push the
+  // tab content down; the user expands it when they actually need to act.
+  const [stageActionsOpen, setStageActionsOpen] = useState(true);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   // Deep-linkable so notifications (e.g. "blog submitted for review") can land
   // straight on the right tab instead of always opening on Overview.
@@ -1484,7 +1467,7 @@ export default function ProjectDetailPage() {
 
   async function downloadKeywordReport() {
     try {
-      await downloadAuthedFile(`/seo/projects/${id}/keywords/pdf`, `keyword-report-${id}.pdf`, { fields: reportLetterheadFields.join(',') });
+      await downloadAuthedFile(`/seo/projects/${id}/keywords/pdf`, `keyword-report-${id}.pdf`);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to generate PDF.');
     }
@@ -1500,7 +1483,7 @@ export default function ProjectDetailPage() {
 
   async function viewKeywordReport() {
     try {
-      await viewAuthedFile(`/seo/projects/${id}/keywords/pdf`, { fields: reportLetterheadFields.join(',') });
+      await viewAuthedFile(`/seo/projects/${id}/keywords/pdf`);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to open PDF.');
     }
@@ -1516,33 +1499,15 @@ export default function ProjectDetailPage() {
 
   async function downloadBacklinkReport() {
     try {
-      await downloadAuthedFile(`/seo/projects/${id}/backlinks/pdf`, `backlink-report-${id}.pdf`, { fields: reportLetterheadFields.join(',') });
+      await downloadAuthedFile(`/seo/projects/${id}/backlinks/pdf`, `backlink-report-${id}.pdf`);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to generate PDF.');
     }
   }
 
-  // Shared by the Keywords and Backlinks tab report bars — same letterhead,
-  // same selection either way. A plain element, not a nested component: a
-  // function defined in the render body would get a new identity every
-  // render, forcing React to remount (and reset) it instead of updating it.
-  const reportLetterheadFieldsControl = (
-    <div className="flex items-center gap-3 flex-wrap text-xs text-gray-500">
-      <span className="font-medium text-gray-600">Company details:</span>
-      {REPORT_LETTERHEAD_FIELD_OPTS.map((opt) => (
-        <label key={opt.key} className="flex items-center gap-1 cursor-pointer">
-          <input type="checkbox" checked={reportLetterheadFields.includes(opt.key)}
-            onChange={() => toggleReportLetterheadField(opt.key)}
-            className="w-3.5 h-3.5 rounded accent-brand-700" />
-          {opt.label}
-        </label>
-      ))}
-    </div>
-  );
-
   async function viewBacklinkReport() {
     try {
-      await viewAuthedFile(`/seo/projects/${id}/backlinks/pdf`, { fields: reportLetterheadFields.join(',') });
+      await viewAuthedFile(`/seo/projects/${id}/backlinks/pdf`);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to open PDF.');
     }
@@ -1727,34 +1692,29 @@ export default function ProjectDetailPage() {
             </div>
           </div>
 
-          {/* Tabs */}
-          <div className="flex gap-1 border-b border-gray-200 overflow-x-auto overflow-y-hidden">
-            {TABS.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={cn(
-                  'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0',
-                  tab === t.key
-                    ? 'border-brand-700 text-brand-800'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Action panel — only shown to the stage owner */}
+          {/* Action panel — only shown to the stage owner. Collapsible: the
+              deliverable uploader + note + buttons take up a lot of room, so
+              it defaults open but the user can collapse it to a summary bar
+              once they've seen it, instead of it permanently pushing the
+              tabs/content below down the page. */}
           {project.status === 'active' && isAssigned && (
             <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <div className="flex flex-wrap items-center justify-between mb-3 gap-2">
-                <h3 className="text-sm font-semibold text-gray-900">Stage Actions</h3>
+              <button
+                type="button"
+                onClick={() => setStageActionsOpen((v) => !v)}
+                className="w-full flex flex-wrap items-center justify-between gap-2 text-left"
+              >
+                <div className="flex items-center gap-1.5">
+                  <ChevronDown className={cn('w-4 h-4 text-gray-400 transition-transform', !stageActionsOpen && '-rotate-90')} />
+                  <h3 className="text-sm font-semibold text-gray-900">Stage Actions</h3>
+                </div>
                 <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full capitalize">
                   {isApprovalStage ? 'Approval stage' : 'Work stage'} · {titleCase(currentStage?.ownerRoleSlot)}
                 </span>
-              </div>
+              </button>
 
+              {stageActionsOpen && (
+              <div className="mt-3">
               {/* Note from the last stage transition only — context for whoever is acting now */}
               {(() => {
                 const lastNote = [...events].reverse().find((ev: any) => ev.note);
@@ -1897,6 +1857,8 @@ export default function ProjectDetailPage() {
                   </>
                 )}
               </div>
+              </div>
+              )}
             </div>
           )}
           {project.status === 'active' && !isAssigned && (
@@ -1904,6 +1866,24 @@ export default function ProjectDetailPage() {
               You are not assigned to act on this stage ({titleCase(currentStage?.ownerRoleSlot)}).
             </div>
           )}
+
+          {/* Tabs */}
+          <div className="flex gap-1 border-b border-gray-200 overflow-x-auto overflow-y-hidden">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={cn(
+                  'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0',
+                  tab === t.key
+                    ? 'border-brand-700 text-brand-800'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
 
           {/* Overview tab */}
           {tab === 'overview' && (
@@ -2476,8 +2456,7 @@ export default function ProjectDetailPage() {
           {/* Keywords tab */}
           {tab === 'keywords' && (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                {reportLetterheadFieldsControl}
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <div className="flex gap-2">
                   <button
                     onClick={viewKeywordReport}
@@ -2820,8 +2799,7 @@ export default function ProjectDetailPage() {
 
             return (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                {reportLetterheadFieldsControl}
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <div className="flex justify-end gap-2 flex-wrap">
                 <button
                   onClick={viewBacklinkReport}
