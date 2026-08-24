@@ -24,6 +24,30 @@ const CYCLE_LABELS: Record<string, string> = {
   annual: 'Annual',
 };
 
+// Whether the client may actually USE a subscription right now, as opposed to
+// whether the retainer is still billing. Mirrors ClientPackage.entitlement —
+// see crm-be/src/services/SubscriptionService.js, which is the only thing that
+// writes it, always derived from the subscription's own invoices.
+const ENTITLEMENT_LABELS: Record<string, string> = {
+  active: 'Active',
+  pending_payment: 'Awaiting payment',
+  suspended: 'Suspended',
+  cancelled: 'Cancelled',
+};
+
+const ENTITLEMENT_COLORS: Record<string, string> = {
+  active: 'bg-emerald-100 text-emerald-800',
+  pending_payment: 'bg-amber-100 text-amber-800',
+  suspended: 'bg-red-100 text-red-700',
+  cancelled: 'bg-gray-100 text-gray-500',
+};
+
+// Retainers and subscriptions are the same table and the same endpoint — a
+// subscription IS a retainer, it just bills for something bought in (hosting,
+// domains, mailboxes) rather than work the team delivers. These tabs are a view
+// over that one list, not a second source of truth, so nothing can drift apart.
+type Kind = 'service' | 'subscription';
+
 export default function RetainersPage() {
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
@@ -31,6 +55,7 @@ export default function RetainersPage() {
   const [form, setForm] = useState({ clientId: '', packageId: '', currency: 'USD', amount: '', cycle: 'monthly', nextInvoiceDate: '', status: 'active' });
   const [editForm, setEditForm] = useState({ status: '', amount: '', nextInvoiceDate: '' });
   const [deleteRetainerId, setDeleteRetainerId] = useState<string | null>(null);
+  const [kind, setKind] = useState<Kind>('service');
   const inactive = useShowInactive();
 
   const { data: retainers, isLoading } = useQuery({
@@ -104,7 +129,23 @@ export default function RetainersPage() {
     },
   });
 
-  const retainerArr: any[] = retainers || [];
+  // Both kinds come back from the one request; splitting client-side keeps the
+  // tab switch instant and the counts on the tabs always consistent with the rows.
+  const allRetainers: any[] = retainers || [];
+  const retainerArr = allRetainers.filter((r: any) => (r.kind || 'service') === kind);
+  const counts = {
+    service: allRetainers.filter((r: any) => (r.kind || 'service') === 'service').length,
+    subscription: allRetainers.filter((r: any) => r.kind === 'subscription').length,
+  };
+  const isSubs = kind === 'subscription';
+  // Suspended and awaiting-payment both mean "the client can't use this yet",
+  // which is the number worth surfacing above the table rather than making
+  // someone scan the Access column for it.
+  const blockedCount = allRetainers.filter(
+    (r: any) => r.kind === 'subscription' && r.entitlement && r.entitlement !== 'active'
+  ).length;
+  const subscriptionTotals = ((summary?.byKind || []) as any[]).filter((k: any) => k.kind === 'subscription');
+  const colCount = isSubs ? 9 : 7;
 
   return (
     <div className="flex flex-col h-full">
@@ -112,8 +153,34 @@ export default function RetainersPage() {
       {/* p-6 on a phone left ~330px of usable width for a count and two controls,
           so the button wrapped to two lines and ran under the toggle. */}
       <div className="flex-1 overflow-auto p-4 sm:p-6 space-y-4">
+        <div className="flex flex-wrap items-center gap-2 border-b border-gray-200">
+          {([
+            { key: 'service' as Kind, label: 'Service retainers', count: counts.service },
+            { key: 'subscription' as Kind, label: 'Subscriptions', count: counts.subscription },
+          ]).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setKind(t.key)}
+              className={cn(
+                'px-1 pb-2.5 -mb-px text-sm font-medium border-b-2 transition-colors whitespace-nowrap mr-4',
+                kind === t.key ? 'border-brand-700 text-brand-800' : 'border-transparent text-gray-500 hover:text-gray-800',
+              )}
+            >
+              {t.label}
+              <span className="ml-1.5 text-xs text-gray-400">{t.count}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-gray-500 whitespace-nowrap">{retainerArr.length} retainer{retainerArr.length !== 1 ? 's' : ''}</p>
+          <p className="text-sm text-gray-500 whitespace-nowrap">
+            {isSubs
+              ? `${retainerArr.length} subscription${retainerArr.length !== 1 ? 's' : ''}`
+              : `${retainerArr.length} retainer${retainerArr.length !== 1 ? 's' : ''}`}
+            {isSubs && blockedCount > 0 && (
+              <span className="ml-2 text-amber-700">· {blockedCount} not usable until paid</span>
+            )}
+          </p>
           <div className="flex items-center gap-2 flex-wrap">
             <ShowInactiveToggle {...inactive.toggleProps} />
             <button
@@ -126,7 +193,18 @@ export default function RetainersPage() {
           </div>
         </div>
 
-        {summary && (summary.byService || []).length > 0 && (
+        {isSubs && subscriptionTotals.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {subscriptionTotals.map((k: any) => (
+              <div key={`sub-${k.currency}`} className="bg-violet-50 rounded-xl border border-violet-200 p-4">
+                <p className="text-xl font-semibold text-violet-900">{formatCurrency(k.total, k.currency)}</p>
+                <p className="text-xs text-violet-700 mt-0.5">Active subscriptions ({k.currency})</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!isSubs && summary && (summary.byService || []).length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {summary.byService.map((s: any) => (
               <div key={`${s.serviceTypeKey}-${s.currency}`} className="bg-white rounded-xl border border-gray-200 p-4">
@@ -214,29 +292,41 @@ export default function RetainersPage() {
           </div>
         )}
 
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full">
+        {/* Two extra columns on the Subscriptions tab would otherwise squash the
+            rest on a narrow screen, so the table scrolls inside its own card. */}
+        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <table className={cn('w-full', isSubs && 'min-w-200')}>
             <thead>
               <tr className="border-b border-gray-100">
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Package</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">{isSubs ? 'Subscription' : 'Package'}</th>
+                {isSubs && <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Vendor</th>}
                 <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Cycle</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Next Invoice</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">{isSubs ? 'Renews' : 'Next Invoice'}</th>
+                {/* Whether the CLIENT can use it, which is not the same question as
+                    whether the retainer is still billing — hence a column of its own. */}
+                {isSubs && <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client access</th>}
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
                 <th className="px-5 py-3.5" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {isLoading ? (
-                <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</td></tr>
+                <tr><td colSpan={colCount} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</td></tr>
               ) : retainerArr.length === 0 ? (
-                <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-gray-400">No retainers yet.</td></tr>
+                <tr>
+                  <td colSpan={colCount} className="px-5 py-10 text-center text-sm text-gray-400">
+                    {isSubs
+                      ? 'No subscriptions yet. Tick “Subscription” on a package in Admin → Packages, then sell it to a client.'
+                      : 'No retainers yet.'}
+                  </td>
+                </tr>
               ) : (
                 retainerArr.map((ret: any) => (
                   <tr key={ret.id} className={cn('hover:bg-gray-50', inactiveRow(ret.isActive))}>
                     {editId === ret.id ? (
-                      <td colSpan={7} className="px-5 py-4">
+                      <td colSpan={colCount} className="px-5 py-4">
                         <div className="flex items-center gap-3">
                           <div className="flex-1">
                             <span className="text-sm font-medium text-gray-900">{ret.client?.name}</span>
@@ -279,6 +369,9 @@ export default function RetainersPage() {
                         <td className="px-5 py-3.5 text-sm text-gray-500">
                           {ret.package?.name || ret.clientPackage?.package?.name || '—'}
                         </td>
+                        {isSubs && (
+                          <td className="px-5 py-3.5 text-sm text-gray-500">{ret.vendor || '—'}</td>
+                        )}
                         <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 text-right font-mono">
                           {formatCurrency(ret.amount, ret.currency)}
                         </td>
@@ -291,6 +384,19 @@ export default function RetainersPage() {
                         <td className="px-5 py-3.5 text-sm text-gray-600">
                           {ret.nextInvoiceDate ? formatDate(ret.nextInvoiceDate) : '—'}
                         </td>
+                        {isSubs && (
+                          <td className="px-5 py-3.5">
+                            <span
+                              className={cn('px-2.5 py-1 text-xs font-medium rounded-full', ENTITLEMENT_COLORS[ret.entitlement] || 'bg-gray-100 text-gray-600')}
+                              title={ret.entitlementReason || undefined}
+                            >
+                              {ENTITLEMENT_LABELS[ret.entitlement] || ret.entitlement || '—'}
+                            </span>
+                            {ret.entitlementReason && (
+                              <p className="text-[11px] text-gray-400 mt-1">{ret.entitlementReason}</p>
+                            )}
+                          </td>
+                        )}
                         <td className="px-5 py-3.5">
                           <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', STATUS_COLORS[ret.status] || 'bg-gray-100 text-gray-600')}>
                             {ret.status}

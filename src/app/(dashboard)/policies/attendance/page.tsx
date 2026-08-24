@@ -89,7 +89,7 @@ export default function AttendancePolicyPage() {
   });
 
   const createSchedule = useMutation({
-    mutationFn: (payload: typeof scheduleForm) => api.post('/hr/shift-schedules', {
+    mutationFn: (payload: Omit<typeof scheduleForm, 'endDate'> & { endDate: string | null }) => api.post('/hr/shift-schedules', {
       ...payload, lateGraceMinutes: parseInt(payload.lateGraceMinutes, 10) || 0,
     }).then((r) => r.data),
     onSuccess: () => {
@@ -147,7 +147,7 @@ export default function AttendancePolicyPage() {
   const activeSchedule = (shiftSchedules as any[]).find((s: any) =>
     s.isActive && !s.isArchived
     && String(s.startDate).slice(0, 10) <= today
-    && String(s.endDate).slice(0, 10) >= today);
+    && (!s.endDate || String(s.endDate).slice(0, 10) >= today));
   const currentTiming = activeSchedule
     ? { label: activeSchedule.label, start: activeSchedule.shiftStartTime, end: activeSchedule.shiftEndTime }
     : { label: 'Default shift', start: form.shiftStartTime ?? '15:00', end: form.shiftEndTime ?? '00:30' };
@@ -348,11 +348,12 @@ export default function AttendancePolicyPage() {
               <div>
                 <h3 className="text-sm font-semibold text-gray-900">Shift schedules</h3>
                 <p className="text-xs text-gray-500 mt-1">
-                  Named timings that apply for a date range — set up exactly like a tax year. During Ramadan
-                  (or any other period with different hours) the matching schedule takes over automatically, and
-                  lateness is judged against <em>those</em> hours. Days outside every schedule fall back to the
-                  default shift above. Because each schedule is pinned to its own dates, changing this year&apos;s
-                  timings never re-scores last year&apos;s attendance.
+                  Named timings that apply from a start date onward — set up exactly like a tax year. During
+                  Ramadan (or any other period with different hours) the matching schedule takes over
+                  automatically, and lateness is judged against <em>those</em> hours. Leave the end date blank
+                  for an ongoing policy that applies to everyone indefinitely, or set one for a schedule that
+                  should auto-revert to the default shift below afterward. Because each schedule is pinned to
+                  its own dates, changing this year&apos;s timings never re-scores last year&apos;s attendance.
                 </p>
               </div>
             </div>
@@ -374,13 +375,14 @@ export default function AttendancePolicyPage() {
                 />
               </div>
               <div>
-                <label className="block text-[11px] text-gray-500 mb-1">Ends</label>
+                <label className="block text-[11px] text-gray-500 mb-1">Ends (optional)</label>
                 <input
                   type="date"
                   value={scheduleForm.endDate}
                   onChange={(e) => setScheduleForm({ ...scheduleForm, endDate: e.target.value })}
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
                 />
+                <p className="text-[10px] text-gray-400 mt-1">Leave blank for an ongoing policy with no end date.</p>
               </div>
               <div>
                 <label className="block text-[11px] text-gray-500 mb-1">Late grace (min)</label>
@@ -411,8 +413,8 @@ export default function AttendancePolicyPage() {
                 />
               </div>
               <button
-                disabled={createSchedule.isPending || !scheduleForm.label.trim() || !scheduleForm.startDate || !scheduleForm.endDate}
-                onClick={() => createSchedule.mutate(scheduleForm)}
+                disabled={createSchedule.isPending || !scheduleForm.label.trim() || !scheduleForm.startDate}
+                onClick={() => createSchedule.mutate({ ...scheduleForm, endDate: scheduleForm.endDate || null })}
                 className="flex items-center justify-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-3 py-2 rounded-lg self-end"
               >
                 <Plus className="w-4 h-4" /> Add
@@ -440,7 +442,7 @@ export default function AttendancePolicyPage() {
                         )}
                       </div>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {String(s.startDate).slice(0, 10)} → {String(s.endDate).slice(0, 10)} ·{' '}
+                        {String(s.startDate).slice(0, 10)} → {s.endDate ? String(s.endDate).slice(0, 10) : 'ongoing'} ·{' '}
                         {s.shiftStartTime}–{s.shiftEndTime} · {s.lateGraceMinutes} min grace
                       </p>
                     </div>

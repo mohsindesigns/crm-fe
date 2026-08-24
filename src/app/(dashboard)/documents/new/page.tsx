@@ -590,7 +590,11 @@ export default function NewDocumentPage() {
                                   <select value={row.packageId} onChange={(e) => selectServicePackage(s.key, e.target.value)}
                                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 bg-white">
                                     <option value="">Manual price</option>
-                                    {packagesFor(s.key).map((p: any) => <option key={p.id} value={p.id}>{p.name}{p.price ? ` · ${p.currency} ${p.price}` : ''}</option>)}
+                                    {/* Subscriptions are marked here because what the
+                                        client agrees to decides how it bills and whether
+                                        their access to it lapses when unpaid — not
+                                        something to discover after conversion. */}
+                                    {packagesFor(s.key).map((p: any) => <option key={p.id} value={p.id}>{p.name}{p.isSubscription ? ' · Subscription' : ''}{p.price ? ` · ${p.currency} ${p.price}` : ''}</option>)}
                                   </select>
                                   <p className="text-[10px] text-gray-400 mt-1">Only fills price for this service — not a client choice.</p>
                                 </div>
@@ -617,7 +621,14 @@ export default function NewDocumentPage() {
                                       <label className="flex items-center gap-2.5 px-3 py-2 cursor-pointer select-none">
                                         <input type="checkbox" checked={offered} onChange={() => togglePackageMenuOption(s.key, p.id)}
                                           className="w-4 h-4 rounded accent-brand-700 shrink-0" />
-                                        <span className="text-sm text-gray-800 flex-1 min-w-0 break-words">{p.tier || p.name}</span>
+                                        <span className="text-sm text-gray-800 flex-1 min-w-0 break-words">
+                                          {p.tier || p.name}
+                                          {p.isSubscription && (
+                                            <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-violet-50 text-violet-700 whitespace-nowrap">
+                                              Subscription{p.vendor ? ` · ${p.vendor}` : ''}
+                                            </span>
+                                          )}
+                                        </span>
                                         {p.price != null && (
                                           <span className={`text-xs font-mono shrink-0 ${hasOverride ? 'text-gray-400 line-through' : 'text-gray-500'}`}>
                                             {p.currency} {Number(p.price).toLocaleString()}

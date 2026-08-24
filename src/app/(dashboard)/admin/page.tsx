@@ -6,13 +6,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Palette, Settings, Workflow, Package, Shield, ScrollText, Building2, CreditCard,
   Plus, Save, Pencil, Trash2, X, ChevronDown, ChevronUp, Check, Upload, Search, Filter,
-  ClipboardCheck,
+  ClipboardCheck, Download,
 } from 'lucide-react';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import CompaniesTab from '@/components/admin/CompaniesTab';
 import PaymentMethodsTab from '@/components/admin/PaymentMethodsTab';
+import ExportDataTab from '@/components/admin/ExportDataTab';
 import ActiveToggle from '@/components/ActiveToggle';
 import ShowInactiveToggle, { useShowInactive } from '@/components/ShowInactiveToggle';
 import ColorInput from '@/components/ColorInput';
@@ -51,7 +52,7 @@ const STAGE_TYPES = ['work', 'approval'] as const;
 const ADVANCE_RULES = ['single_action', 'all_tasks_done', 'all_tasks_approved', 'manual'] as const;
 const ACTIONS = ['complete', 'approve', 'reject', 'rewind'] as const;
 
-type Tab = 'branding' | 'companies' | 'payments' | 'services' | 'workflows' | 'roles' | 'packages' | 'templates' | 'client-req-forms';
+type Tab = 'branding' | 'companies' | 'payments' | 'services' | 'workflows' | 'roles' | 'packages' | 'templates' | 'client-req-forms' | 'export';
 
 const CLIENT_REQ_FIELD_TYPES = [
   { value: 'text', label: 'Short text' },
@@ -1121,6 +1122,7 @@ function PackagesTab() {
   const blankPackageForm = {
     name: '', serviceTypeKey: '', tier: '', price: '', currency: 'USD',
     isRecurring: false, billingCycle: 'monthly', skipProjectCreation: false,
+    isSubscription: false, vendor: '',
     installmentPlan: [] as { percent: string; offsetDays: string; label: string }[],
     features: [] as string[],
   };
@@ -1130,9 +1132,10 @@ function PackagesTab() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<{
     name: string; tier: string; price: string; currency: string; isRecurring: boolean; billingCycle: string;
-    skipProjectCreation: boolean; installmentPlan: { percent: string; offsetDays: string; label: string }[];
+    skipProjectCreation: boolean; isSubscription: boolean; vendor: string;
+    installmentPlan: { percent: string; offsetDays: string; label: string }[];
     features: string[];
-  }>({ name: '', tier: '', price: '', currency: 'USD', isRecurring: false, billingCycle: 'monthly', skipProjectCreation: false, installmentPlan: [], features: [] });
+  }>({ name: '', tier: '', price: '', currency: 'USD', isRecurring: false, billingCycle: 'monthly', skipProjectCreation: false, isSubscription: false, vendor: '', installmentPlan: [], features: [] });
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [serviceFilter, setServiceFilter] = useState('');
@@ -1229,6 +1232,7 @@ function PackagesTab() {
       name: pkg.name || '', tier: pkg.tier || '', price: pkg.price ?? '',
       currency: pkg.currency || 'USD', isRecurring: !!pkg.isRecurring, billingCycle: pkg.billingCycle || 'monthly',
       skipProjectCreation: !!pkg.skipProjectCreation,
+      isSubscription: !!pkg.isSubscription, vendor: pkg.vendor || '',
       installmentPlan: Array.isArray(pkg.installmentPlan) && pkg.installmentPlan.length
         ? pkg.installmentPlan.map((p: any) => ({ percent: String(p.percent ?? ''), offsetDays: String(p.offsetDays ?? '0'), label: p.label || '' }))
         : [],
@@ -1385,6 +1389,27 @@ function PackagesTab() {
               className="w-4 h-4 rounded accent-brand-700" />
             Retainer only — don&apos;t create a project/workflow (e.g. hosting)
           </label>
+          {/* Subscriptions are the recurring lines the agency BUYS IN and resells —
+              hosting, domains, mailbox seats — rather than work the team performs.
+              Ticking this groups every sale of the package under Retainers →
+              Subscriptions, and gates the client's access on payment: while the
+              invoice is unpaid or overdue their portal shows it as suspended. */}
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={form.isSubscription}
+              onChange={(e) => setForm({ ...form, isSubscription: e.target.checked, isRecurring: e.target.checked || form.isRecurring })}
+              className="w-4 h-4 rounded accent-brand-700" />
+            Subscription — bought in and resold (hosting, domain, mailbox), and only usable once paid
+          </label>
+          {form.isSubscription && (
+            <div className="pl-6 space-y-1.5">
+              <label className="block text-xs font-medium text-gray-600">Vendor <span className="text-gray-400 font-normal">(who it&apos;s bought from)</span></label>
+              <input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })}
+                placeholder="Hostinger" className={`${inp} max-w-xs`} />
+              <p className="text-xs text-gray-400">
+                Named on the invoice line and in the client&apos;s portal, so a renewal can be matched against the supplier&apos;s own bill.
+              </p>
+            </div>
+          )}
 
           {!form.isRecurring && (
             <div className="pt-2 border-t border-gray-200 space-y-2">
@@ -1492,6 +1517,11 @@ function PackagesTab() {
                   ) : (
                     <span className="text-xs text-gray-400 font-mono">{pkg.serviceTypeKey}{pkg.tier ? ` · ${pkg.tier}` : ''}</span>
                   )}
+                  {pkg.isSubscription && (
+                    <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-violet-50 text-violet-700">
+                      Subscription{pkg.vendor ? ` · ${pkg.vendor}` : ''}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 sm:gap-4 shrink-0 ml-auto">
@@ -1568,6 +1598,22 @@ function PackagesTab() {
                     className="w-4 h-4 rounded accent-brand-700" />
                   Retainer only — don't create a project/workflow (e.g. hosting)
                 </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                  <input type="checkbox" checked={editForm.isSubscription}
+                    onChange={(e) => setEditForm({ ...editForm, isSubscription: e.target.checked, isRecurring: e.target.checked || editForm.isRecurring })}
+                    className="w-4 h-4 rounded accent-brand-700" />
+                  Subscription — bought in and resold (hosting, domain, mailbox), and only usable once paid
+                </label>
+                {editForm.isSubscription && (
+                  <div className="pl-6 space-y-1.5">
+                    <label className="block text-xs font-medium text-gray-600">Vendor <span className="text-gray-400 font-normal">(who it&apos;s bought from)</span></label>
+                    <input value={editForm.vendor} onChange={(e) => setEditForm({ ...editForm, vendor: e.target.value })}
+                      placeholder="Hostinger" className={`${inp} max-w-xs`} />
+                    <p className="text-xs text-gray-400">
+                      Changing this only affects future invoice lines — packages already sold keep the label they were billed under.
+                    </p>
+                  </div>
+                )}
 
                 {!editForm.isRecurring && (
                   <div className="pt-2 border-t border-gray-200 space-y-2">
@@ -2475,9 +2521,10 @@ const TABS = [
   { key: 'packages',   label: 'Packages',   icon: Package  },
   { key: 'templates',  label: 'Document Templates', icon: ScrollText },
   { key: 'client-req-forms', label: 'Client Req Boilerplate', icon: ClipboardCheck },
+  { key: 'export',     label: 'Export Data', icon: Download },
 ] as const;
 
-const VALID_TABS = ['branding', 'companies', 'payments', 'services', 'workflows', 'roles', 'packages', 'templates', 'client-req-forms'] as const;
+const VALID_TABS = ['branding', 'companies', 'payments', 'services', 'workflows', 'roles', 'packages', 'templates', 'client-req-forms', 'export'] as const;
 
 export default function AdminPage() {
   const searchParams = useSearchParams();
@@ -2519,6 +2566,7 @@ export default function AdminPage() {
           {tab === 'packages'  && <PackagesTab />}
           {tab === 'templates' && <DocumentTemplatesTab />}
           {tab === 'client-req-forms' && <ClientReqBoilerplateTab />}
+          {tab === 'export'    && <ExportDataTab />}
         </div>
       </div>
     </div>

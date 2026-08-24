@@ -197,6 +197,34 @@ export async function downloadAuthedFile(url: string, filename: string, params?:
   URL.revokeObjectURL(objectUrl);
 }
 
+// POST variant of downloadAuthedFile, for downloads whose input is a selection
+// rather than a URL — the Admin → Export Data screen posts a list of employee
+// ids and column keys, which is both too long for a query string and (being an
+// export of bank details) something the Activity Log should record, and
+// middleware/activityLogger on the backend only logs mutating verbs.
+export async function postAuthedFile(url: string, body: unknown, fallbackFilename: string) {
+  let res;
+  try {
+    res = await api.post(url, body, { responseType: 'blob' });
+  } catch (err) {
+    throw new Error(await extractBlobErrorMessage(err, 'Download failed.'));
+  }
+  // Prefer the server's own filename (it carries the date stamp) and fall back
+  // to the caller's if the header is missing or unreadable.
+  const disposition = String(res.headers?.['content-disposition'] || '');
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  const filename = match ? match[1] : fallbackFilename;
+
+  const objectUrl = URL.createObjectURL(res.data);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(objectUrl);
+}
+
 // Same as downloadAuthedFile, but opens the file in a new tab for viewing instead
 // of forcing a save-to-disk — used for "View PDF" buttons alongside "Download".
 export async function viewAuthedFile(url: string, params?: Record<string, unknown>) {

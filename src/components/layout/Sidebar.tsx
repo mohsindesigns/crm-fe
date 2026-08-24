@@ -8,7 +8,7 @@ import {
   Briefcase, ClipboardList, BarChart2, UserCog, Receipt, DollarSign, RefreshCw,
   Palette, Workflow, Shield, Package, X, FileSignature, ScrollText, Clock, MessagesSquare,
   Building2, CreditCard, Target, ChevronLeft, ChevronRight, PieChart, History,
-  ClipboardCheck, ShieldCheck,
+  ClipboardCheck, ShieldCheck, Download,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
@@ -84,6 +84,7 @@ const ADMIN_SUB_ITEMS = [
   { label: 'Packages',   tab: 'packages',   icon: Package  },
   { label: 'Document Templates', tab: 'templates', icon: ScrollText },
   { label: 'Client Req Boilerplate', tab: 'client-req-forms', icon: ClipboardCheck },
+  { label: 'Export Data', tab: 'export', icon: Download },
 ];
 
 export default function Sidebar() {

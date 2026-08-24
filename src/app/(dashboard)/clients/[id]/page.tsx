@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Plus, Trash2, Globe, Mail, Phone, User, FileText, FileSignature, Briefcase, Pencil, X, Save, Package, Layers } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Globe, Mail, Phone, User, FileText, FileSignature, Briefcase, Pencil, X, Save, Package, Layers, CheckCircle, Clock, XCircle, ChevronRight, RefreshCw, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { toast } from 'sonner';
@@ -15,6 +15,7 @@ import Avatar from '@/components/Avatar';
 import { useAuthStore } from '@/store/auth';
 import { cn, formatDate, formatCurrency, titleCase, inactiveRow } from '@/lib/utils';
 import { invalidateMany, afterClientChange } from '@/lib/queryInvalidation';
+import { usersForRoleSlot } from '@/lib/projectTeam';
 
 /** Mirrors ClientService._validateContact — a contact we can't email is a
  *  contact we can't send a quotation, an invoice, or a portal login code to. */
@@ -33,6 +34,7 @@ const INV_STATUS: Record<string, string> = {
   sent: 'bg-blue-100 text-blue-700',
   paid: 'bg-brand-100 text-brand-800',
   overdue: 'bg-red-100 text-red-700',
+  payment_review: 'bg-amber-100 text-amber-700',
   void: 'bg-gray-100 text-gray-400',
 };
 
@@ -52,7 +54,7 @@ const DOC_STATUS: Record<string, string> = {
   expired: 'bg-amber-100 text-amber-700',
 };
 
-type Tab = 'overview' | 'contacts' | 'packages' | 'projects' | 'invoices' | 'quotations' | 'proposals' | 'agreements';
+type Tab = 'overview' | 'timeline' | 'contacts' | 'packages' | 'subscriptions' | 'projects' | 'invoices' | 'quotations' | 'proposals' | 'agreements';
 
 const CP_STATUS: Record<string, string> = {
   active: 'bg-brand-100 text-brand-800',
@@ -61,6 +63,41 @@ const CP_STATUS: Record<string, string> = {
   completed: 'bg-blue-100 text-blue-700',
   cancelled: 'bg-red-100 text-red-700',
 };
+
+// Whether the client may actually USE a subscription right now — a separate
+// question from CP_STATUS above, which is where the SALE stands. Mirrors
+// ClientPackage.entitlement; see crm-be/src/services/SubscriptionService.js,
+// which derives it from the subscription's own invoices and is the only thing
+// that writes it.
+const CYCLE_LABELS: Record<string, string> = {
+  monthly: 'Monthly',
+  quarterly: 'Quarterly',
+  annual: 'Annual',
+};
+
+const ENTITLEMENT_LABELS: Record<string, string> = {
+  active: 'Usable',
+  pending_payment: 'Awaiting payment',
+  suspended: 'Suspended — unpaid',
+  cancelled: 'Cancelled',
+};
+
+const ENTITLEMENT_COLORS: Record<string, string> = {
+  active: 'bg-emerald-100 text-emerald-800',
+  pending_payment: 'bg-amber-100 text-amber-800',
+  suspended: 'bg-red-100 text-red-700',
+  cancelled: 'bg-gray-100 text-gray-500',
+};
+
+/**
+ * The Packages tab lists work the agency DELIVERS. Subscriptions are sold
+ * through the same ClientPackage table but have their own tab, so they're
+ * filtered out here — listing them in both places would show one sale twice and
+ * leave it ambiguous which view was authoritative.
+ */
+function deliveredPackages(soldPackages: any[]) {
+  return soldPackages.filter((cp) => !cp.package?.isSubscription);
+}
 
 export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -75,7 +112,11 @@ export default function ClientDetailPage() {
   const [editContactId, setEditContactId] = useState<string | null>(null);
   const [editContactForm, setEditContactForm] = useState({ name: '', email: '', phone: '', role: '', businessName: '', state: '', billingAddress: '', useForInvoice: false, portalAccess: false });
   const [showSellForm, setShowSellForm] = useState(false);
-  const [sellForm, setSellForm] = useState({ packageId: '', startDate: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' });
+  const [sellForm, setSellForm] = useState({ packageId: '', startDate: '', deliveryDate: '', description: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' });
+  // Only meaningful when the sale spawns exactly one project — same rule
+  // /projects/new uses (see its `roleSlots` comment): with more than one
+  // project each is assigned individually afterward.
+  const [sellAssignments, setSellAssignments] = useState<Record<string, string>>({});
   // Extra packages bought in the same sale. They go out at list price — the
   // discount / custom-price / installment controls above stay tied to the main
   // package, because those only make sense one package at a time.
@@ -144,6 +185,16 @@ export default function ClientDetailPage() {
     enabled: tab === 'invoices' || tab === 'overview',
   });
 
+  const { data: timeline } = useQuery({
+    queryKey: ['client-timeline', id],
+    queryFn: () => api.get(`/clients/${id}/timeline`).then((r) => r.data),
+    enabled: tab === 'timeline',
+  });
+  // Project stage-progress is hidden here — it's redundant with the Projects
+  // tab (and the project's own page); this timeline stays focused on the
+  // sales/billing side (quotations, proposals, agreements, invoices).
+  const timelineItems: any[] = (timeline?.items ?? []).filter((it: any) => it.kind !== 'project');
+
   const { data: quotations } = useQuery({
     queryKey: ['documents', { clientId: id, type: 'quotation' }],
     queryFn: () => api.get(`/documents?clientId=${id}&type=quotation&limit=100`).then((r) => r.data?.data ?? r.data ?? []),
@@ -166,6 +217,30 @@ export default function ClientDetailPage() {
     queryKey: ['client-packages', id],
     queryFn: () => api.get(`/clients/${id}/packages`).then((r) => r.data),
     enabled: tab === 'packages',
+  });
+
+  // Fetched on every visit, not just while the tab is open, because the tab
+  // itself carries the "needs attention" count — a badge nobody can see until
+  // they've already clicked through to it isn't telling them anything.
+  const { data: subscriptions = [], isLoading: subscriptionsLoading } = useQuery({
+    queryKey: ['client-subscriptions', id],
+    queryFn: () => api.get(`/clients/${id}/subscriptions`).then((r) => r.data),
+  });
+  const subscriptionList = subscriptions as any[];
+  const blockedSubscriptions = subscriptionList.filter(
+    (sub: any) => sub.usable === false && sub.entitlement !== 'cancelled'
+  ).length;
+
+  const { data: templates = [] } = useQuery({
+    queryKey: ['templates'],
+    queryFn: () => api.get('/admin/templates').then((r) => r.data),
+    enabled: tab === 'packages' && canSell,
+  });
+
+  const { data: teamUsers = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.get('/users', { params: { limit: 200 } }).then((r) => r.data?.data || []),
+    enabled: tab === 'packages' && canSell,
   });
 
   const { data: sellablePackages = [] } = useQuery({
@@ -196,6 +271,8 @@ export default function ClientDetailPage() {
       if (extraPackageIds.length) {
         return api.post(`/clients/${id}/sell-packages`, {
           startDate: data.startDate || undefined,
+          deliveryDate: data.deliveryDate || undefined,
+          description: data.description || undefined,
           packages: [
             primary,
             ...extraPackageIds.map((packageId) => {
@@ -217,12 +294,26 @@ export default function ClientDetailPage() {
       return api.post(`/clients/${id}/sell-package`, {
         ...primary,
         startDate: data.startDate || undefined,
+        deliveryDate: data.deliveryDate || undefined,
+        description: data.description || undefined,
       }).then((r) => r.data);
     },
     onSuccess: async (res) => {
+      // Same rule /projects/new uses: team assignment only makes sense when
+      // the sale spawned exactly one project — with more than one, each is
+      // assigned individually from its own page afterward.
+      const created = res?.projects || [];
+      if (created.length === 1 && Object.values(sellAssignments).some(Boolean)) {
+        await Promise.all(
+          Object.entries(sellAssignments)
+            .filter(([, userId]) => !!userId)
+            .map(([roleSlot, userId]) => api.post(`/projects/${created[0].id}/assign`, { roleSlot, userId }))
+        ).catch(() => toast.error('Package sold, but team assignment failed — assign from the project page.'));
+      }
       await invalidateMany(qc, afterClientChange(id));
       setShowSellForm(false);
-      setSellForm({ packageId: '', startDate: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' });
+      setSellForm({ packageId: '', startDate: '', deliveryDate: '', description: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' });
+      setSellAssignments({});
       setSellInstallmentPlan([]);
       setExtraPackageIds([]);
       setExtraTerms({});
@@ -420,7 +511,7 @@ export default function ClientDetailPage() {
         {/* Tabs */}
         <div className="flex gap-1 border-b border-gray-200 overflow-x-auto overflow-y-hidden">
           {([
-            'overview', 'contacts', 'packages', 'projects', 'invoices',
+            'overview', 'timeline', 'contacts', 'packages', 'subscriptions', 'projects', 'invoices',
             ...(canViewDocuments ? (['quotations', 'proposals', 'agreements'] as Tab[]) : []),
           ] as Tab[]).map((t) => (
             <button
@@ -432,6 +523,13 @@ export default function ClientDetailPage() {
               )}
             >
               {t}
+              {/* The only tab whose contents can need acting on right now: a
+                  subscription the client is paying for but can't currently use. */}
+              {t === 'subscriptions' && blockedSubscriptions > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-semibold rounded-full bg-red-100 text-red-700 align-middle">
+                  {blockedSubscriptions}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -612,6 +710,69 @@ export default function ClientDetailPage() {
                   )}
                 </div>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Timeline tab — one stage-progress card per project (same pill row
+            the project detail page itself renders) plus an analogous card per
+            quotation/proposal/agreement, newest activity first. */}
+        {tab === 'timeline' && (
+          <div className="space-y-4">
+            {!timeline ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-sm text-gray-400">Loading…</div>
+            ) : timelineItems.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-sm text-gray-400">No activity yet.</div>
+            ) : (
+              timelineItems.map((it) => (
+                <div key={it.id} className="bg-white rounded-xl border border-gray-200 p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <Link href={it.href} className="text-sm font-semibold text-gray-900 hover:text-brand-700">
+                        {it.title}
+                      </Link>
+                      {it.subtitle && <p className="text-xs text-gray-500 mt-0.5 capitalize">{it.subtitle}</p>}
+                    </div>
+                    <span className={cn(
+                      'px-2.5 py-1 text-xs font-semibold rounded-full capitalize shrink-0',
+                      (it.kind === 'project' ? PROJ_STATUS : it.kind === 'invoice' ? INV_STATUS : DOC_STATUS)[it.status] || 'bg-gray-100 text-gray-600',
+                    )}>
+                      {it.status}
+                    </span>
+                  </div>
+                  <div className="mt-4 flex items-start gap-1 overflow-x-auto pb-1">
+                    {it.steps.map((step: any, idx: number) => (
+                      <div key={step.key} className="flex items-start gap-1 shrink-0">
+                        <div className="flex flex-col items-center gap-1">
+                          <div
+                            title={step.at ? `${formatDate(step.at, 'MMM d, yyyy · h:mm a')}` : undefined}
+                            className={cn(
+                              'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium',
+                              step.done && step.tone === 'negative' ? 'bg-red-100 text-red-700' :
+                              step.done && step.tone === 'neutral' ? 'bg-amber-100 text-amber-700' :
+                              step.done ? 'bg-brand-100 text-brand-800' :
+                              // A pending-but-alarming step (e.g. an overdue invoice) reads as
+                              // red even though it's not "done" — done just means reached, and
+                              // overdue is a current state worth flagging, not a next-up default.
+                              step.current && step.tone === 'negative' ? 'bg-red-600 text-white' :
+                              step.current ? 'bg-brand-700 text-white' : 'bg-gray-100 text-gray-500'
+                            )}
+                          >
+                            {step.done && step.tone === 'negative' && <XCircle className="w-3 h-3" />}
+                            {step.done && step.tone !== 'negative' && <CheckCircle className="w-3 h-3" />}
+                            {step.current && <Clock className="w-3 h-3" />}
+                            {step.name}
+                          </div>
+                          {step.at && (step.done || step.current) && (
+                            <span className="text-[10px] text-gray-400 whitespace-nowrap">{formatDate(step.at, 'MMM d, h:mm a')}</span>
+                          )}
+                        </div>
+                        {idx < it.steps.length - 1 && <ChevronRight className="w-3.5 h-3.5 text-gray-300 shrink-0 mt-1.5" />}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
             )}
           </div>
         )}
@@ -903,7 +1064,7 @@ export default function ClientDetailPage() {
               </div>
               {canSell && (
                 <button
-                  onClick={() => { setShowSellForm((v) => !v); setSellForm({ packageId: '', startDate: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' }); setSellInstallmentPlan([]); }}
+                  onClick={() => { setShowSellForm((v) => !v); setSellForm({ packageId: '', startDate: '', deliveryDate: '', description: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' }); setSellAssignments({}); setSellInstallmentPlan([]); }}
                   className="flex items-center gap-1.5 shrink-0 whitespace-nowrap bg-brand-700 hover:bg-brand-800 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
                 >
                   <Plus className="w-4 h-4" />
@@ -914,6 +1075,26 @@ export default function ClientDetailPage() {
 
             {showSellForm && canSell && (() => {
               const selectedPkg = (sellablePackages as any[]).find((x: any) => x.id === sellForm.packageId);
+              // Team assignment only makes sense when this sale spawns exactly
+              // one project — same rule /projects/new uses. A package with no
+              // extras selected and exactly one service (or none, falling back
+              // to its own serviceTypeKey) resolves to one project; anything
+              // else is assigned per-project afterward.
+              const singlePkgServices = selectedPkg
+                ? (selectedPkg.skipProjectCreation
+                  ? []
+                  : (Array.isArray(selectedPkg.services) && selectedPkg.services.length
+                    ? selectedPkg.services
+                    : [{ serviceTypeKey: selectedPkg.serviceTypeKey }]))
+                : [];
+              const singleService = !extraPackageIds.length && singlePkgServices.length === 1 ? singlePkgServices[0] : null;
+              const singleTemplate = singleService
+                ? (templates as any[]).find((t: any) => t.id === singleService.workflowTemplateId)
+                  || (templates as any[]).find((t: any) => t.serviceTypeKey === singleService.serviceTypeKey && t.isActive)
+                : null;
+              const sellRoleSlots = singleTemplate
+                ? [...new Set((singleTemplate.stages || []).map((s: any) => s.ownerRoleSlot).filter(Boolean))]
+                : [];
               return (
               <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
                 <h4 className="text-sm font-semibold text-gray-900">Sell a Package</h4>
@@ -946,11 +1127,16 @@ export default function ClientDetailPage() {
                         const n = (p.services || []).length;
                         return (
                           <option key={p.id} value={p.id}>
-                            {p.name} · {p.currency} {Number(p.price || 0).toLocaleString()}{n > 0 ? ` · ${n} service${n !== 1 ? 's' : ''}` : ''}
+                            {p.name} · {p.currency} {Number(p.price || 0).toLocaleString()}{n > 0 ? ` · ${n} service${n !== 1 ? 's' : ''}` : ''}{p.isSubscription ? ` · Subscription${p.vendor ? ` (${p.vendor})` : ''}` : ''}
                           </option>
                         );
                       })}
                     </select>
+                    {(sellablePackages as any[]).find((x: any) => x.id === sellForm.packageId)?.isSubscription && (
+                      <p className="text-xs text-violet-700 mt-1.5">
+                        Subscription — it appears under Retainers → Subscriptions, and the client can&apos;t use it until the first invoice is paid.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1.5">Start Date</label>
@@ -977,6 +1163,25 @@ export default function ClientDetailPage() {
                           })));
                         }
                       }}
+                      className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Delivery date <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <input
+                      type="date"
+                      value={sellForm.deliveryDate}
+                      onChange={(e) => setSellForm({ ...sellForm, deliveryDate: e.target.value })}
+                      className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Description <span className="text-gray-400 font-normal">(optional — carried onto the resulting project(s))</span></label>
+                    <textarea
+                      value={sellForm.description}
+                      onChange={(e) => setSellForm({ ...sellForm, description: e.target.value })}
+                      rows={2}
+                      placeholder="What's this sale for — scope notes, special requests, etc."
                       className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
                     />
                   </div>
@@ -1135,9 +1340,10 @@ export default function ClientDetailPage() {
                 )}
 
                 {/* Additional packages in the same sale. Kept below the main
-                    package because the discount / custom price / installment
-                    controls above apply to that one only — these go out at list
-                    price, and everything is billed on one invoice. */}
+                    package because the start date and the installment plan
+                    above apply to that one only; each package added here
+                    carries its own price / discount, and everything is billed
+                    on one invoice. */}
                 {sellForm.packageId && (sellablePackages as any[]).length > 1 && (
                   <div className="border-t border-gray-100 pt-4">
                     <p className="text-xs font-medium text-gray-700 mb-1">
@@ -1146,7 +1352,7 @@ export default function ClientDetailPage() {
                     <p className="text-[11px] text-gray-400 mb-2.5">
                       Each package gets its own workflows. The client receives a single invoice for all of them.
                     </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-72 overflow-y-auto">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[32rem] overflow-y-auto pr-0.5">
                       {(sellablePackages as any[])
                         .filter((p: any) => p.id !== sellForm.packageId)
                         .map((p: any) => {
@@ -1162,15 +1368,19 @@ export default function ClientDetailPage() {
                               : terms.discountType === 'fixed'
                                 ? Math.max(0, listPrice - (Number(terms.discountValue) || 0))
                                 : listPrice;
+                          const svcCount = (p.services || []).length || 1;
+                          const extraDiscountValue = Number(terms.discountValue || 0);
                           return (
                             <div
                               key={p.id}
                               className={cn(
                                 'rounded-lg border transition-colors',
-                                checked ? 'border-brand-300 bg-brand-50/60' : 'border-gray-200 hover:bg-gray-50',
+                                checked
+                                  ? 'sm:col-span-2 border-brand-300 bg-white shadow-sm'
+                                  : 'border-gray-200 hover:bg-gray-50',
                               )}
                             >
-                              <label className="flex items-start gap-2 px-3 py-2 cursor-pointer">
+                              <label className={cn('flex items-start gap-2 cursor-pointer', checked ? 'px-4 pt-3.5 pb-2.5' : 'px-3 py-2')}>
                                 <input
                                   type="checkbox"
                                   checked={checked}
@@ -1179,78 +1389,112 @@ export default function ClientDetailPage() {
                                       ? [...prev, p.id]
                                       : prev.filter((x) => x !== p.id)
                                   ))}
-                                  className="w-3.5 h-3.5 mt-0.5 rounded accent-brand-700 shrink-0"
+                                  className={cn('mt-0.5 rounded accent-brand-700 shrink-0', checked ? 'w-4 h-4' : 'w-3.5 h-3.5')}
                                 />
                                 <span className="min-w-0">
-                                  <span className="block text-xs font-medium text-gray-800 truncate">{p.name}</span>
-                                  <span className="block text-[11px] text-gray-400">
+                                  <span className={cn('block font-medium truncate', checked ? 'text-sm text-gray-900' : 'text-xs text-gray-800')}>{p.name}</span>
+                                  <span className={cn('block', checked ? 'text-xs text-gray-500' : 'text-[11px] text-gray-400')}>
                                     {p.currency} {listPrice.toLocaleString()}
                                     {(p.services || []).length > 0 && ` · ${(p.services || []).length} service${(p.services || []).length !== 1 ? 's' : ''}`}
                                   </span>
                                 </span>
                               </label>
 
-                              {/* Same pricing controls the primary package gets.
-                                  Without these an added package could only ever be
-                                  sold at list price, so a discounted bundle had to
-                                  be sold one package at a time — which then billed
-                                  on separate invoices. */}
+                              {/* Same pricing controls the primary package gets, and
+                                  laid out the same way — labelled two-column grid plus
+                                  the summary note — so an added package doesn't read as
+                                  a different, lesser form. Without these an added
+                                  package could only ever be sold at list price, so a
+                                  discounted bundle had to be sold one package at a
+                                  time — which then billed on separate invoices. */}
                               {checked && (
-                                <div className="px-3 pb-2.5 pt-0.5 space-y-1.5 border-t border-brand-200/60 mt-1">
-                                  <div className="grid grid-cols-2 gap-1.5">
-                                    <select
-                                      value={terms.discountType}
-                                      onChange={(e) => setExtraTerms((prev) => ({
-                                        ...prev,
-                                        [p.id]: { ...terms, discountType: e.target.value, discountValue: e.target.value ? terms.discountValue : '' },
-                                      }))}
-                                      className="w-full px-2 py-1.5 text-[11px] border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-brand-600"
-                                    >
-                                      <option value="">No discount</option>
-                                      <option value="percent">% off</option>
-                                      <option value="fixed">Amount off</option>
-                                    </select>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      disabled={!terms.discountType}
-                                      value={terms.discountValue}
-                                      onChange={(e) => setExtraTerms((prev) => ({
-                                        ...prev, [p.id]: { ...terms, discountValue: e.target.value },
-                                      }))}
-                                      placeholder={terms.discountType === 'percent' ? 'e.g. 10' : 'e.g. 150'}
-                                      className="w-full px-2 py-1.5 text-[11px] border border-gray-300 rounded-md disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-600"
-                                    />
+                                <div className="px-4 pb-4 space-y-3 border-t border-gray-100">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3.5">
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-700 mb-1.5">Sell price <span className="text-gray-400 font-normal">(optional override)</span></label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={terms.customPrice}
+                                        onChange={(e) => setExtraTerms((prev) => ({
+                                          ...prev,
+                                          [p.id]: { ...terms, customPrice: e.target.value, discountType: '', discountValue: '', discountCycles: '' },
+                                        }))}
+                                        placeholder="Sell for a custom amount instead of list price"
+                                        className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                                      />
+                                    </div>
+                                    {!terms.customPrice && (
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1.5">Discount <span className="text-gray-400 font-normal">(optional)</span></label>
+                                        <select
+                                          value={terms.discountType}
+                                          onChange={(e) => setExtraTerms((prev) => ({
+                                            ...prev,
+                                            [p.id]: { ...terms, discountType: e.target.value, discountValue: e.target.value ? terms.discountValue : '' },
+                                          }))}
+                                          className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                                        >
+                                          <option value="">No discount</option>
+                                          <option value="percent">Percentage off</option>
+                                          <option value="fixed">Fixed amount off</option>
+                                        </select>
+                                      </div>
+                                    )}
+                                    {!terms.customPrice && terms.discountType && (
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                                          {terms.discountType === 'percent' ? 'Discount %' : 'Discount amount'}
+                                        </label>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          value={terms.discountValue}
+                                          onChange={(e) => setExtraTerms((prev) => ({
+                                            ...prev, [p.id]: { ...terms, discountValue: e.target.value },
+                                          }))}
+                                          placeholder={terms.discountType === 'percent' ? 'e.g. 10' : 'e.g. 50'}
+                                          className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                                        />
+                                      </div>
+                                    )}
+                                    {!terms.customPrice && terms.discountType && p.isRecurring && (
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                                          Discount valid for <span className="text-gray-400 font-normal">(billing cycles)</span>
+                                        </label>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          step="1"
+                                          value={terms.discountCycles}
+                                          onChange={(e) => setExtraTerms((prev) => ({
+                                            ...prev, [p.id]: { ...terms, discountCycles: e.target.value },
+                                          }))}
+                                          placeholder={`e.g. 3 (${p.billingCycle} cycles, then full price)`}
+                                          className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                                        />
+                                        <p className="mt-1 text-[11px] text-gray-500">Leave blank for a discount that never expires.</p>
+                                      </div>
+                                    )}
                                   </div>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    value={terms.customPrice}
-                                    onChange={(e) => setExtraTerms((prev) => ({
-                                      ...prev, [p.id]: { ...terms, customPrice: e.target.value },
-                                    }))}
-                                    placeholder="Sell price (overrides discount)"
-                                    className="w-full px-2 py-1.5 text-[11px] border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-600"
-                                  />
-                                  {!terms.customPrice && terms.discountType && p.isRecurring && (
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      step="1"
-                                      value={terms.discountCycles}
-                                      onChange={(e) => setExtraTerms((prev) => ({
-                                        ...prev, [p.id]: { ...terms, discountCycles: e.target.value },
-                                      }))}
-                                      placeholder={`Discount valid for N ${p.billingCycle} cycles (blank = never expires)`}
-                                      className="w-full px-2 py-1.5 text-[11px] border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-600"
-                                    />
-                                  )}
-                                  {sold !== listPrice && (
-                                    <p className="text-[11px] text-brand-800 font-medium">
-                                      Sells for {p.currency} {sold.toLocaleString()}
-                                      <span className="text-gray-400 font-normal"> (was {p.currency} {listPrice.toLocaleString()})</span>
-                                    </p>
-                                  )}
+                                  <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                                    {p.skipProjectCreation
+                                      ? <>No project/workflow will be created (retainer-only package).</>
+                                      : <>This will create <strong>{svcCount}</strong> separate workflow{svcCount !== 1 ? 's' : ''}, one per service, each with its own team and tasks.</>}
+                                    {terms.customPrice && (
+                                      <> Sell price: <strong>{p.currency} {sold.toLocaleString()}</strong> (list is {p.currency} {listPrice.toLocaleString()}).</>
+                                    )}
+                                    {!terms.customPrice && terms.discountType && extraDiscountValue > 0 && (
+                                      <> Price after discount: <strong>{p.currency} {sold.toLocaleString()}</strong> (was {p.currency} {listPrice.toLocaleString()}).</>
+                                    )}
+                                    {!terms.customPrice && terms.discountType && extraDiscountValue > 0 && p.isRecurring && Number(terms.discountCycles) > 0 && (
+                                      <> Discount applies for the first <strong>{terms.discountCycles}</strong> {p.billingCycle} cycle{Number(terms.discountCycles) !== 1 ? 's' : ''} — billing then reverts to <strong>{p.currency} {listPrice.toLocaleString()}</strong> automatically.</>
+                                    )}
+                                    {p.isRecurring
+                                      ? <> This package bills on a <strong>{p.billingCycle}</strong> cycle — a retainer is created, and renewal invoices follow on each renewal date.</>
+                                      : <> It is billed on the same single invoice as the rest of this sale.</>}
+                                  </p>
                                 </div>
                               )}
                             </div>
@@ -1263,6 +1507,35 @@ export default function ClientDetailPage() {
                       </p>
                     )}
                   </div>
+                )}
+
+                {sellRoleSlots.length > 0 && (
+                  <div className="space-y-3 border-t border-gray-100 pt-4">
+                    <div>
+                      <p className="text-xs font-medium text-gray-700">Team Assignment <span className="text-gray-400 font-normal">(optional)</span></p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">Assign team members to stage roles. You can update these later.</p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {sellRoleSlots.map((slot) => (
+                        <div key={slot as string}>
+                          <label className="block text-xs font-medium text-gray-600 mb-1.5 capitalize">{titleCase(String(slot))}</label>
+                          <select
+                            value={sellAssignments[slot as string] || ''}
+                            onChange={(e) => setSellAssignments((a) => ({ ...a, [slot as string]: e.target.value }))}
+                            className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                          >
+                            <option value="">Unassigned</option>
+                            {usersForRoleSlot(teamUsers, slot as string, sellAssignments[slot as string] || null).map((u: any) => (
+                              <option key={u.id} value={u.id}>{u.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {selectedPkg && !sellRoleSlots.length && (extraPackageIds.length > 0 || singlePkgServices.length > 1) && (
+                  <p className="text-xs text-gray-400 -mt-1">Multiple projects will be created — assign each one's team from its own page after the sale.</p>
                 )}
 
                 <div className="flex gap-2">
@@ -1285,11 +1558,21 @@ export default function ClientDetailPage() {
               );
             })()}
 
-            {(soldPackages as any[]).length === 0 ? (
-              <div className="text-center py-10 text-sm text-gray-400">No packages sold to this client yet.</div>
+            {deliveredPackages(soldPackages as any[]).length === 0 ? (
+              <div className="text-center py-10 text-sm text-gray-400">
+                No packages sold to this client yet.
+                {subscriptionList.length > 0 && (
+                  <>
+                    {' '}They do have {subscriptionList.length} subscription{subscriptionList.length !== 1 ? 's' : ''} —{' '}
+                    <button onClick={() => setTab('subscriptions')} className="text-brand-800 hover:text-brand-900 font-medium underline">
+                      see the Subscriptions tab
+                    </button>.
+                  </>
+                )}
+              </div>
             ) : (
               <div className="space-y-3">
-                {(soldPackages as any[]).map((cp: any) => (
+                {deliveredPackages(soldPackages as any[]).map((cp: any) => (
                   <div key={cp.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                     <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100">
                       <div className="flex items-center gap-3 min-w-0">
@@ -1411,6 +1694,109 @@ export default function ClientDetailPage() {
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Subscriptions tab — the recurring things the agency resells to this
+            client (hosting, domains, mailboxes). Same payload the client sees in
+            their own portal, so staff and client never disagree about whether
+            something is live. */}
+        {tab === 'subscriptions' && (
+          <div className="space-y-3">
+            {subscriptionsLoading ? (
+              <p className="text-sm text-gray-400 text-center py-10">Loading…</p>
+            ) : subscriptionList.length === 0 ? (
+              <div className="text-center py-10 text-sm text-gray-400">
+                No subscriptions for this client.
+                <span className="block text-xs mt-1">
+                  Tick “Subscription” on a package in Admin → Packages, then sell it from the Packages tab.
+                </span>
+              </div>
+            ) : (
+              <>
+                {blockedSubscriptions > 0 && (
+                  <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-red-800">
+                        {blockedSubscriptions === 1
+                          ? '1 subscription is not usable by the client'
+                          : `${blockedSubscriptions} subscriptions are not usable by the client`}
+                      </p>
+                      <p className="text-xs text-red-600 mt-0.5">
+                        Access is restored automatically as soon as the outstanding invoice is settled.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {subscriptionList.map((sub: any) => (
+                  <div
+                    key={sub.id}
+                    className={cn(
+                      'bg-white rounded-xl border overflow-hidden',
+                      sub.usable === false && sub.entitlement !== 'cancelled' ? 'border-red-200' : 'border-gray-200',
+                    )}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center shrink-0">
+                          <RefreshCw className="w-4 h-4 text-violet-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{sub.name}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {sub.vendor ? `${sub.vendor} · ` : ''}
+                            {CYCLE_LABELS[sub.billingCycle] || sub.billingCycle}
+                            {' · '}
+                            {sub.currency} {Number(sub.soldPrice || 0).toLocaleString()}
+                            {sub.renewsAt ? ` · renews ${formatDate(sub.renewsAt)}` : ''}
+                          </p>
+                          {sub.entitlementReason && (
+                            <p className={cn('text-xs mt-0.5', sub.usable === false ? 'text-red-600' : 'text-gray-500')}>
+                              {sub.entitlementReason}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* Can the client use it right now — a different question
+                            from where the sale stands, so both badges are shown. */}
+                        <span
+                          className={cn('px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap', ENTITLEMENT_COLORS[sub.entitlement] || 'bg-gray-100 text-gray-600')}
+                        >
+                          {ENTITLEMENT_LABELS[sub.entitlement] || sub.entitlement}
+                        </span>
+                        <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full capitalize', CP_STATUS[sub.status] || 'bg-gray-100 text-gray-600')}>
+                          {sub.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* What's actually owed, and where to go and chase it. */}
+                    {(sub.outstandingInvoices || []).length > 0 && (
+                      <div className="border-t border-gray-100 bg-gray-50/60 px-5 py-3 space-y-1.5">
+                        {(sub.outstandingInvoices as any[]).map((inv: any) => (
+                          <div key={inv.id} className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs text-gray-500">
+                              Invoice <span className="font-medium text-gray-700">{inv.number}</span>
+                              {inv.dueAt ? ` · due ${formatDate(inv.dueAt)}` : ''}
+                              {' · '}
+                              <span className="font-medium text-gray-700">{sub.currency} {Number(inv.total || 0).toLocaleString()}</span>
+                              {' · '}
+                              <span className="capitalize">{String(inv.status).replace('_', ' ')}</span>
+                            </p>
+                            <Link href={`/invoices/${inv.id}`} className="text-xs font-medium text-brand-800 hover:text-brand-900 whitespace-nowrap">
+                              Open invoice →
+                            </Link>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </>
             )}
           </div>
         )}
