@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Avatar from '@/components/Avatar';
-import { cn, formatDate } from '@/lib/utils';
+import { cn, formatDate, todayDateInput } from '@/lib/utils';
 
 export type Requester = (method: 'get' | 'post' | 'delete' | 'patch' | 'put', url: string, body?: any) => Promise<any>;
 
@@ -1042,7 +1042,7 @@ export function TaskFromMessageModal({
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Due date</label>
-            <input type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} className={field} />
+            <input type="date" min={todayDateInput()} value={dueAt} onChange={(e) => setDueAt(e.target.value)} className={field} />
           </div>
         </div>
 

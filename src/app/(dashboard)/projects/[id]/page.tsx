@@ -12,7 +12,7 @@ import ActiveToggle from '@/components/ActiveToggle';
 import ShowInactiveToggle, { useShowInactive } from '@/components/ShowInactiveToggle';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import Pagination from '@/components/Pagination';
-import { cn, formatDate, downloadAuthedFile, viewAuthedFile, openFileInNewTab, uploadErrorMessage, titleCase, inactiveRow } from '@/lib/utils';
+import { cn, formatDate, todayDateInput, downloadAuthedFile, viewAuthedFile, openFileInNewTab, uploadErrorMessage, titleCase, inactiveRow } from '@/lib/utils';
 import { invalidateMany, afterProjectChange, afterTaskChange } from '@/lib/queryInvalidation';
 import { usersForRoleSlot } from '@/lib/projectTeam';
 import { useState, useRef, useMemo, useEffect, Fragment } from 'react';
@@ -222,6 +222,7 @@ export default function ProjectDetailPage() {
   // Rows ticked for bulk approval on the Blogs sheet.
   const [selectedBlogIds, setSelectedBlogIds] = useState<string[]>([]);
   const [confirmClearBlogs, setConfirmClearBlogs] = useState(false);
+  const [confirmDeleteBlog, setConfirmDeleteBlog] = useState<null | { id: string; label?: string }>(null);
   const [blogRejectReason, setBlogRejectReason] = useState('');
 
   // Give the status panel room: collapse the left nav for as long as a project
@@ -1164,16 +1165,14 @@ export default function ProjectDetailPage() {
   });
 
   /**
-   * Active ↔ Inactive, both directions.
-   *
-   * Only the deactivate half was ever wired up, so a row set to Inactive could
-   * never be brought back from the UI — the /activate endpoint existed and had
-   * nothing calling it.
+   * Active ↔ Inactive, both directions. Both are non-destructive status flips
+   * now — permanent removal lives in deleteBlogRow below, matching keywords
+   * (delete really deletes; deactivate/activate is the reversible pair).
    */
   const toggleBlogRowActive = useMutation({
     mutationFn: ({ blogId, next }: { blogId: string; next: boolean }) => (next
       ? api.post(`/seo/blog-sheet/${blogId}/activate`).then((r) => r.data)
-      : api.delete(`/seo/blog-sheet/${blogId}`).then((r) => r.data)),
+      : api.post(`/seo/blog-sheet/${blogId}/deactivate`).then((r) => r.data)),
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: ['blog-sheet', id] });
       toast.success(vars.next ? 'Blog set to Active.' : 'Blog set to Inactive.');
@@ -1181,19 +1180,33 @@ export default function ProjectDetailPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change blog status.'),
   });
 
+  // Permanently deletes a single blog row — the counterpart to
+  // toggleBlogRowActive's deactivate, same real-delete semantics as
+  // deleteKeyword. Blocked once the row is approved (see SeoService).
+  const deleteBlogRow = useMutation({
+    mutationFn: (blogId: string) => api.delete(`/seo/blog-sheet/${blogId}`).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['blog-sheet', id] });
+      setConfirmDeleteBlog(null);
+      toast.success('Blog deleted');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to delete blog.'),
+  });
+
   /**
    * Clear the planned rows that haven't been signed off.
    *
    * Approved rows are deliberately untouchable: they're a record of work that
    * was reviewed and accepted, and an import mistake shouldn't be able to wipe
-   * them. Deactivates rather than destroys, matching every other "delete" here.
+   * them. Deactivates rather than destroys — Clear stays reversible even
+   * though the per-row/bulk Delete actions are real, permanent removals.
    */
   const clearBlogRows = useMutation({
     mutationFn: async (blogIds: string[]) => {
       const failed: string[] = [];
       for (const blogId of blogIds) {
         try {
-          await api.delete(`/seo/blog-sheet/${blogId}`);
+          await api.post(`/seo/blog-sheet/${blogId}/deactivate`);
         } catch {
           failed.push(blogId);
         }
@@ -1615,6 +1628,14 @@ export default function ProjectDetailPage() {
         onConfirm={() => { clearBlogRows.mutate(blogIdsToClear); setConfirmClearBlogs(false); }}
         onCancel={() => !clearBlogRows.isPending && setConfirmClearBlogs(false)}
       />
+      <ConfirmDialog
+        open={!!confirmDeleteBlog}
+        title="Delete blog"
+        message={`Permanently delete blog${confirmDeleteBlog?.label ? ` "${confirmDeleteBlog.label}"` : ''}? This cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={() => { if (confirmDeleteBlog) deleteBlogRow.mutate(confirmDeleteBlog.id); }}
+        onCancel={() => !deleteBlogRow.isPending && setConfirmDeleteBlog(null)}
+      />
       <Header title={project.name} />
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 sm:p-6 flex flex-col lg:flex-row lg:items-start gap-5 max-w-[1500px] mx-auto">
@@ -1917,7 +1938,7 @@ export default function ProjectDetailPage() {
                       </div>
                       <div>
                         <label className="block text-[11px] font-medium text-gray-500 mb-1">Due date</label>
-                        <input type="date" value={newTask.dueAt} onChange={(e) => setNewTask((x) => ({ ...x, dueAt: e.target.value }))}
+                        <input type="date" min={todayDateInput()} value={newTask.dueAt} onChange={(e) => setNewTask((x) => ({ ...x, dueAt: e.target.value }))}
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
                       </div>
                     </div>
@@ -4022,6 +4043,21 @@ export default function ProjectDetailPage() {
                                         className="p-1.5 text-gray-300 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-50"
                                       >
                                         <ToggleLeft className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                    {/* Permanently deletes — same guard as the backend
+                                        (SeoService.deleteBlogTask): the admin/manager or
+                                        the row's own submitter, only while unapproved. */}
+                                    {canActOnProject && row.status !== 'approved'
+                                      && (isAdminUser || iAmProjectManager || row.createdBy === user?.id) && (
+                                      <button
+                                        type="button"
+                                        title="Permanently delete this blog"
+                                        disabled={deleteBlogRow.isPending}
+                                        onClick={() => setConfirmDeleteBlog({ id: row.id, label: row.title })}
+                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
                                       </button>
                                     )}
                                   </div>

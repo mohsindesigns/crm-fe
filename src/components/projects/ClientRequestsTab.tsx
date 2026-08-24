@@ -37,7 +37,7 @@ interface ClientRequest {
   rejectionReason: string | null;
   remindersSent: number;
   fields: FormFieldDef[];
-  responseData: Record<string, string> | null;
+  responseData: Record<string, string | string[]> | null;
   formUrl: string;
   sender?: { id: string; name: string } | null;
   approver?: { id: string; name: string } | null;
@@ -356,12 +356,21 @@ export default function ClientRequestsTab({
                     <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 divide-y divide-gray-200">
                       {r.fields.map((f) => {
                         const answer = r.responseData?.[f.key];
+                        const hasAnswer = Array.isArray(answer) ? answer.length > 0 : !!answer;
                         return (
                           <div key={f.key} className="px-4 py-3">
                             <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">{f.label}</p>
-                            <p className={`text-sm mt-1 whitespace-pre-wrap break-words ${answer ? 'text-gray-900' : 'text-gray-400 italic'}`}>
-                              {answer || 'No answer given'}
-                            </p>
+                            {!hasAnswer ? (
+                              <p className="text-sm mt-1 text-gray-400 italic">No answer given</p>
+                            ) : f.type === 'file' ? (
+                              <a href={String(answer)} target="_blank" rel="noopener noreferrer" className="text-sm mt-1 inline-block text-brand-700 hover:text-brand-800 underline underline-offset-2 break-words">
+                                View attachment
+                              </a>
+                            ) : Array.isArray(answer) ? (
+                              <p className="text-sm mt-1 whitespace-pre-wrap break-words text-gray-900">{answer.join(', ')}</p>
+                            ) : (
+                              <p className="text-sm mt-1 whitespace-pre-wrap break-words text-gray-900">{answer}</p>
+                            )}
                           </div>
                         );
                       })}

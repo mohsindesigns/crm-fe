@@ -17,7 +17,9 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: 'email', label: 'Email' },
   { value: 'phone', label: 'Phone' },
   { value: 'select', label: 'Dropdown' },
+  { value: 'multiselect', label: 'Dropdown (multi-select)' },
   { value: 'checkbox', label: 'Checkbox' },
+  { value: 'file', label: 'File attachment' },
 ];
 
 interface FieldDraft {
@@ -43,6 +45,7 @@ export default function LeadFormModal({
   const [name, setName] = useState(form?.name || '');
   const [projectId, setProjectId] = useState(form?.projectId || '');
   const [campaign, setCampaign] = useState(form?.campaign || '');
+  const [notifyClientId, setNotifyClientId] = useState(form?.notifyClientId || '');
   const [successMessage, setSuccessMessage] = useState(form?.successMessage || '');
   const [fields, setFields] = useState<FieldDraft[]>(
     form?.fields?.length
@@ -75,6 +78,11 @@ export default function LeadFormModal({
     queryFn: () => api.get('/projects', { params: { limit: 200 } }).then((r) => r.data?.data || []),
   });
 
+  const { data: clients = [] } = useQuery({
+    queryKey: ['clients-all'],
+    queryFn: () => api.get('/clients', { params: { limit: 200 } }).then((r) => r.data?.data || []),
+  });
+
   function updateField(i: number, patch: Partial<FieldDraft>) {
     setFields((fs) => fs.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
   }
@@ -97,7 +105,7 @@ export default function LeadFormModal({
         type: f.type,
         required: f.required,
         hidden: f.hidden,
-        ...(f.type === 'select' ? { options: f.options.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
+        ...(f.type === 'select' || f.type === 'multiselect' ? { options: f.options.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
       }));
   }
 
@@ -109,6 +117,7 @@ export default function LeadFormModal({
         name: name.trim(),
         projectId: projectId || null,
         campaign: campaign.trim() || null,
+        notifyClientId: notifyClientId || null,
         successMessage: successMessage.trim() || undefined,
         fields: toPayloadFields(),
         theme: themePayload,
@@ -190,6 +199,23 @@ export default function LeadFormModal({
               </div>
             </div>
 
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Link to client (optional)</label>
+              <select
+                value={notifyClientId}
+                onChange={(e) => setNotifyClientId(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 bg-white"
+              >
+                <option value="">Not linked</option>
+                {(clients as any[]).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <p className="text-[11px] text-gray-400 mt-1">
+                {notifyClientId
+                  ? 'Every new lead from this form will also be emailed to this client automatically.'
+                  : 'Leave unlinked and nothing changes — leads only show up in your Leads list, as today.'}
+              </p>
+            </div>
+
             {/* Field builder */}
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -232,7 +258,7 @@ export default function LeadFormModal({
                       </button>
                     </div>
                     {f.hidden && <p className="text-[11px] text-amber-600 pl-5">Hidden — won&apos;t appear on the public form.</p>}
-                    {f.type === 'select' && (
+                    {(f.type === 'select' || f.type === 'multiselect') && (
                       <input
                         value={f.options}
                         onChange={(e) => updateField(i, { options: e.target.value })}

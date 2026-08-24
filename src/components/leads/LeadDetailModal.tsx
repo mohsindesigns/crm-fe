@@ -131,7 +131,15 @@ export default function LeadDetailModal({ leadId, onClose }: { leadId: string; o
                   {extraFields.map((f: any) => (
                     <div key={f.key} className="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-3 text-sm">
                       <span className="text-gray-500 sm:w-32 shrink-0">{f.label}</span>
-                      <span className="text-gray-800 break-words">{String(lead.fieldData?.[f.key] ?? '—')}</span>
+                      <span className="text-gray-800 break-words">
+                        {f.type === 'file' && lead.fieldData?.[f.key] ? (
+                          <a href={lead.fieldData[f.key]} target="_blank" rel="noopener noreferrer" className="text-brand-700 hover:text-brand-800 underline underline-offset-2">
+                            View attachment
+                          </a>
+                        ) : Array.isArray(lead.fieldData?.[f.key])
+                          ? lead.fieldData[f.key].join(', ') || '—'
+                          : String(lead.fieldData?.[f.key] ?? '—')}
+                      </span>
                     </div>
                   ))}
                 </div>

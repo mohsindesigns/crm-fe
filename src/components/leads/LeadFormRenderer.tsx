@@ -6,7 +6,7 @@ import { RADIUS_PX } from '@/lib/leadFormTheme';
 import { PHONE_COUNTRIES, digitRange } from '@/lib/phoneCountries';
 import TurnstileWidget from '@/components/TurnstileWidget';
 
-export type FieldType = 'text' | 'email' | 'phone' | 'textarea' | 'select' | 'checkbox';
+export type FieldType = 'text' | 'email' | 'phone' | 'textarea' | 'select' | 'checkbox' | 'multiselect' | 'file';
 export interface FormField {
   key: string;
   label: string;
@@ -15,6 +15,8 @@ export interface FormField {
   options?: string[];
   hidden?: boolean;
 }
+
+export type FormAnswer = string | string[];
 
 // Loose enough to not fight real-world formatting (extensions, spaces,
 // dashes), strict enough to reject obvious junk like "abc" or a single digit.
@@ -26,8 +28,12 @@ interface LeadFormRendererProps {
   theme: LeadFormTheme;
   branding: { brandName: string; logoUrl: string | null };
   fields: FormField[];
-  answers?: Record<string, string>;
-  onAnswerChange?: (key: string, value: string) => void;
+  answers?: Record<string, FormAnswer>;
+  onAnswerChange?: (key: string, value: FormAnswer) => void;
+  /** Uploads a `file`-type field's selected file and resolves to the URL to
+   *  store as that field's answer. Omit when file fields aren't wired up in
+   *  this context (e.g. the builder preview) — the field renders disabled. */
+  onFileUpload?: (file: File) => Promise<{ url: string; name: string }>;
   onSubmit?: (e: React.FormEvent) => void;
   submitting?: boolean;
   submitError?: string;
@@ -111,6 +117,67 @@ function PhoneFieldInput({
   );
 }
 
+function FileFieldInput({
+  value, onChange, onUpload, disabled, required, inputStyle, primaryColor,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onUpload?: (file: File) => Promise<{ url: string; name: string }>;
+  disabled?: boolean;
+  required?: boolean;
+  inputStyle: React.CSSProperties;
+  primaryColor: string;
+}) {
+  const [fileName, setFileName] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !onUpload) return;
+    setError('');
+    setUploading(true);
+    try {
+      const result = await onUpload(file);
+      setFileName(result.name || file.name);
+      onChange(result.url);
+    } catch {
+      setError('Upload failed — try again.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  if (value) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#111827' }}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📎 {fileName || 'File attached'}</span>
+        {!disabled && (
+          <button type="button" onClick={() => { setFileName(''); onChange(''); }} style={{ border: 'none', background: 'none', color: primaryColor, fontSize: 12, cursor: 'pointer', padding: 0 }}>
+            Remove
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <input
+        type="file"
+        required={required && !value}
+        disabled={disabled || uploading || !onUpload}
+        onChange={handleChange}
+        style={{ ...inputStyle, padding: '6px 12px' }}
+      />
+      {uploading && <p style={{ fontSize: 12, color: '#6B7280', margin: '4px 0 0' }}>Uploading…</p>}
+      {error && <p style={{ fontSize: 12, color: '#DC2626', margin: '4px 0 0' }}>{error}</p>}
+      {!onUpload && !disabled && <p style={{ fontSize: 12, color: '#9CA3AF', margin: '4px 0 0' }}>File upload isn&apos;t available here.</p>}
+    </div>
+  );
+}
+
 /** Renders a lead form exactly as it appears live — used both for the actual
  *  public embed page and for the builder's "how it'll look" preview (with
  *  `mode="preview"`: inputs go inert and the submit button is a no-op, but
@@ -123,6 +190,7 @@ export default function LeadFormRenderer({
   fields,
   answers = {},
   onAnswerChange,
+  onFileUpload,
   onSubmit,
   submitting,
   submitError,
@@ -201,7 +269,7 @@ export default function LeadFormRenderer({
                     required={field.required}
                     disabled={isPreview}
                     rows={3}
-                    value={answers[field.key] || ''}
+                    value={(answers[field.key] as string) || ''}
                     onChange={(e) => onAnswerChange?.(field.key, e.target.value)}
                     style={inputStyle}
                   />
@@ -209,7 +277,7 @@ export default function LeadFormRenderer({
                   <select
                     required={field.required}
                     disabled={isPreview}
-                    value={answers[field.key] || ''}
+                    value={(answers[field.key] as string) || ''}
                     onChange={(e) => onAnswerChange?.(field.key, e.target.value)}
                     style={inputStyle}
                   >
@@ -229,11 +297,42 @@ export default function LeadFormRenderer({
                   </label>
                 ) : field.type === 'phone' && enablePhoneCountryCode ? (
                   <PhoneFieldInput
-                    value={answers[field.key] || ''}
+                    value={(answers[field.key] as string) || ''}
                     onChange={(v) => onAnswerChange?.(field.key, v)}
                     disabled={isPreview}
                     required={field.required}
                     inputStyle={inputStyle}
+                  />
+                ) : field.type === 'multiselect' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {(field.options || []).map((o) => {
+                      const selected = Array.isArray(answers[field.key]) ? (answers[field.key] as string[]) : [];
+                      const checked = selected.includes(o);
+                      return (
+                        <label key={o} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#374151' }}>
+                          <input
+                            type="checkbox"
+                            disabled={isPreview}
+                            checked={checked}
+                            onChange={(e) => {
+                              const next = e.target.checked ? [...selected, o] : selected.filter((v) => v !== o);
+                              onAnswerChange?.(field.key, next);
+                            }}
+                          />
+                          {o}
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : field.type === 'file' ? (
+                  <FileFieldInput
+                    value={(answers[field.key] as string) || ''}
+                    onChange={(v) => onAnswerChange?.(field.key, v)}
+                    onUpload={onFileUpload}
+                    disabled={isPreview}
+                    required={field.required}
+                    inputStyle={inputStyle}
+                    primaryColor={theme.primaryColor}
                   />
                 ) : (
                   <input
@@ -242,7 +341,7 @@ export default function LeadFormRenderer({
                     disabled={isPreview}
                     pattern={field.type === 'phone' ? PHONE_PATTERN : undefined}
                     title={field.type === 'phone' ? 'Enter a valid phone number (7-20 digits, may start with +).' : undefined}
-                    value={answers[field.key] || ''}
+                    value={(answers[field.key] as string) || ''}
                     onChange={(e) => onAnswerChange?.(field.key, e.target.value)}
                     style={inputStyle}
                   />

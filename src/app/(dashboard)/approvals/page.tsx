@@ -77,12 +77,6 @@ const TYPE_STYLE: Record<string, string> = {
   worker_profile: 'bg-orange-50 text-orange-700 border-orange-200',
 };
 
-const STATUS_STYLE: Record<ApprovalStatus, string> = {
-  pending: 'bg-amber-50 text-amber-700 border-amber-200',
-  approved: 'bg-green-50 text-green-700 border-green-200',
-  rejected: 'bg-red-50 text-red-700 border-red-200',
-};
-
 function when(value?: string | null) {
   if (!value) return '—';
   return formatDate(value, 'MMM d, yyyy · h:mm a');
@@ -279,12 +273,6 @@ export default function ApprovalsPage() {
                           TYPE_STYLE[item.type] || 'bg-gray-50 text-gray-600 border-gray-200',
                         )}>
                           {item.typeLabel}
-                        </span>
-                        <span className={cn(
-                          'px-2 py-0.5 text-[10px] font-semibold rounded-full border capitalize',
-                          STATUS_STYLE[item.status],
-                        )}>
-                          {item.status}
                         </span>
                       </div>
 

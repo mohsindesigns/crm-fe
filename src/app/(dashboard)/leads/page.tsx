@@ -294,6 +294,7 @@ export default function LeadsPage() {
                         </div>
                         <p className="text-xs text-gray-400 truncate">
                           {form.project?.name || 'Unscoped'}{form.campaign ? ` · ${form.campaign}` : ''} · {form.leadCount} lead{form.leadCount === 1 ? '' : 's'}
+                          {form.notifyClient && ` · linked to ${form.notifyClient.name}`}
                         </p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">

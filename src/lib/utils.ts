@@ -42,6 +42,14 @@ export function formatDate(date: string | Date, format = 'MMM d, yyyy') {
   return dateFnsFormat(new Date(date), format);
 }
 
+/** Today as a local "YYYY-MM-DD" string — pass to a `<input type="date">`'s
+ *  `min` to grey out/disable every date before today in the native picker. */
+export function todayDateInput(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 // Payroll runs/periods are stored as "YYYY-MM" — render as "July-2026" instead
 // of the raw key everywhere it's shown to a user.
 const MONTH_NAMES = [

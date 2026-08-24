@@ -9,7 +9,7 @@ import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import Avatar from '@/components/Avatar';
 import Linkify from '@/components/Linkify';
-import { cn, formatDate, titleCase, uploadErrorMessage, formatFileSize } from '@/lib/utils';
+import { cn, formatDate, todayDateInput, titleCase, uploadErrorMessage, formatFileSize } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -555,6 +555,7 @@ export default function TasksPage() {
                   <label className="block text-xs font-medium text-gray-700 mb-1.5">Due date</label>
                   <input
                     type="date"
+                    min={todayDateInput()}
                     value={newTask.dueAt}
                     onChange={(e) => setNewTask((x) => ({ ...x, dueAt: e.target.value }))}
                     className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"

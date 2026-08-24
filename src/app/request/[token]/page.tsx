@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import LeadFormRenderer, { type FormField } from '@/components/leads/LeadFormRenderer';
+import LeadFormRenderer, { type FormField, type FormAnswer } from '@/components/leads/LeadFormRenderer';
 import type { LeadFormTheme } from '@/lib/leadFormTheme';
 
 interface RequestSchema {
@@ -32,7 +32,7 @@ export default function ClientRequestPage() {
   const { token } = useParams<{ token: string }>();
   const [schema, setSchema] = useState<RequestSchema | null>(null);
   const [loadError, setLoadError] = useState('');
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, FormAnswer>>({});
   const [honeypot, setHoneypot] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -60,6 +60,15 @@ export default function ClientRequestPage() {
       })
       .catch((e) => setLoadError(e.message || 'This form is no longer available.'));
   }, [token]);
+
+  async function uploadFile(file: File): Promise<{ url: string; name: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${apiBase}/public/client-requests/${token}/upload`, { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || data?.message || 'Upload failed.');
+    return { url: data.url, name: data.name };
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -132,6 +141,7 @@ export default function ClientRequestPage() {
           fields={schema.fields}
           answers={answers}
           onAnswerChange={(key, value) => setAnswers((a) => ({ ...a, [key]: value }))}
+          onFileUpload={uploadFile}
           onSubmit={handleSubmit}
           submitting={submitting}
           submitError={submitError}

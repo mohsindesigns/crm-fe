@@ -38,7 +38,9 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: 'email', label: 'Email' },
   { value: 'phone', label: 'Phone' },
   { value: 'select', label: 'Dropdown' },
+  { value: 'multiselect', label: 'Dropdown (multi-select)' },
   { value: 'checkbox', label: 'Checkbox' },
+  { value: 'file', label: 'File attachment' },
 ];
 
 interface FieldDraft {
@@ -289,7 +291,7 @@ export default function ClientRequestModal({
         label: f.label.trim(),
         type: f.type,
         required: f.required,
-        ...(f.type === 'select' ? { options: f.options.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
+        ...(f.type === 'select' || f.type === 'multiselect' ? { options: f.options.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
       }))
   ), [fields]);
 
@@ -533,7 +535,7 @@ export default function ClientRequestModal({
                                 Required
                               </button>
                             </div>
-                            {f.type === 'select' && (
+                            {(f.type === 'select' || f.type === 'multiselect') && (
                               <input
                                 value={f.options}
                                 onChange={(e) => updateField(i, { options: e.target.value })}

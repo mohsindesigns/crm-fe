@@ -28,7 +28,9 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: 'email', label: 'Email' },
   { value: 'phone', label: 'Phone' },
   { value: 'select', label: 'Dropdown' },
+  { value: 'multiselect', label: 'Dropdown (multi-select)' },
   { value: 'checkbox', label: 'Checkbox' },
+  { value: 'file', label: 'File attachment' },
 ];
 
 interface FieldDraft {
@@ -109,7 +111,7 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
         type: f.type,
         required: f.required,
         hidden: f.hidden,
-        ...(f.type === 'select' ? { options: f.options.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
+        ...(f.type === 'select' || f.type === 'multiselect' ? { options: f.options.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
       }));
   }
 
@@ -211,7 +213,7 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
                       </button>
                     </div>
                     {f.hidden && <p className="text-[11px] text-amber-600 pl-5">Hidden — won&apos;t appear on the public form.</p>}
-                    {f.type === 'select' && (
+                    {(f.type === 'select' || f.type === 'multiselect') && (
                       <input value={f.options} onChange={(e) => updateField(i, { options: e.target.value })} placeholder="Options, comma-separated"
                         className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-600" />
                     )}
