@@ -1161,15 +1161,26 @@ function RolesTab() {
 // ─── Packages Tab ─────────────────────────────────────────────────────────────
 
 type SvcRow = { serviceTypeKey: string; workflowTemplateId: string };
+type InstallmentRow = { type: 'percent' | 'amount'; value: string; offsetDays: string; label: string };
+
+// Older packages were saved before `type`/`value` existed and only carry
+// { percent, offsetDays, label } — read those as percent-type rows.
+function normalizeInstallmentRow(p: any): InstallmentRow {
+  const type: 'percent' | 'amount' = p.type === 'amount' ? 'amount' : 'percent';
+  const rawValue = p.value !== undefined && p.value !== null && p.value !== ''
+    ? p.value
+    : (type === 'amount' ? p.amount : p.percent);
+  return { type, value: rawValue != null ? String(rawValue) : '', offsetDays: String(p.offsetDays ?? '0'), label: p.label || '' };
+}
 
 function PackagesTab() {
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const blankPackageForm = {
-    name: '', serviceTypeKey: '', tier: '', price: '', currency: 'USD',
+    name: '', serviceTypeKey: '', tier: '', price: '', currency: 'USD', description: '',
     isRecurring: false, billingCycle: 'monthly', skipProjectCreation: false,
     isSubscription: false, vendor: '',
-    installmentPlan: [] as { percent: string; offsetDays: string; label: string }[],
+    installmentPlan: [] as InstallmentRow[],
     features: [] as string[],
   };
   const [form, setForm] = useState(blankPackageForm);
@@ -1177,11 +1188,11 @@ function PackagesTab() {
   // Single open-editor id: details, features and services are one form now.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<{
-    name: string; tier: string; price: string; currency: string; isRecurring: boolean; billingCycle: string;
+    name: string; tier: string; price: string; currency: string; description: string; isRecurring: boolean; billingCycle: string;
     skipProjectCreation: boolean; isSubscription: boolean; vendor: string;
-    installmentPlan: { percent: string; offsetDays: string; label: string }[];
+    installmentPlan: InstallmentRow[];
     features: string[];
-  }>({ name: '', tier: '', price: '', currency: 'USD', isRecurring: false, billingCycle: 'monthly', skipProjectCreation: false, isSubscription: false, vendor: '', installmentPlan: [], features: [] });
+  }>({ name: '', tier: '', price: '', currency: 'USD', description: '', isRecurring: false, billingCycle: 'monthly', skipProjectCreation: false, isSubscription: false, vendor: '', installmentPlan: [], features: [] });
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [serviceFilter, setServiceFilter] = useState('');
@@ -1216,8 +1227,8 @@ function PackagesTab() {
       ...form,
       price: form.price ? Number(form.price) : null,
       installmentPlan: form.isRecurring ? null : form.installmentPlan
-        .filter((p) => p.percent)
-        .map((p) => ({ percent: Number(p.percent), offsetDays: Number(p.offsetDays) || 0, label: p.label || undefined })),
+        .filter((p) => p.value)
+        .map((p) => ({ type: p.type, value: Number(p.value), offsetDays: Number(p.offsetDays) || 0, label: p.label || undefined })),
       features: form.features.map((f) => f.trim()).filter(Boolean),
     }),
     onSuccess: () => {
@@ -1240,8 +1251,8 @@ function PackagesTab() {
         ...data,
         price: data.price ? Number(data.price) : null,
         installmentPlan: data.isRecurring ? null : data.installmentPlan
-          .filter((p) => p.percent)
-          .map((p) => ({ percent: Number(p.percent), offsetDays: Number(p.offsetDays) || 0, label: p.label || undefined })),
+          .filter((p) => p.value)
+          .map((p) => ({ type: p.type, value: Number(p.value), offsetDays: Number(p.offsetDays) || 0, label: p.label || undefined })),
         features: data.features.map((f) => f.trim()).filter(Boolean),
       });
       await api.put(`/admin/packages/${id}/services`, {
@@ -1276,11 +1287,11 @@ function PackagesTab() {
     setEditingId(pkg.id);
     setEditForm({
       name: pkg.name || '', tier: pkg.tier || '', price: pkg.price ?? '',
-      currency: pkg.currency || 'USD', isRecurring: !!pkg.isRecurring, billingCycle: pkg.billingCycle || 'monthly',
+      currency: pkg.currency || 'USD', description: pkg.description || '', isRecurring: !!pkg.isRecurring, billingCycle: pkg.billingCycle || 'monthly',
       skipProjectCreation: !!pkg.skipProjectCreation,
       isSubscription: !!pkg.isSubscription, vendor: pkg.vendor || '',
       installmentPlan: Array.isArray(pkg.installmentPlan) && pkg.installmentPlan.length
-        ? pkg.installmentPlan.map((p: any) => ({ percent: String(p.percent ?? ''), offsetDays: String(p.offsetDays ?? '0'), label: p.label || '' }))
+        ? pkg.installmentPlan.map(normalizeInstallmentRow)
         : [],
       features: Array.isArray(pkg.features) ? pkg.features : [],
     });
@@ -1422,6 +1433,12 @@ function PackagesTab() {
                 <option value="annual">Annual</option>
               </select>
             </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Description <span className="text-gray-400 font-normal">(optional)</span></label>
+              <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
+                rows={2} placeholder="Scope notes, what's included/excluded, anything worth flagging when this package is sold"
+                className={inp} />
+            </div>
           </div>
           <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
             <input type="checkbox" checked={form.isRecurring}
@@ -1463,27 +1480,34 @@ function PackagesTab() {
                 <p className="text-xs font-medium text-gray-600">Installment plan <span className="text-gray-400 font-normal">(optional — splits a one-time sale into staggered invoices)</span></p>
                 <button
                   type="button"
-                  onClick={() => setForm({ ...form, installmentPlan: [...form.installmentPlan, { percent: '', offsetDays: '0', label: '' }] })}
+                  onClick={() => setForm({ ...form, installmentPlan: [...form.installmentPlan, { type: 'percent', value: '', offsetDays: '0', label: '' }] })}
                   className="text-xs font-medium text-brand-800 hover:text-brand-900"
                 >
                   + Add installment
                 </button>
               </div>
               {form.installmentPlan.length > 0 && (
-                <div className="grid gap-2 text-[11px] font-medium text-gray-500 px-0.5" style={{ gridTemplateColumns: '1fr 110px 190px 28px' }}>
+                <div className="grid gap-2 text-[11px] font-medium text-gray-500 px-0.5" style={{ gridTemplateColumns: '1fr 100px 100px 190px 28px' }}>
                   <span>Label</span>
-                  <span>Percent (%)</span>
+                  <span>Type</span>
+                  <span>Value</span>
                   <span>Due (days after sale)</span>
                   <span />
                 </div>
               )}
               {form.installmentPlan.map((row, i) => (
-                <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 110px 190px 28px' }}>
+                <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 100px 100px 190px 28px' }}>
                   <input value={row.label} placeholder="e.g. Deposit, Milestone 2…"
                     onChange={(e) => setForm({ ...form, installmentPlan: form.installmentPlan.map((r, j) => j === i ? { ...r, label: e.target.value } : r) })}
                     className={inp} />
-                  <input value={row.percent} placeholder="e.g. 50" type="number" min="0"
-                    onChange={(e) => setForm({ ...form, installmentPlan: form.installmentPlan.map((r, j) => j === i ? { ...r, percent: e.target.value } : r) })}
+                  <select value={row.type}
+                    onChange={(e) => setForm({ ...form, installmentPlan: form.installmentPlan.map((r, j) => j === i ? { ...r, type: e.target.value as 'percent' | 'amount' } : r) })}
+                    className={inp}>
+                    <option value="percent">Percentage</option>
+                    <option value="amount">Amount</option>
+                  </select>
+                  <input value={row.value} placeholder={row.type === 'amount' ? 'e.g. 200' : 'e.g. 50'} type="number" min="0"
+                    onChange={(e) => setForm({ ...form, installmentPlan: form.installmentPlan.map((r, j) => j === i ? { ...r, value: e.target.value } : r) })}
                     className={inp} />
                   <input value={row.offsetDays} placeholder="e.g. 30" type="number" min="0"
                     onChange={(e) => setForm({ ...form, installmentPlan: form.installmentPlan.map((r, j) => j === i ? { ...r, offsetDays: e.target.value } : r) })}
@@ -1494,9 +1518,9 @@ function PackagesTab() {
                   </button>
                 </div>
               ))}
-              {form.installmentPlan.length > 0 && (
-                <p className={cn('text-xs', form.installmentPlan.reduce((s, r) => s + (Number(r.percent) || 0), 0) === 100 ? 'text-gray-400' : 'text-amber-600')}>
-                  Total: {form.installmentPlan.reduce((s, r) => s + (Number(r.percent) || 0), 0)}% (should sum to 100%)
+              {form.installmentPlan.some((r) => r.type === 'percent') && (
+                <p className={cn('text-xs', form.installmentPlan.filter((r) => r.type === 'percent').reduce((s, r) => s + (Number(r.value) || 0), 0) === 100 ? 'text-gray-400' : 'text-amber-600')}>
+                  Percentage installments total: {form.installmentPlan.filter((r) => r.type === 'percent').reduce((s, r) => s + (Number(r.value) || 0), 0)}% (should sum to 100% of the price not already covered by fixed amounts)
                 </p>
               )}
             </div>
@@ -1631,6 +1655,12 @@ function PackagesTab() {
                       <option value="annual">Annual</option>
                     </select>
                   </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Description <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                      rows={2} placeholder="Scope notes, what's included/excluded, anything worth flagging when this package is sold"
+                      className={inp} />
+                  </div>
                 </div>
                 <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                   <input type="checkbox" checked={editForm.isRecurring}
@@ -1666,27 +1696,34 @@ function PackagesTab() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-xs font-medium text-gray-600">Installment plan <span className="text-gray-400 font-normal">(optional — splits a one-time sale into staggered invoices)</span></p>
                       <button
-                        onClick={() => setEditForm({ ...editForm, installmentPlan: [...editForm.installmentPlan, { percent: '', offsetDays: '0', label: '' }] })}
+                        onClick={() => setEditForm({ ...editForm, installmentPlan: [...editForm.installmentPlan, { type: 'percent', value: '', offsetDays: '0', label: '' }] })}
                         className="text-xs font-medium text-brand-800 hover:text-brand-900"
                       >
                         + Add installment
                       </button>
                     </div>
                     {editForm.installmentPlan.length > 0 && (
-                      <div className="grid gap-2 text-[11px] font-medium text-gray-500 px-0.5" style={{ gridTemplateColumns: '1fr 110px 190px 28px' }}>
+                      <div className="grid gap-2 text-[11px] font-medium text-gray-500 px-0.5" style={{ gridTemplateColumns: '1fr 100px 100px 190px 28px' }}>
                         <span>Label</span>
-                        <span>Percent (%)</span>
+                        <span>Type</span>
+                        <span>Value</span>
                         <span>Due (days after sale)</span>
                         <span />
                       </div>
                     )}
                     {editForm.installmentPlan.map((row, i) => (
-                      <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 110px 190px 28px' }}>
+                      <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 100px 100px 190px 28px' }}>
                         <input value={row.label} placeholder="e.g. Deposit, Milestone 2…"
                           onChange={(e) => setEditForm({ ...editForm, installmentPlan: editForm.installmentPlan.map((r, j) => j === i ? { ...r, label: e.target.value } : r) })}
                           className={inp} />
-                        <input value={row.percent} placeholder="e.g. 50" type="number" min="0"
-                          onChange={(e) => setEditForm({ ...editForm, installmentPlan: editForm.installmentPlan.map((r, j) => j === i ? { ...r, percent: e.target.value } : r) })}
+                        <select value={row.type}
+                          onChange={(e) => setEditForm({ ...editForm, installmentPlan: editForm.installmentPlan.map((r, j) => j === i ? { ...r, type: e.target.value as 'percent' | 'amount' } : r) })}
+                          className={inp}>
+                          <option value="percent">Percentage</option>
+                          <option value="amount">Amount</option>
+                        </select>
+                        <input value={row.value} placeholder={row.type === 'amount' ? 'e.g. 200' : 'e.g. 50'} type="number" min="0"
+                          onChange={(e) => setEditForm({ ...editForm, installmentPlan: editForm.installmentPlan.map((r, j) => j === i ? { ...r, value: e.target.value } : r) })}
                           className={inp} />
                         <input value={row.offsetDays} placeholder="e.g. 30" type="number" min="0"
                           onChange={(e) => setEditForm({ ...editForm, installmentPlan: editForm.installmentPlan.map((r, j) => j === i ? { ...r, offsetDays: e.target.value } : r) })}
@@ -1697,9 +1734,9 @@ function PackagesTab() {
                         </button>
                       </div>
                     ))}
-                    {editForm.installmentPlan.length > 0 && (
-                      <p className={cn('text-xs', editForm.installmentPlan.reduce((s, r) => s + (Number(r.percent) || 0), 0) === 100 ? 'text-gray-400' : 'text-amber-600')}>
-                        Total: {editForm.installmentPlan.reduce((s, r) => s + (Number(r.percent) || 0), 0)}% (should sum to 100%)
+                    {editForm.installmentPlan.some((r) => r.type === 'percent') && (
+                      <p className={cn('text-xs', editForm.installmentPlan.filter((r) => r.type === 'percent').reduce((s, r) => s + (Number(r.value) || 0), 0) === 100 ? 'text-gray-400' : 'text-amber-600')}>
+                        Percentage installments total: {editForm.installmentPlan.filter((r) => r.type === 'percent').reduce((s, r) => s + (Number(r.value) || 0), 0)}% (should sum to 100% of the price not already covered by fixed amounts)
                       </p>
                     )}
                   </div>

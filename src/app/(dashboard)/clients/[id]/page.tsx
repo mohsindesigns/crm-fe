@@ -125,9 +125,9 @@ export default function ClientDetailPage() {
   // endpoint already accepts these overrides per entry; the UI just never
   // offered them, so extras could only be sold at list price.
   const [extraTerms, setExtraTerms] = useState<Record<string, {
-    discountType: string; discountValue: string; discountCycles: string; customPrice: string;
+    discountType: string; discountValue: string; discountCycles: string; customPrice: string; description: string;
   }>>({});
-  const [sellInstallmentPlan, setSellInstallmentPlan] = useState<{ percent: string; dueAt: string; label: string }[]>([]);
+  const [sellInstallmentPlan, setSellInstallmentPlan] = useState<{ type: 'percent' | 'amount'; value: string; dueAt: string; label: string }[]>([]);
 
   function addDaysToDate(dateStr: string, days: number) {
     const base = dateStr && /^\d{4}-\d{2}-\d{2}/.test(dateStr)
@@ -143,6 +143,17 @@ export default function ClientDetailPage() {
     const d = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  // A package template's installment row may be the current { type, value, ... }
+  // shape or an older { percent, ... } one saved before "amount" rows existed —
+  // read both the same way.
+  function normalizeTemplateInstallment(row: any): { type: 'percent' | 'amount'; value: string } {
+    const type: 'percent' | 'amount' = row.type === 'amount' ? 'amount' : 'percent';
+    const raw = row.value !== undefined && row.value !== null && row.value !== ''
+      ? row.value
+      : (type === 'amount' ? row.amount : row.percent);
+    return { type, value: raw != null ? String(raw) : '' };
   }
   const [cancelPackageId, setCancelPackageId] = useState<string | null>(null);
   const [editPriceId, setEditPriceId] = useState<string | null>(null);
@@ -257,9 +268,10 @@ export default function ClientDetailPage() {
         discountValue: !data.customPrice && data.discountType && data.discountValue ? Number(data.discountValue) : undefined,
         discountCycles: !data.customPrice && data.discountType && data.discountCycles ? Number(data.discountCycles) : undefined,
         customPrice: data.customPrice ? Number(data.customPrice) : undefined,
-        installmentPlan: sellInstallmentPlan.filter((p) => p.percent && p.dueAt).length
-          ? sellInstallmentPlan.filter((p) => p.percent && p.dueAt).map((p) => ({
-            percent: Number(p.percent),
+        installmentPlan: sellInstallmentPlan.filter((p) => p.value && p.dueAt).length
+          ? sellInstallmentPlan.filter((p) => p.value && p.dueAt).map((p) => ({
+            type: p.type,
+            value: Number(p.value),
             dueAt: p.dueAt,
             label: p.label || undefined,
           }))
@@ -276,7 +288,7 @@ export default function ClientDetailPage() {
           packages: [
             primary,
             ...extraPackageIds.map((packageId) => {
-              const t = extraTerms[packageId] || { discountType: '', discountValue: '', discountCycles: '', customPrice: '' };
+              const t = extraTerms[packageId] || { discountType: '', discountValue: '', discountCycles: '', customPrice: '', description: '' };
               return {
                 packageId,
                 // Only send what was actually set — an empty string would read as
@@ -285,6 +297,7 @@ export default function ClientDetailPage() {
                 discountValue: t.discountType && t.discountValue !== '' ? Number(t.discountValue) : undefined,
                 discountCycles: t.discountType && t.discountCycles !== '' ? Number(t.discountCycles) : undefined,
                 customPrice: t.customPrice !== '' ? Number(t.customPrice) : undefined,
+                description: t.description || undefined,
               };
             }),
           ],
@@ -1111,7 +1124,7 @@ export default function ClientDetailPage() {
                         if (!p?.isRecurring && Array.isArray(p?.installmentPlan) && p.installmentPlan.length) {
                           setSellInstallmentPlan(p.installmentPlan.map((row: any) => ({
                             label: row.label || '',
-                            percent: row.percent != null ? String(row.percent) : '',
+                            ...normalizeTemplateInstallment(row),
                             dueAt: row.dueAt
                               ? String(row.dueAt).slice(0, 10)
                               : addDaysToDate(start, Number(row.offsetDays) || 0),
@@ -1156,11 +1169,15 @@ export default function ClientDetailPage() {
                           && p.installmentPlan.length
                           && sellInstallmentPlan.length === p.installmentPlan.length
                         ) {
-                          setSellInstallmentPlan(p.installmentPlan.map((row: any, i: number) => ({
-                            label: sellInstallmentPlan[i]?.label || row.label || '',
-                            percent: sellInstallmentPlan[i]?.percent || (row.percent != null ? String(row.percent) : ''),
-                            dueAt: addDaysToDate(startDate, Number(row.offsetDays) || 0),
-                          })));
+                          setSellInstallmentPlan(p.installmentPlan.map((row: any, i: number) => {
+                            const normalized = normalizeTemplateInstallment(row);
+                            return {
+                              label: sellInstallmentPlan[i]?.label || row.label || '',
+                              type: sellInstallmentPlan[i]?.value ? sellInstallmentPlan[i].type : normalized.type,
+                              value: sellInstallmentPlan[i]?.value || normalized.value,
+                              dueAt: addDaysToDate(startDate, Number(row.offsetDays) || 0),
+                            };
+                          }));
                         }
                       }}
                       className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
@@ -1270,13 +1287,13 @@ export default function ClientDetailPage() {
                         <> Discount applies for the first <strong>{sellForm.discountCycles}</strong> {p.billingCycle} cycle{Number(sellForm.discountCycles) !== 1 ? 's' : ''} — billing then reverts to <strong>{p?.currency} {base.toLocaleString()}</strong> automatically.</>
                       )}
                       {p?.isRecurring && <> This package bills on a <strong>{p.billingCycle}</strong> cycle — a retainer and the first invoice will be created automatically; later invoices on each renewal date.</>}
-                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.percent).length > 0 && (
-                        <> Custom installment plan ({sellInstallmentPlan.filter((r) => r.percent).length} payments) for this sale — invoices are created now; future ones stay scheduled until their due date.</>
+                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.value).length > 0 && (
+                        <> Custom installment plan ({sellInstallmentPlan.filter((r) => r.value).length} payments) for this sale — invoices are created now; future ones stay scheduled until their due date.</>
                       )}
-                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.percent).length === 0 && Array.isArray(p?.installmentPlan) && p.installmentPlan.length > 0 && (
+                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.value).length === 0 && Array.isArray(p?.installmentPlan) && p.installmentPlan.length > 0 && (
                         <> Installment plan ({p.installmentPlan.length} payments) — invoices are created now; future ones stay scheduled until their due date.</>
                       )}
-                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.percent).length === 0 && !(Array.isArray(p?.installmentPlan) && p.installmentPlan.length > 0) && (
+                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.value).length === 0 && !(Array.isArray(p?.installmentPlan) && p.installmentPlan.length > 0) && (
                         <> A single invoice for the full amount will be created automatically.</>
                       )}
                     </p>
@@ -1293,7 +1310,7 @@ export default function ClientDetailPage() {
                         type="button"
                         onClick={() => setSellInstallmentPlan([
                           ...sellInstallmentPlan,
-                          { percent: '', dueAt: sellForm.startDate || todayDateStr(), label: '' },
+                          { type: 'percent', value: '', dueAt: sellForm.startDate || todayDateStr(), label: '' },
                         ])}
                         className="text-xs font-medium text-brand-800 hover:text-brand-900"
                       >
@@ -1301,20 +1318,27 @@ export default function ClientDetailPage() {
                       </button>
                     </div>
                     {sellInstallmentPlan.length > 0 && (
-                      <div className="grid gap-2 text-[11px] font-medium text-gray-500 px-0.5" style={{ gridTemplateColumns: '1fr 110px 160px 28px' }}>
+                      <div className="grid gap-2 text-[11px] font-medium text-gray-500 px-0.5" style={{ gridTemplateColumns: '1fr 100px 90px 160px 28px' }}>
                         <span>Label</span>
-                        <span>Percent (%)</span>
+                        <span>Type</span>
+                        <span>Value</span>
                         <span>Due date</span>
                         <span />
                       </div>
                     )}
                     {sellInstallmentPlan.map((row, i) => (
-                      <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 110px 160px 28px' }}>
+                      <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 100px 90px 160px 28px' }}>
                         <input value={row.label} placeholder="e.g. Deposit, Milestone 2…"
                           onChange={(e) => setSellInstallmentPlan(sellInstallmentPlan.map((r, j) => j === i ? { ...r, label: e.target.value } : r))}
                           className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
-                        <input value={row.percent} placeholder="e.g. 50" type="number" min="0"
-                          onChange={(e) => setSellInstallmentPlan(sellInstallmentPlan.map((r, j) => j === i ? { ...r, percent: e.target.value } : r))}
+                        <select value={row.type}
+                          onChange={(e) => setSellInstallmentPlan(sellInstallmentPlan.map((r, j) => j === i ? { ...r, type: e.target.value as 'percent' | 'amount' } : r))}
+                          className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600">
+                          <option value="percent">Percentage</option>
+                          <option value="amount">Amount</option>
+                        </select>
+                        <input value={row.value} placeholder={row.type === 'amount' ? 'e.g. 200' : 'e.g. 50'} type="number" min="0"
+                          onChange={(e) => setSellInstallmentPlan(sellInstallmentPlan.map((r, j) => j === i ? { ...r, value: e.target.value } : r))}
                           className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
                         <input
                           type="date"
@@ -1328,13 +1352,13 @@ export default function ClientDetailPage() {
                         </button>
                       </div>
                     ))}
-                    {sellInstallmentPlan.filter((r) => r.percent).length > 0 && (
-                      <p className={cn('text-xs', sellInstallmentPlan.reduce((s, r) => s + (Number(r.percent) || 0), 0) === 100 ? 'text-gray-400' : 'text-amber-600')}>
-                        Total: {sellInstallmentPlan.reduce((s, r) => s + (Number(r.percent) || 0), 0)}% (should sum to 100%)
+                    {sellInstallmentPlan.some((r) => r.type === 'percent') && (
+                      <p className={cn('text-xs', sellInstallmentPlan.filter((r) => r.type === 'percent').reduce((s, r) => s + (Number(r.value) || 0), 0) === 100 ? 'text-gray-400' : 'text-amber-600')}>
+                        Percentage installments total: {sellInstallmentPlan.filter((r) => r.type === 'percent').reduce((s, r) => s + (Number(r.value) || 0), 0)}% (should sum to 100% of the price not already covered by fixed amounts)
                       </p>
                     )}
-                    {sellInstallmentPlan.some((r) => r.percent && !r.dueAt) && (
-                      <p className="text-xs text-amber-600">Each installment with a percent needs a due date.</p>
+                    {sellInstallmentPlan.some((r) => r.value && !r.dueAt) && (
+                      <p className="text-xs text-amber-600">Each installment with a value needs a due date.</p>
                     )}
                   </div>
                 )}
@@ -1357,7 +1381,7 @@ export default function ClientDetailPage() {
                         .filter((p: any) => p.id !== sellForm.packageId)
                         .map((p: any) => {
                           const checked = extraPackageIds.includes(p.id);
-                          const terms = extraTerms[p.id] || { discountType: '', discountValue: '', discountCycles: '', customPrice: '' };
+                          const terms = extraTerms[p.id] || { discountType: '', discountValue: '', discountCycles: '', customPrice: '', description: '' };
                           const listPrice = Number(p.price || 0);
                           // Mirrors ClientService._computeSoldPrice so the figure
                           // shown here is the one that will actually be charged.
@@ -1477,6 +1501,18 @@ export default function ClientDetailPage() {
                                         <p className="mt-1 text-[11px] text-gray-500">Leave blank for a discount that never expires.</p>
                                       </div>
                                     )}
+                                    <div className="sm:col-span-2">
+                                      <label className="block text-xs font-medium text-gray-700 mb-1.5">Description <span className="text-gray-400 font-normal">(optional — carried onto this package&apos;s resulting project(s))</span></label>
+                                      <textarea
+                                        value={terms.description}
+                                        onChange={(e) => setExtraTerms((prev) => ({
+                                          ...prev, [p.id]: { ...terms, description: e.target.value },
+                                        }))}
+                                        rows={2}
+                                        placeholder="What's this package for — scope notes, special requests, etc."
+                                        className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                                      />
+                                    </div>
                                   </div>
                                   <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                                     {p.skipProjectCreation
