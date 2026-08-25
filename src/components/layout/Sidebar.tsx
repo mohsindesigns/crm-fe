@@ -8,7 +8,7 @@ import {
   Briefcase, ClipboardList, BarChart2, UserCog, Receipt, DollarSign, RefreshCw,
   Palette, Workflow, Shield, Package, X, FileSignature, ScrollText, Clock, MessagesSquare,
   Building2, CreditCard, Target, ChevronLeft, ChevronRight, PieChart, History,
-  ClipboardCheck, ShieldCheck, Download, KeyRound,
+  ClipboardCheck, ShieldCheck, Download, KeyRound, Link2,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
@@ -75,8 +75,9 @@ const POLICY_SUB_ITEMS = [
 ];
 
 const REPORTS_SUB_ITEMS = [
-  { label: 'Team Reports',    href: '/reports' as const,          icon: PieChart },
-  { label: 'Keyword Reports', href: '/reports/keywords' as const, icon: KeyRound },
+  { label: 'Team Reports',     href: '/reports' as const,          icon: PieChart },
+  { label: 'Keyword Reports',  href: '/reports/keywords' as const, icon: KeyRound },
+  { label: 'Backlink Reports', href: '/reports/backlinks' as const, icon: Link2 },
 ];
 
 const ADMIN_SUB_ITEMS = [
@@ -442,11 +443,13 @@ export default function Sidebar() {
                 {reportsOpen && (
                   <div className="ml-3 pl-3 border-l border-white/[0.07] space-y-0.5 mt-0.5">
                     {REPORTS_SUB_ITEMS.map((sub) => {
-                      // '/reports' is itself a prefix of '/reports/keywords', so a plain
-                      // startsWith would light up both rows at once — Team Reports only
-                      // claims '/reports' and its own '/reports/[id]' detail route.
+                      // '/reports' is itself a prefix of every other sub-route, so a plain
+                      // startsWith would light up every row at once — Team Reports only
+                      // claims '/reports' and its own '/reports/[id]' detail route, not
+                      // any of the other sub-items' routes.
+                      const otherSubRoutes = REPORTS_SUB_ITEMS.filter((s) => s.href !== '/reports');
                       const subActive = sub.href === '/reports'
-                        ? pathname === '/reports' || (pathname.startsWith('/reports/') && !pathname.startsWith('/reports/keywords'))
+                        ? pathname === '/reports' || (pathname.startsWith('/reports/') && !otherSubRoutes.some((s) => pathname === s.href || pathname.startsWith(`${s.href}/`)))
                         : pathname === sub.href || pathname.startsWith(`${sub.href}/`);
                       return (
                         <Link
