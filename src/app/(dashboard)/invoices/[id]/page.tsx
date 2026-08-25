@@ -10,6 +10,7 @@ import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import { cn, formatDate, formatCurrency, downloadAuthedFile, viewAuthedFile, toAbsoluteHttpUrl } from '@/lib/utils';
 import { invalidateMany, afterInvoiceChange } from '@/lib/queryInvalidation';
+import { TimelineSteps, invoiceTimelineSteps } from '@/components/TimelineSteps';
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-600',
@@ -203,6 +204,12 @@ export default function InvoiceDetailPage() {
           <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-violet-50 text-violet-700">
             {billingPeriodOf(invoice)}
           </span>
+        </div>
+
+        {/* Same stage-progress pill row shown on the client's Timeline tab
+            (Created → Sent → Paid), scoped to just this invoice. */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+          <TimelineSteps steps={invoiceTimelineSteps(invoice)} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

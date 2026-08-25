@@ -447,10 +447,10 @@ export default function ExportDataTab() {
   });
 
   const runExport = useMutation({
-    mutationFn: () => postAuthedFile(
-      '/exports/employees/csv',
+    mutationFn: (format: 'csv' | 'xlsx') => postAuthedFile(
+      `/exports/employees/${format}`,
       { workerIds: [...selectedIds], fields: [...effectiveFields] },
-      'employees-export.csv',
+      `employees-export.${format}`,
     ),
     onSuccess: () => toast.success(`Exported ${selectedIds.size} employee${selectedIds.size === 1 ? '' : 's'}.`),
     onError: (e: any) => toast.error(errMessage(e, 'Could not build the export.')),
@@ -472,7 +472,7 @@ export default function ExportDataTab() {
             <FileSpreadsheet className="w-4 h-4 text-gray-400" /> Employees
           </h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            Pick the columns and the people, and download one CSV. Save a column set as a
+            Pick the columns and the people, and download as CSV or XLSX. Save a column set as a
             template to re-run the same sheet next month against a different selection.
           </p>
         </div>
@@ -622,13 +622,23 @@ export default function ExportDataTab() {
             </button>
             <button
               type="button"
-              onClick={() => runExport.mutate()}
+              onClick={() => runExport.mutate('csv')}
+              disabled={!canExport}
+              className={btnGhost}
+            >
+              {runExport.isPending && runExport.variables === 'csv'
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Building CSV…</>
+                : <><Download className="w-4 h-4" /> Export CSV</>}
+            </button>
+            <button
+              type="button"
+              onClick={() => runExport.mutate('xlsx')}
               disabled={!canExport}
               className={btnPrimary}
             >
-              {runExport.isPending
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> Building CSV…</>
-                : <><Download className="w-4 h-4" /> Export CSV</>}
+              {runExport.isPending && runExport.variables === 'xlsx'
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Building XLSX…</>
+                : <><Download className="w-4 h-4" /> Export XLSX</>}
             </button>
           </div>
         </div>

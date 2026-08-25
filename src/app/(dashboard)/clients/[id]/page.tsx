@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Plus, Trash2, Globe, Mail, Phone, User, FileText, FileSignature, Briefcase, Pencil, X, Save, Package, Layers, CheckCircle, Clock, XCircle, ChevronRight, RefreshCw, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Globe, Mail, Phone, User, FileText, FileSignature, Briefcase, Pencil, X, Save, Package, Layers, RefreshCw, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { toast } from 'sonner';
@@ -16,6 +16,7 @@ import { useAuthStore } from '@/store/auth';
 import { cn, formatDate, formatCurrency, titleCase, inactiveRow } from '@/lib/utils';
 import { invalidateMany, afterClientChange } from '@/lib/queryInvalidation';
 import { usersForRoleSlot } from '@/lib/projectTeam';
+import { TimelineSteps } from '@/components/TimelineSteps';
 
 /** Mirrors ClientService._validateContact — a contact we can't email is a
  *  contact we can't send a quotation, an invoice, or a portal login code to. */
@@ -753,36 +754,8 @@ export default function ClientDetailPage() {
                       {it.status}
                     </span>
                   </div>
-                  <div className="mt-4 flex items-start gap-1 overflow-x-auto pb-1">
-                    {it.steps.map((step: any, idx: number) => (
-                      <div key={step.key} className="flex items-start gap-1 shrink-0">
-                        <div className="flex flex-col items-center gap-1">
-                          <div
-                            title={step.at ? `${formatDate(step.at, 'MMM d, yyyy · h:mm a')}` : undefined}
-                            className={cn(
-                              'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium',
-                              step.done && step.tone === 'negative' ? 'bg-red-100 text-red-700' :
-                              step.done && step.tone === 'neutral' ? 'bg-amber-100 text-amber-700' :
-                              step.done ? 'bg-brand-100 text-brand-800' :
-                              // A pending-but-alarming step (e.g. an overdue invoice) reads as
-                              // red even though it's not "done" — done just means reached, and
-                              // overdue is a current state worth flagging, not a next-up default.
-                              step.current && step.tone === 'negative' ? 'bg-red-600 text-white' :
-                              step.current ? 'bg-brand-700 text-white' : 'bg-gray-100 text-gray-500'
-                            )}
-                          >
-                            {step.done && step.tone === 'negative' && <XCircle className="w-3 h-3" />}
-                            {step.done && step.tone !== 'negative' && <CheckCircle className="w-3 h-3" />}
-                            {step.current && <Clock className="w-3 h-3" />}
-                            {step.name}
-                          </div>
-                          {step.at && (step.done || step.current) && (
-                            <span className="text-[10px] text-gray-400 whitespace-nowrap">{formatDate(step.at, 'MMM d, h:mm a')}</span>
-                          )}
-                        </div>
-                        {idx < it.steps.length - 1 && <ChevronRight className="w-3.5 h-3.5 text-gray-300 shrink-0 mt-1.5" />}
-                      </div>
-                    ))}
+                  <div className="mt-4">
+                    <TimelineSteps steps={it.steps} />
                   </div>
                 </div>
               ))
@@ -800,7 +773,10 @@ export default function ClientDetailPage() {
               <div className="flex items-center gap-2 flex-wrap">
               <ShowInactiveToggle {...inactive.toggleProps} />
               <button
-                onClick={() => setShowContactForm(true)}
+                onClick={() => {
+                  setContactForm((f) => (f.name.trim() ? f : { ...f, name: client.name || '' }));
+                  setShowContactForm(true);
+                }}
                 className="flex items-center gap-1.5 shrink-0 whitespace-nowrap bg-brand-700 hover:bg-brand-800 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
               >
                 <Plus className="w-4 h-4" />

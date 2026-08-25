@@ -12,7 +12,7 @@ import ActiveToggle from '@/components/ActiveToggle';
 import ShowInactiveToggle, { useShowInactive } from '@/components/ShowInactiveToggle';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import Pagination from '@/components/Pagination';
-import { cn, formatDate, todayDateInput, downloadAuthedFile, viewAuthedFile, openFileInNewTab, uploadErrorMessage, titleCase, inactiveRow } from '@/lib/utils';
+import { cn, formatDate, todayDateInput, downloadAuthedFile, viewAuthedFile, uploadErrorMessage, titleCase, inactiveRow } from '@/lib/utils';
 import { invalidateMany, afterProjectChange, afterTaskChange } from '@/lib/queryInvalidation';
 import { usersForRoleSlot } from '@/lib/projectTeam';
 import { useState, useRef, useMemo, useEffect, Fragment } from 'react';
@@ -1466,16 +1466,17 @@ export default function ProjectDetailPage() {
     return true;
   }
 
-  async function openDeliverable(url: string, fileName?: string | null) {
-    if (isLinkDeliverable(url, fileName)) {
-      window.open(toAbsoluteUrl(url), '_blank', 'noopener,noreferrer');
-      return;
-    }
-    try {
-      await openFileInNewTab(url);
-    } catch {
-      window.open(toAbsoluteUrl(url), '_blank', 'noopener,noreferrer');
-    }
+  // Plain navigation, not a fetch()-then-blob dance: the media server only
+  // forces Content-Disposition: attachment for uploaded .html (see
+  // crm-media/src/app.js), so a direct window.open already renders every
+  // other deliverable type inline. The previous fetch()-based version routed
+  // through the media server's CORS check (crm-media ALLOWED_ORIGINS) on every
+  // open — in production, wherever that allowlist didn't include the deployed
+  // frontend origin, the fetch failed, the popup-blocker then ate the async
+  // fallback window.open, and the deliverable silently failed to open even
+  // though the file itself had uploaded fine.
+  async function openDeliverable(url: string, _fileName?: string | null) {
+    window.open(toAbsoluteUrl(url), '_blank', 'noopener,noreferrer');
   }
 
   async function downloadKeywordReport() {

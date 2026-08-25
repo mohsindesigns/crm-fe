@@ -12,6 +12,7 @@ import { cn, formatDate, formatCurrency, titleCase, downloadAuthedFile, viewAuth
 import { invalidateMany, afterDocumentChange } from '@/lib/queryInvalidation';
 import { DOC_STATUS_COLORS } from '../page';
 import RichTextEditor from '@/components/RichTextEditor';
+import { TimelineSteps, documentTimelineSteps } from '@/components/TimelineSteps';
 
 const EDITABLE_STATUSES = ['draft', 'rejected', 'expired'];
 // Quick-insert wording for the "Terms & Scope of Work" field on agreements/proposals —
@@ -505,6 +506,13 @@ export default function DocumentDetailPage() {
             {doc.status}
           </span>
           <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600">{titleCase(doc.type)}</span>
+        </div>
+
+        {/* Same stage-progress pill row shown on the client's Timeline tab
+            (Created → Sent → Viewed → Approved/Rejected/Expired), scoped to
+            just this document. */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+          <TimelineSteps steps={documentTimelineSteps(doc)} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

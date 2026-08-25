@@ -249,18 +249,6 @@ export async function viewAuthedFile(url: string, params?: Record<string, unknow
   setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
 }
 
-// Opens a file in a new tab for viewing instead of forcing a "save as".
-// Uses a fetched Blob so even when the media server returns
-// `Content-Disposition: attachment`, the browser can still render a preview.
-export async function openFileInNewTab(url: string) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('Failed to open file.');
-  const blob = await res.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  window.open(objectUrl, '_blank');
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
-}
-
 // Swap the browser tab icon to the org's branding logo (falls back to the
 // static /public/logo-file.png once an org has no custom logo of their own set).
 export function setFavicon(url?: string | null) {

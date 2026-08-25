@@ -115,6 +115,7 @@ function BrandingTab() {
     legalName: '', usOfficeAddress: '', pkOfficeAddress: '',
     einNumber: '', contactEmail: '', letterheadNote: '',
     seoReportLetterheadFields: ['logo'] as string[],
+    paymentThankYouSubject: '', paymentThankYouBody: '',
   });
 
   // What the PDF renderers fall back to when a letterhead field is left blank —
@@ -143,8 +144,12 @@ function BrandingTab() {
       seoReportLetterheadFields: typeof branding.seoReportLetterheadFields === 'string' && branding.seoReportLetterheadFields
         ? branding.seoReportLetterheadFields.split(',').map((s: string) => s.trim()).filter(Boolean)
         : ['logo'],
+      paymentThankYouSubject: branding.paymentThankYouSubject || '',
+      paymentThankYouBody: branding.paymentThankYouBody || '',
     });
   }, [branding]);
+
+  const thankYouDefaults = branding?.paymentThankYouDefaults || { subject: '', body: '' };
 
   function toggleSeoReportField(key: string) {
     setForm((prev) => ({
@@ -335,6 +340,32 @@ function BrandingTab() {
           <label className="block text-xs font-medium text-gray-700 mb-1.5">Terms &amp; Conditions</label>
           <textarea value={form.invoiceTerms} onChange={(e) => setForm({ ...form, invoiceTerms: e.target.value })}
             rows={4} placeholder="Your invoice terms and conditions…" className={`${inp} resize-none`} />
+        </div>
+      </div>
+
+      <div className="pt-2 border-t border-gray-100">
+        <h3 className="text-sm font-semibold text-gray-900">Payment Thank-You Email</h3>
+        <p className="text-xs text-gray-500 mt-0.5">
+          Sent automatically to the client whenever an invoice is fully paid — by card via Stripe, or
+          marked paid manually. Your logo above is included automatically. Leave blank to use the
+          default shown as placeholder text. Available placeholders:{' '}
+          <code className="text-[11px] bg-gray-100 px-1 py-0.5 rounded">{'{{clientName}}'}</code>{' '}
+          <code className="text-[11px] bg-gray-100 px-1 py-0.5 rounded">{'{{brandName}}'}</code>{' '}
+          <code className="text-[11px] bg-gray-100 px-1 py-0.5 rounded">{'{{invoiceNumber}}'}</code>{' '}
+          <code className="text-[11px] bg-gray-100 px-1 py-0.5 rounded">{'{{amount}}'}</code>{' '}
+          <code className="text-[11px] bg-gray-100 px-1 py-0.5 rounded">{'{{methodLabel}}'}</code>
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-5">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">Subject</label>
+          <input value={form.paymentThankYouSubject} onChange={(e) => setForm({ ...form, paymentThankYouSubject: e.target.value })}
+            placeholder={thankYouDefaults.subject} className={inp} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">Body</label>
+          <textarea value={form.paymentThankYouBody} onChange={(e) => setForm({ ...form, paymentThankYouBody: e.target.value })}
+            rows={6} placeholder={thankYouDefaults.body} className={`${inp} resize-none`} />
         </div>
       </div>
 
