@@ -22,6 +22,7 @@ import { useSidebarStore } from '@/store/sidebar';
 import ProjectStatusPanel from '@/components/projects/ProjectStatusPanel';
 
 const KEYWORD_PAGE_SIZE = 10;
+const TASK_PAGE_SIZE = 5;
 
 /** Never render a literal "null"/"undefined" for an empty optional sheet cell. */
 function cellOrDash(value: unknown) {
@@ -380,11 +381,13 @@ export default function ProjectDetailPage() {
   const [selectedKeywordIds, setSelectedKeywordIds] = useState<Set<string>>(new Set());
   const [selectedBacklinkIds, setSelectedBacklinkIds] = useState<Set<string>>(new Set());
   const [keywordPage, setKeywordPage] = useState(1);
+  const [taskPage, setTaskPage] = useState(1);
 
   useEffect(() => {
     setSelectedKeywordIds(new Set());
     setSelectedBacklinkIds(new Set());
     setKeywordPage(1);
+    setTaskPage(1);
   }, [id, tab]);
 
   const keywordTotalPages = Math.max(1, Math.ceil(keywords.length / KEYWORD_PAGE_SIZE));
@@ -396,6 +399,16 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     if (keywordPage > keywordTotalPages) setKeywordPage(keywordTotalPages);
   }, [keywordPage, keywordTotalPages]);
+
+  const taskTotalPages = Math.max(1, Math.ceil((tasks || []).length / TASK_PAGE_SIZE));
+  const pagedTasks = useMemo(() => {
+    const start = (taskPage - 1) * TASK_PAGE_SIZE;
+    return ((tasks || []) as any[]).slice(start, start + TASK_PAGE_SIZE);
+  }, [tasks, taskPage]);
+
+  useEffect(() => {
+    if (taskPage > taskTotalPages) setTaskPage(taskTotalPages);
+  }, [taskPage, taskTotalPages]);
 
   const { data: blogSheet = [] } = useQuery({
     queryKey: ['blog-sheet', id, inactive.key],
@@ -1987,7 +2000,7 @@ export default function ProjectDetailPage() {
                   {(tasks || []).length === 0 ? (
                     <p className="px-5 py-8 text-sm text-gray-400 text-center">No tasks for this stage.</p>
                   ) : (
-                    (tasks || []).map((task: any) => {
+                    pagedTasks.map((task: any) => {
                       const isDone = task.status === 'done' || task.status === 'approved';
                       const isOverdue = !!task.dueAt
                         && new Date(task.dueAt) < new Date(new Date().toDateString())
@@ -2080,6 +2093,15 @@ export default function ProjectDetailPage() {
                     })
                   )}
                 </div>
+                {(tasks || []).length > 0 && (
+                  <Pagination
+                    page={taskPage}
+                    totalPages={taskTotalPages}
+                    total={(tasks || []).length}
+                    limit={TASK_PAGE_SIZE}
+                    onPageChange={setTaskPage}
+                  />
+                )}
               </div>
 
               {/* Team assignments */}

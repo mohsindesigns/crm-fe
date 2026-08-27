@@ -413,7 +413,13 @@ export default function PaymentMethodsTab() {
         <p className="text-xs text-gray-500">
           On a {feeDraft?.currency || 'CUR'} 1,000 invoice the client would pay{' '}
           <span className="font-semibold text-gray-800">
-            {((1000 * (Number(feeDraft?.percent) || 0)) / 100 + (Number(feeDraft?.fixedFee) || 0)).toFixed(2)}
+            {(() => {
+              const percentFee = (Number(feeDraft?.percent) || 0) / 100;
+              const fixed = Number(feeDraft?.fixedFee) || 0;
+              if (percentFee >= 1) return '0.00';
+              const chargeAmount = (1000 + fixed) / (1 - percentFee);
+              return (chargeAmount - 1000).toFixed(2);
+            })()}
           </span>{' '}
           on top. Match this to what Stripe charges you for that currency.
         </p>
