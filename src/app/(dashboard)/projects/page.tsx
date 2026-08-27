@@ -69,6 +69,7 @@ export default function ProjectsPage() {
   const [teamMemberId, setTeamMemberId] = useState('');
   const [overdue,   setOverdue]   = useState(false);
   const [hideCancelled, setHideCancelled] = useState(true);
+  const [payViaCrm, setPayViaCrm] = useState(false);
   const [page,      setPage]      = useState(1);
   const [navigatingId, setNavigatingId] = useState<string | null>(null);
   const router = useRouter();
@@ -89,7 +90,7 @@ export default function ProjectsPage() {
   }, [rawSearch]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['projects', { page, search, status, service, stage, clientId, type, overdue, strategistId, teamMemberId, hideCancelled }],
+    queryKey: ['projects', { page, search, status, service, stage, clientId, type, overdue, strategistId, teamMemberId, hideCancelled, payViaCrm }],
     queryFn: () =>
       api.get('/projects', {
         params: {
@@ -102,6 +103,7 @@ export default function ProjectsPage() {
           roleSlot: strategistId ? STRATEGIST_ROLE_PRIORITY.join(',') : undefined,
           teamMemberId: teamMemberId || undefined,
           excludeCancelled: hideCancelled || undefined,
+          payViaCrm: payViaCrm || undefined,
         },
       }).then((r) => r.data),
     placeholderData: (prev) => prev,
@@ -302,6 +304,18 @@ export default function ProjectsPage() {
                 className="w-3.5 h-3.5 rounded accent-brand-600"
               />
               Hide cancelled
+            </label>
+            <label className={cn(
+              'flex items-center gap-1.5 shrink-0 whitespace-nowrap text-xs font-medium px-2.5 py-1.5 rounded-lg border cursor-pointer transition-colors',
+              payViaCrm ? 'bg-brand-50 border-brand-300 text-brand-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+            )}>
+              <input
+                type="checkbox"
+                checked={payViaCrm}
+                onChange={(e) => { setPayViaCrm(e.target.checked); setPage(1); }}
+                className="w-3.5 h-3.5 rounded accent-brand-600"
+              />
+              Pay via CRM
             </label>
 
             <Link
