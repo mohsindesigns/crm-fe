@@ -66,6 +66,7 @@ export default function ClientsPage() {
   const [search,    setSearch]    = useState('');
   const [status,    setStatus]    = useState('');
   const [balance,   setBalance]   = useState('');
+  const [payViaCrm, setPayViaCrm] = useState(false);
   const [page,      setPage]      = useState(1);
   const [showForm,  setShowForm]  = useState(false);
   const [form, setForm] = useState({ name: '', defaultCurrency: 'USD', notes: '' });
@@ -85,11 +86,11 @@ export default function ClientsPage() {
   const inactive = useShowInactive();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['clients', { page, search, status, balance, inactive: inactive.key }],
+    queryKey: ['clients', { page, search, status, balance, payViaCrm, inactive: inactive.key }],
     queryFn: () =>
       api.get('/clients', { params: {
         page, limit: LIMIT, search: search || undefined, status: status || undefined,
-        balance: balance || undefined, ...inactive.params,
+        balance: balance || undefined, payViaCrm: payViaCrm || undefined, ...inactive.params,
       } }).then((r) => r.data),
     placeholderData: (prev) => prev,
   });
@@ -167,6 +168,19 @@ export default function ClientsPage() {
             >
               {BALANCE_OPTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
+
+            <label className={cn(
+              'flex items-center gap-1.5 shrink-0 whitespace-nowrap text-sm font-medium px-3 py-2 rounded-lg border cursor-pointer transition-colors',
+              payViaCrm ? 'bg-brand-50 border-brand-300 text-brand-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+            )}>
+              <input
+                type="checkbox"
+                checked={payViaCrm}
+                onChange={(e) => { setPayViaCrm(e.target.checked); resetPage(); }}
+                className="w-3.5 h-3.5 rounded accent-brand-600"
+              />
+              Pay via CRM
+            </label>
 
             <ShowInactiveToggle {...inactive.toggleProps} onChange={(v) => { inactive.setShow(v); resetPage(); }} />
 
