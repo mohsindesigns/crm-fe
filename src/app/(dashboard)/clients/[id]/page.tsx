@@ -774,7 +774,7 @@ export default function ClientDetailPage() {
               <ShowInactiveToggle {...inactive.toggleProps} />
               <button
                 onClick={() => {
-                  setContactForm((f) => (f.name.trim() ? f : { ...f, name: client.name || '' }));
+                  setContactForm((f) => (f.businessName.trim() ? f : { ...f, businessName: client.name || '' }));
                   setShowContactForm(true);
                 }}
                 className="flex items-center gap-1.5 shrink-0 whitespace-nowrap bg-brand-700 hover:bg-brand-800 text-white text-sm font-medium px-3 py-1.5 rounded-lg"

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Briefcase, Search, Filter, Pencil } from 'lucide-react';
 import Link from 'next/link';
@@ -72,6 +73,7 @@ export default function ClientsPage() {
   const [editForm, setEditForm] = useState({ name: '', status: 'active', defaultCurrency: 'USD', notes: '' });
   const [deletingClient, setDeletingClient] = useState<any>(null);
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   // Debounce search — reset to page 1 when query changes
   useEffect(() => {
@@ -98,11 +100,12 @@ export default function ClientsPage() {
 
   const createMutation = useMutation({
     mutationFn: (d: typeof form) => api.post('/clients', d).then((r) => r.data),
-    onSuccess: async () => {
+    onSuccess: async (created: any) => {
       await invalidateMany(queryClient, afterClientChange());
       setShowForm(false);
       setForm({ name: '', defaultCurrency: 'USD', notes: '' });
       toast.success('Client created.');
+      if (created?.id) router.push(`/clients/${created.id}`);
     },
   });
 

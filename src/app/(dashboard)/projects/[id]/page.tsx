@@ -174,7 +174,7 @@ export default function ProjectDetailPage() {
   // Stage Actions is a lot of vertical space (deliverable uploader, note,
   // buttons) — collapsed to a summary bar by default so it doesn't push the
   // tab content down; the user expands it when they actually need to act.
-  const [stageActionsOpen, setStageActionsOpen] = useState(true);
+  const [stageActionsOpen, setStageActionsOpen] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   // Deep-linkable so notifications (e.g. "blog submitted for review") can land
   // straight on the right tab instead of always opening on Overview.
@@ -1716,9 +1716,9 @@ export default function ProjectDetailPage() {
 
           {/* Action panel — only shown to the stage owner. Collapsible: the
               deliverable uploader + note + buttons take up a lot of room, so
-              it defaults open but the user can collapse it to a summary bar
-              once they've seen it, instead of it permanently pushing the
-              tabs/content below down the page. */}
+              it defaults closed to a summary bar and the user expands it
+              when they actually need to act, instead of it permanently
+              pushing the tabs/content below down the page. */}
           {project.status === 'active' && isAssigned && (
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               <button

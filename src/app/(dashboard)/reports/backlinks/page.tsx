@@ -65,7 +65,7 @@ export default function BacklinkReportsPage() {
   const [linkBuilderId, setLinkBuilderId] = useState('');
   const [clientId, setClientId] = useState('');
   const [projectId, setProjectId] = useState('');
-  const [date, setDate] = useState(todayStr());
+  const [date, setDate] = useState('');
   const [page, setPage] = useState(1);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState<'pdf' | 'csv' | null>(null);
@@ -78,7 +78,7 @@ export default function BacklinkReportsPage() {
         linkBuilderId: linkBuilderId || undefined,
         clientId: clientId || undefined,
         projectId: projectId || undefined,
-        date,
+        date: date || undefined,
       },
     }).then((r) => r.data),
     placeholderData: (prev) => prev,
@@ -144,7 +144,7 @@ export default function BacklinkReportsPage() {
       linkBuilderId: linkBuilderId || undefined,
       clientId: clientId || undefined,
       projectId: projectId || undefined,
-      date,
+      date: date || undefined,
     };
     try {
       const res = await api.post('/reports/backlink-summary/export', {
@@ -178,10 +178,10 @@ export default function BacklinkReportsPage() {
   const allChecked = pageKeys.length > 0 && pageKeys.every((k) => selectedKeys.has(k));
   const someChecked = pageKeys.some((k) => selectedKeys.has(k)) && !allChecked;
 
-  const hasFilters = linkBuilderId || clientId || projectId || date !== todayStr();
+  const hasFilters = linkBuilderId || clientId || projectId || date !== '';
 
   function clearFilters() {
-    setLinkBuilderId(''); setClientId(''); setProjectId(''); setDate(todayStr());
+    setLinkBuilderId(''); setClientId(''); setProjectId(''); setDate('');
     setPage(1);
   }
 
@@ -254,6 +254,7 @@ export default function BacklinkReportsPage() {
               type="date"
               value={date}
               max={todayStr()}
+              title={date ? undefined : 'All dates — pick one to narrow "Links Made" down to that day'}
               onChange={(e) => { setDate(e.target.value); setPage(1); }}
               className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600"
             />
@@ -285,7 +286,7 @@ export default function BacklinkReportsPage() {
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project Start Date</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Links Made Today</th>
+                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">{date ? 'Links Made' : 'Links Made (All Time)'}</th>
                   <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project Total Backlinks</th>
                   <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Total Indexed</th>
                   <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Total Non-Indexed</th>
@@ -296,7 +297,7 @@ export default function BacklinkReportsPage() {
                 {isLoading ? (
                   <SkeletonRows cols={10} />
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={10} className="px-5 py-12 text-center text-sm text-gray-400">No link-building activity for this day.</td></tr>
+                  <tr><td colSpan={10} className="px-5 py-12 text-center text-sm text-gray-400">{date ? 'No link-building activity for this day.' : 'No link-building activity yet.'}</td></tr>
                 ) : (
                   rows.map((r) => {
                     const key = rowKey(r);
