@@ -47,11 +47,11 @@ function notificationHref(n: any): string | null {
   if (n.type === 'chat_mention' || n.refTable === 'chat_rooms') {
     return n.refId ? `/messages/${n.refId}` : '/messages';
   }
-  // Task notifications: "projectId:taskId" → open project Overview with the task dialog.
+  // Task notifications: "projectId:taskId" → the task's own page.
   if (n.refTable === 'project_tasks' && n.refId && String(n.refId).includes(':')) {
     const [projectId, taskId] = String(n.refId).split(':');
     if (projectId && taskId) {
-      return `/projects/${projectId}?tab=overview&task=${taskId}`;
+      return `/tasks/${projectId}/${taskId}`;
     }
   }
   if (
@@ -69,6 +69,9 @@ function notificationHref(n: any): string | null {
       return `/projects/${n.refId}?tab=blogs`;
     }
     if (n.type === 'content_rejected') return `/projects/${n.refId}?tab=content`;
+    // The client-requirements approval queue — the approve/reject buttons and
+    // the composed email both live on this tab.
+    if (n.type?.startsWith('client_request_')) return `/projects/${n.refId}?tab=client-requests`;
   }
   if (n.type === 'appraisal_recorded' || n.refTable === 'appraisals') return '/self-service?tab=appraisals';
   if (n.type === 'leave_approved' || n.type === 'leave_rejected') return '/self-service?tab=leaves';

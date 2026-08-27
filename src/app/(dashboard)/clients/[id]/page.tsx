@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Plus, Trash2, Globe, Mail, Phone, User, FileText, Briefcase, Pencil, X, Save, Package, Layers } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Globe, Mail, Phone, User, FileText, FileSignature, Briefcase, Pencil, X, Save, Package, Layers, RefreshCw, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { toast } from 'sonner';
@@ -15,6 +15,8 @@ import Avatar from '@/components/Avatar';
 import { useAuthStore } from '@/store/auth';
 import { cn, formatDate, formatCurrency, titleCase, inactiveRow } from '@/lib/utils';
 import { invalidateMany, afterClientChange } from '@/lib/queryInvalidation';
+import { usersForRoleSlot } from '@/lib/projectTeam';
+import { TimelineSteps } from '@/components/TimelineSteps';
 
 /** Mirrors ClientService._validateContact — a contact we can't email is a
  *  contact we can't send a quotation, an invoice, or a portal login code to. */
@@ -33,6 +35,7 @@ const INV_STATUS: Record<string, string> = {
   sent: 'bg-blue-100 text-blue-700',
   paid: 'bg-brand-100 text-brand-800',
   overdue: 'bg-red-100 text-red-700',
+  payment_review: 'bg-amber-100 text-amber-700',
   void: 'bg-gray-100 text-gray-400',
 };
 
@@ -43,7 +46,16 @@ const PROJ_STATUS: Record<string, string> = {
   cancelled: 'bg-red-100 text-red-700',
 };
 
-type Tab = 'overview' | 'contacts' | 'packages' | 'projects' | 'invoices';
+const DOC_STATUS: Record<string, string> = {
+  draft: 'bg-gray-100 text-gray-600',
+  sent: 'bg-blue-100 text-blue-700',
+  viewed: 'bg-violet-100 text-violet-700',
+  approved: 'bg-brand-100 text-brand-800',
+  rejected: 'bg-red-100 text-red-700',
+  expired: 'bg-amber-100 text-amber-700',
+};
+
+type Tab = 'overview' | 'timeline' | 'contacts' | 'packages' | 'subscriptions' | 'projects' | 'invoices' | 'quotations' | 'proposals' | 'agreements';
 
 const CP_STATUS: Record<string, string> = {
   active: 'bg-brand-100 text-brand-800',
@@ -52,6 +64,41 @@ const CP_STATUS: Record<string, string> = {
   completed: 'bg-blue-100 text-blue-700',
   cancelled: 'bg-red-100 text-red-700',
 };
+
+// Whether the client may actually USE a subscription right now — a separate
+// question from CP_STATUS above, which is where the SALE stands. Mirrors
+// ClientPackage.entitlement; see crm-be/src/services/SubscriptionService.js,
+// which derives it from the subscription's own invoices and is the only thing
+// that writes it.
+const CYCLE_LABELS: Record<string, string> = {
+  monthly: 'Monthly',
+  quarterly: 'Quarterly',
+  annual: 'Annual',
+};
+
+const ENTITLEMENT_LABELS: Record<string, string> = {
+  active: 'Usable',
+  pending_payment: 'Awaiting payment',
+  suspended: 'Suspended — unpaid',
+  cancelled: 'Cancelled',
+};
+
+const ENTITLEMENT_COLORS: Record<string, string> = {
+  active: 'bg-emerald-100 text-emerald-800',
+  pending_payment: 'bg-amber-100 text-amber-800',
+  suspended: 'bg-red-100 text-red-700',
+  cancelled: 'bg-gray-100 text-gray-500',
+};
+
+/**
+ * The Packages tab lists work the agency DELIVERS. Subscriptions are sold
+ * through the same ClientPackage table but have their own tab, so they're
+ * filtered out here — listing them in both places would show one sale twice and
+ * leave it ambiguous which view was authoritative.
+ */
+function deliveredPackages(soldPackages: any[]) {
+  return soldPackages.filter((cp) => !cp.package?.isSubscription);
+}
 
 export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -66,7 +113,11 @@ export default function ClientDetailPage() {
   const [editContactId, setEditContactId] = useState<string | null>(null);
   const [editContactForm, setEditContactForm] = useState({ name: '', email: '', phone: '', role: '', businessName: '', state: '', billingAddress: '', useForInvoice: false, portalAccess: false });
   const [showSellForm, setShowSellForm] = useState(false);
-  const [sellForm, setSellForm] = useState({ packageId: '', startDate: '', discountType: '', discountValue: '', customPrice: '' });
+  const [sellForm, setSellForm] = useState({ packageId: '', startDate: '', deliveryDate: '', description: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' });
+  // Only meaningful when the sale spawns exactly one project — same rule
+  // /projects/new uses (see its `roleSlots` comment): with more than one
+  // project each is assigned individually afterward.
+  const [sellAssignments, setSellAssignments] = useState<Record<string, string>>({});
   // Extra packages bought in the same sale. They go out at list price — the
   // discount / custom-price / installment controls above stay tied to the main
   // package, because those only make sense one package at a time.
@@ -75,9 +126,9 @@ export default function ClientDetailPage() {
   // endpoint already accepts these overrides per entry; the UI just never
   // offered them, so extras could only be sold at list price.
   const [extraTerms, setExtraTerms] = useState<Record<string, {
-    discountType: string; discountValue: string; customPrice: string;
+    discountType: string; discountValue: string; discountCycles: string; customPrice: string; description: string;
   }>>({});
-  const [sellInstallmentPlan, setSellInstallmentPlan] = useState<{ percent: string; dueAt: string; label: string }[]>([]);
+  const [sellInstallmentPlan, setSellInstallmentPlan] = useState<{ type: 'percent' | 'amount'; value: string; dueAt: string; label: string }[]>([]);
 
   function addDaysToDate(dateStr: string, days: number) {
     const base = dateStr && /^\d{4}-\d{2}-\d{2}/.test(dateStr)
@@ -94,6 +145,17 @@ export default function ClientDetailPage() {
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   }
+
+  // A package template's installment row may be the current { type, value, ... }
+  // shape or an older { percent, ... } one saved before "amount" rows existed —
+  // read both the same way.
+  function normalizeTemplateInstallment(row: any): { type: 'percent' | 'amount'; value: string } {
+    const type: 'percent' | 'amount' = row.type === 'amount' ? 'amount' : 'percent';
+    const raw = row.value !== undefined && row.value !== null && row.value !== ''
+      ? row.value
+      : (type === 'amount' ? row.amount : row.percent);
+    return { type, value: raw != null ? String(raw) : '' };
+  }
   const [cancelPackageId, setCancelPackageId] = useState<string | null>(null);
   const [editPriceId, setEditPriceId] = useState<string | null>(null);
   const [editPriceValue, setEditPriceValue] = useState('');
@@ -102,6 +164,11 @@ export default function ClientDetailPage() {
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const canSell = hasPermission('projects.create');
   const canManagePackages = hasPermission('projects.manage');
+  // Quotes & Agreements is an admin-only module server-side (routes/documents.js
+  // gates the whole router on admin.access) — hide the tabs for anyone who'd
+  // just get a 403 from them.
+  const canViewDocuments = hasPermission('admin.access');
+  const canCreateInvoices = hasPermission('billing.create');
   // Mirrors the adminOnly gate the endpoint enforces — changing how a real
   // client is billed is an administrator decision, not a project-level one.
   const roleKey = useAuthStore((s) => s.user?.role?.key);
@@ -130,10 +197,62 @@ export default function ClientDetailPage() {
     enabled: tab === 'invoices' || tab === 'overview',
   });
 
+  const { data: timeline } = useQuery({
+    queryKey: ['client-timeline', id],
+    queryFn: () => api.get(`/clients/${id}/timeline`).then((r) => r.data),
+    enabled: tab === 'timeline',
+  });
+  // Project stage-progress is hidden here — it's redundant with the Projects
+  // tab (and the project's own page); this timeline stays focused on the
+  // sales/billing side (quotations, proposals, agreements, invoices).
+  const timelineItems: any[] = (timeline?.items ?? []).filter((it: any) => it.kind !== 'project');
+
+  const { data: quotations } = useQuery({
+    queryKey: ['documents', { clientId: id, type: 'quotation' }],
+    queryFn: () => api.get(`/documents?clientId=${id}&type=quotation&limit=100`).then((r) => r.data?.data ?? r.data ?? []),
+    enabled: canViewDocuments && tab === 'quotations',
+  });
+
+  const { data: agreements } = useQuery({
+    queryKey: ['documents', { clientId: id, type: 'agreement' }],
+    queryFn: () => api.get(`/documents?clientId=${id}&type=agreement&limit=100`).then((r) => r.data?.data ?? r.data ?? []),
+    enabled: canViewDocuments && tab === 'agreements',
+  });
+
+  const { data: proposals } = useQuery({
+    queryKey: ['documents', { clientId: id, type: 'proposal' }],
+    queryFn: () => api.get(`/documents?clientId=${id}&type=proposal&limit=100`).then((r) => r.data?.data ?? r.data ?? []),
+    enabled: canViewDocuments && tab === 'proposals',
+  });
+
   const { data: soldPackages = [] } = useQuery({
     queryKey: ['client-packages', id],
     queryFn: () => api.get(`/clients/${id}/packages`).then((r) => r.data),
     enabled: tab === 'packages',
+  });
+
+  // Fetched on every visit, not just while the tab is open, because the tab
+  // itself carries the "needs attention" count — a badge nobody can see until
+  // they've already clicked through to it isn't telling them anything.
+  const { data: subscriptions = [], isLoading: subscriptionsLoading } = useQuery({
+    queryKey: ['client-subscriptions', id],
+    queryFn: () => api.get(`/clients/${id}/subscriptions`).then((r) => r.data),
+  });
+  const subscriptionList = subscriptions as any[];
+  const blockedSubscriptions = subscriptionList.filter(
+    (sub: any) => sub.usable === false && sub.entitlement !== 'cancelled'
+  ).length;
+
+  const { data: templates = [] } = useQuery({
+    queryKey: ['templates'],
+    queryFn: () => api.get('/admin/templates').then((r) => r.data),
+    enabled: tab === 'packages' && canSell,
+  });
+
+  const { data: teamUsers = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.get('/users', { params: { limit: 200 } }).then((r) => r.data?.data || []),
+    enabled: tab === 'packages' && canSell,
   });
 
   const { data: sellablePackages = [] } = useQuery({
@@ -148,10 +267,12 @@ export default function ClientDetailPage() {
         packageId: data.packageId,
         discountType: data.customPrice ? undefined : (data.discountType || undefined),
         discountValue: !data.customPrice && data.discountType && data.discountValue ? Number(data.discountValue) : undefined,
+        discountCycles: !data.customPrice && data.discountType && data.discountCycles ? Number(data.discountCycles) : undefined,
         customPrice: data.customPrice ? Number(data.customPrice) : undefined,
-        installmentPlan: sellInstallmentPlan.filter((p) => p.percent && p.dueAt).length
-          ? sellInstallmentPlan.filter((p) => p.percent && p.dueAt).map((p) => ({
-            percent: Number(p.percent),
+        installmentPlan: sellInstallmentPlan.filter((p) => p.value && p.dueAt).length
+          ? sellInstallmentPlan.filter((p) => p.value && p.dueAt).map((p) => ({
+            type: p.type,
+            value: Number(p.value),
             dueAt: p.dueAt,
             label: p.label || undefined,
           }))
@@ -163,17 +284,21 @@ export default function ClientDetailPage() {
       if (extraPackageIds.length) {
         return api.post(`/clients/${id}/sell-packages`, {
           startDate: data.startDate || undefined,
+          deliveryDate: data.deliveryDate || undefined,
+          description: data.description || undefined,
           packages: [
             primary,
             ...extraPackageIds.map((packageId) => {
-              const t = extraTerms[packageId] || { discountType: '', discountValue: '', customPrice: '' };
+              const t = extraTerms[packageId] || { discountType: '', discountValue: '', discountCycles: '', customPrice: '', description: '' };
               return {
                 packageId,
                 // Only send what was actually set — an empty string would read as
                 // "sell for 0" rather than "no override".
                 discountType: t.discountType || undefined,
                 discountValue: t.discountType && t.discountValue !== '' ? Number(t.discountValue) : undefined,
+                discountCycles: t.discountType && t.discountCycles !== '' ? Number(t.discountCycles) : undefined,
                 customPrice: t.customPrice !== '' ? Number(t.customPrice) : undefined,
+                description: t.description || undefined,
               };
             }),
           ],
@@ -183,12 +308,26 @@ export default function ClientDetailPage() {
       return api.post(`/clients/${id}/sell-package`, {
         ...primary,
         startDate: data.startDate || undefined,
+        deliveryDate: data.deliveryDate || undefined,
+        description: data.description || undefined,
       }).then((r) => r.data);
     },
     onSuccess: async (res) => {
+      // Same rule /projects/new uses: team assignment only makes sense when
+      // the sale spawned exactly one project — with more than one, each is
+      // assigned individually from its own page afterward.
+      const created = res?.projects || [];
+      if (created.length === 1 && Object.values(sellAssignments).some(Boolean)) {
+        await Promise.all(
+          Object.entries(sellAssignments)
+            .filter(([, userId]) => !!userId)
+            .map(([roleSlot, userId]) => api.post(`/projects/${created[0].id}/assign`, { roleSlot, userId }))
+        ).catch(() => toast.error('Package sold, but team assignment failed — assign from the project page.'));
+      }
       await invalidateMany(qc, afterClientChange(id));
       setShowSellForm(false);
-      setSellForm({ packageId: '', startDate: '', discountType: '', discountValue: '', customPrice: '' });
+      setSellForm({ packageId: '', startDate: '', deliveryDate: '', description: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' });
+      setSellAssignments({});
       setSellInstallmentPlan([]);
       setExtraPackageIds([]);
       setExtraTerms({});
@@ -256,6 +395,20 @@ export default function ClientDetailPage() {
       );
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change how this client pays.'),
+  });
+
+  const chargeCardFeeMutation = useMutation({
+    mutationFn: (chargeCardFee: boolean) =>
+      api.patch(`/clients/${id}/card-fee`, { chargeCardFee }).then((r) => r.data),
+    onSuccess: async (_res: any, chargeCardFee) => {
+      await invalidateMany(qc, afterClientChange(id));
+      toast.success(
+        chargeCardFee
+          ? 'Card processing fee will be added to this client’s card payments.'
+          : 'Card processing fee will be absorbed by the agency for this client — nothing added to their card payments.',
+      );
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change the card fee setting.'),
   });
 
   const updateClient = useMutation({
@@ -371,7 +524,10 @@ export default function ClientDetailPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-gray-200 overflow-x-auto overflow-y-hidden">
-          {(['overview', 'contacts', 'packages', 'projects', 'invoices'] as Tab[]).map((t) => (
+          {([
+            'overview', 'timeline', 'contacts', 'packages', 'subscriptions', 'projects', 'invoices',
+            ...(canViewDocuments ? (['quotations', 'proposals', 'agreements'] as Tab[]) : []),
+          ] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -381,6 +537,13 @@ export default function ClientDetailPage() {
               )}
             >
               {t}
+              {/* The only tab whose contents can need acting on right now: a
+                  subscription the client is paying for but can't currently use. */}
+              {t === 'subscriptions' && blockedSubscriptions > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-semibold rounded-full bg-red-100 text-red-700 align-middle">
+                  {blockedSubscriptions}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -487,7 +650,115 @@ export default function ClientDetailPage() {
                     </div>
                   );
                 })()}
+
+                {/* Same client-wide billingMode flag as the badge in the header
+                    banner and the checkboxes in the Contacts tab — surfaced here
+                    too so it doesn't require opening a contact's edit form to see
+                    or change how this client pays. */}
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Pay via CRM</p>
+                    <p className="text-xs text-gray-400">
+                      {payViaCrm ? 'This client is billed through Stripe.' : 'This client is billed manually (bank transfer, Payoneer, Wise, etc.).'}
+                    </p>
+                  </div>
+                  <label
+                    title={canSetBillingMode ? undefined : 'Only an administrator can change how a client pays.'}
+                    className={cn(
+                      'flex items-center gap-2 text-sm text-gray-700',
+                      canSetBillingMode && !billingModeMutation.isPending ? 'cursor-pointer' : 'cursor-not-allowed',
+                    )}
+                  >
+                    <input type="checkbox" checked={payViaCrm}
+                      disabled={!canSetBillingMode || billingModeMutation.isPending}
+                      onChange={(e) => billingModeMutation.mutate(e.target.checked ? 'stripe' : 'manual')}
+                      className="w-4 h-4 rounded accent-brand-700" />
+                    {billingModeMutation.isPending && <span className="text-xs text-gray-400">saving…</span>}
+                  </label>
+                </div>
+
+                {/* Only meaningful once Pay via CRM is on — whether the org's
+                    card rate (Admin → Payments → Card processing fees) gets
+                    added to this client's card payments, or the agency
+                    absorbs it. Applies to invoices AND quotations/agreements/
+                    proposals alike (see StripeService.processingFeeFor). */}
+                {payViaCrm && (
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Card processing fee</p>
+                      <p className="text-xs text-gray-400">
+                        {client.chargeCardFee !== false
+                          ? 'Added to this client’s card payments, using the org’s rate from Admin → Payments.'
+                          : 'Absorbed by the agency — not added to this client’s card payments.'}
+                      </p>
+                    </div>
+                    <label
+                      title={canSetBillingMode ? undefined : 'Only an administrator can change this.'}
+                      className={cn(
+                        'flex items-center gap-2 text-sm text-gray-700',
+                        canSetBillingMode && !chargeCardFeeMutation.isPending ? 'cursor-pointer' : 'cursor-not-allowed',
+                      )}
+                    >
+                      <input type="checkbox" checked={client.chargeCardFee !== false}
+                        disabled={!canSetBillingMode || chargeCardFeeMutation.isPending}
+                        onChange={(e) => chargeCardFeeMutation.mutate(e.target.checked)}
+                        className="w-4 h-4 rounded accent-brand-700" />
+                      {chargeCardFeeMutation.isPending && <span className="text-xs text-gray-400">saving…</span>}
+                    </label>
+                  </div>
+                )}
+
+                {/* Read-only: which legal entity actually prints on this
+                    client's invoices/quotations, derived from the Pay via CRM
+                    flag above (Stripe → the LLC, everyone else → the LLP —
+                    see letterhead.billingCompanyFor). Not editable here. */}
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+                  <p className="text-xs text-gray-400">Invoices &amp; quotations issued by</p>
+                  {client.billingCompany ? (
+                    <span className="text-sm font-medium text-gray-900">
+                      {client.billingCompany.legalName}
+                      <span className="text-gray-400 font-normal"> ({client.billingCompany.code})</span>
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-400">No company configured — using default letterhead</span>
+                  )}
+                </div>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Timeline tab — one stage-progress card per project (same pill row
+            the project detail page itself renders) plus an analogous card per
+            quotation/proposal/agreement, newest activity first. */}
+        {tab === 'timeline' && (
+          <div className="space-y-4">
+            {!timeline ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-sm text-gray-400">Loading…</div>
+            ) : timelineItems.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-10 text-center text-sm text-gray-400">No activity yet.</div>
+            ) : (
+              timelineItems.map((it) => (
+                <div key={it.id} className="bg-white rounded-xl border border-gray-200 p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <Link href={it.href} className="text-sm font-semibold text-gray-900 hover:text-brand-700">
+                        {it.title}
+                      </Link>
+                      {it.subtitle && <p className="text-xs text-gray-500 mt-0.5 capitalize">{it.subtitle}</p>}
+                    </div>
+                    <span className={cn(
+                      'px-2.5 py-1 text-xs font-semibold rounded-full capitalize shrink-0',
+                      (it.kind === 'project' ? PROJ_STATUS : it.kind === 'invoice' ? INV_STATUS : DOC_STATUS)[it.status] || 'bg-gray-100 text-gray-600',
+                    )}>
+                      {it.status}
+                    </span>
+                  </div>
+                  <div className="mt-4">
+                    <TimelineSteps steps={it.steps} />
+                  </div>
+                </div>
+              ))
             )}
           </div>
         )}
@@ -502,7 +773,10 @@ export default function ClientDetailPage() {
               <div className="flex items-center gap-2 flex-wrap">
               <ShowInactiveToggle {...inactive.toggleProps} />
               <button
-                onClick={() => setShowContactForm(true)}
+                onClick={() => {
+                  setContactForm((f) => (f.businessName.trim() ? f : { ...f, businessName: client.name || '' }));
+                  setShowContactForm(true);
+                }}
                 className="flex items-center gap-1.5 shrink-0 whitespace-nowrap bg-brand-700 hover:bg-brand-800 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
               >
                 <Plus className="w-4 h-4" />
@@ -779,7 +1053,7 @@ export default function ClientDetailPage() {
               </div>
               {canSell && (
                 <button
-                  onClick={() => { setShowSellForm((v) => !v); setSellForm({ packageId: '', startDate: '', discountType: '', discountValue: '', customPrice: '' }); setSellInstallmentPlan([]); }}
+                  onClick={() => { setShowSellForm((v) => !v); setSellForm({ packageId: '', startDate: '', deliveryDate: '', description: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' }); setSellAssignments({}); setSellInstallmentPlan([]); }}
                   className="flex items-center gap-1.5 shrink-0 whitespace-nowrap bg-brand-700 hover:bg-brand-800 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
                 >
                   <Plus className="w-4 h-4" />
@@ -788,7 +1062,29 @@ export default function ClientDetailPage() {
               )}
             </div>
 
-            {showSellForm && canSell && (
+            {showSellForm && canSell && (() => {
+              const selectedPkg = (sellablePackages as any[]).find((x: any) => x.id === sellForm.packageId);
+              // Team assignment only makes sense when this sale spawns exactly
+              // one project — same rule /projects/new uses. A package with no
+              // extras selected and exactly one service (or none, falling back
+              // to its own serviceTypeKey) resolves to one project; anything
+              // else is assigned per-project afterward.
+              const singlePkgServices = selectedPkg
+                ? (selectedPkg.skipProjectCreation
+                  ? []
+                  : (Array.isArray(selectedPkg.services) && selectedPkg.services.length
+                    ? selectedPkg.services
+                    : [{ serviceTypeKey: selectedPkg.serviceTypeKey }]))
+                : [];
+              const singleService = !extraPackageIds.length && singlePkgServices.length === 1 ? singlePkgServices[0] : null;
+              const singleTemplate = singleService
+                ? (templates as any[]).find((t: any) => t.id === singleService.workflowTemplateId)
+                  || (templates as any[]).find((t: any) => t.serviceTypeKey === singleService.serviceTypeKey && t.isActive)
+                : null;
+              const sellRoleSlots = singleTemplate
+                ? [...new Set((singleTemplate.stages || []).map((s: any) => s.ownerRoleSlot).filter(Boolean))]
+                : [];
+              return (
               <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
                 <h4 className="text-sm font-semibold text-gray-900">Sell a Package</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -804,7 +1100,7 @@ export default function ClientDetailPage() {
                         if (!p?.isRecurring && Array.isArray(p?.installmentPlan) && p.installmentPlan.length) {
                           setSellInstallmentPlan(p.installmentPlan.map((row: any) => ({
                             label: row.label || '',
-                            percent: row.percent != null ? String(row.percent) : '',
+                            ...normalizeTemplateInstallment(row),
                             dueAt: row.dueAt
                               ? String(row.dueAt).slice(0, 10)
                               : addDaysToDate(start, Number(row.offsetDays) || 0),
@@ -820,11 +1116,16 @@ export default function ClientDetailPage() {
                         const n = (p.services || []).length;
                         return (
                           <option key={p.id} value={p.id}>
-                            {p.name} · {p.currency} {Number(p.price || 0).toLocaleString()}{n > 0 ? ` · ${n} service${n !== 1 ? 's' : ''}` : ''}
+                            {p.name} · {p.currency} {Number(p.price || 0).toLocaleString()}{n > 0 ? ` · ${n} service${n !== 1 ? 's' : ''}` : ''}{p.isSubscription ? ` · Subscription${p.vendor ? ` (${p.vendor})` : ''}` : ''}
                           </option>
                         );
                       })}
                     </select>
+                    {(sellablePackages as any[]).find((x: any) => x.id === sellForm.packageId)?.isSubscription && (
+                      <p className="text-xs text-violet-700 mt-1.5">
+                        Subscription — it appears under Retainers → Subscriptions, and the client can&apos;t use it until the first invoice is paid.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1.5">Start Date</label>
@@ -844,13 +1145,36 @@ export default function ClientDetailPage() {
                           && p.installmentPlan.length
                           && sellInstallmentPlan.length === p.installmentPlan.length
                         ) {
-                          setSellInstallmentPlan(p.installmentPlan.map((row: any, i: number) => ({
-                            label: sellInstallmentPlan[i]?.label || row.label || '',
-                            percent: sellInstallmentPlan[i]?.percent || (row.percent != null ? String(row.percent) : ''),
-                            dueAt: addDaysToDate(startDate, Number(row.offsetDays) || 0),
-                          })));
+                          setSellInstallmentPlan(p.installmentPlan.map((row: any, i: number) => {
+                            const normalized = normalizeTemplateInstallment(row);
+                            return {
+                              label: sellInstallmentPlan[i]?.label || row.label || '',
+                              type: sellInstallmentPlan[i]?.value ? sellInstallmentPlan[i].type : normalized.type,
+                              value: sellInstallmentPlan[i]?.value || normalized.value,
+                              dueAt: addDaysToDate(startDate, Number(row.offsetDays) || 0),
+                            };
+                          }));
                         }
                       }}
+                      className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Delivery date <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <input
+                      type="date"
+                      value={sellForm.deliveryDate}
+                      onChange={(e) => setSellForm({ ...sellForm, deliveryDate: e.target.value })}
+                      className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Description <span className="text-gray-400 font-normal">(optional — carried onto the resulting project(s))</span></label>
+                    <textarea
+                      value={sellForm.description}
+                      onChange={(e) => setSellForm({ ...sellForm, description: e.target.value })}
+                      rows={2}
+                      placeholder="What's this sale for — scope notes, special requests, etc."
                       className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
                     />
                   </div>
@@ -894,6 +1218,23 @@ export default function ClientDetailPage() {
                       />
                     </div>
                   )}
+                  {!sellForm.customPrice && sellForm.discountType && selectedPkg?.isRecurring && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                        Discount valid for <span className="text-gray-400 font-normal">(billing cycles)</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={sellForm.discountCycles}
+                        onChange={(e) => setSellForm({ ...sellForm, discountCycles: e.target.value })}
+                        placeholder={`e.g. 3 (${selectedPkg.billingCycle} cycles, then full price)`}
+                        className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                      />
+                      <p className="mt-1 text-[11px] text-gray-500">Leave blank for a discount that never expires.</p>
+                    </div>
+                  )}
                 </div>
                 {sellForm.packageId && (() => {
                   const p = (sellablePackages as any[]).find((x: any) => x.id === sellForm.packageId);
@@ -918,14 +1259,17 @@ export default function ClientDetailPage() {
                       {!sellForm.customPrice && sellForm.discountType && discountValue > 0 && (
                         <> Price after discount: <strong>{p?.currency} {finalPrice.toLocaleString()}</strong> (was {p?.currency} {base.toLocaleString()}).</>
                       )}
-                      {p?.isRecurring && <> This package bills on a <strong>{p.billingCycle}</strong> cycle — a retainer and the first invoice will be created automatically; later invoices on each renewal date.</>}
-                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.percent).length > 0 && (
-                        <> Custom installment plan ({sellInstallmentPlan.filter((r) => r.percent).length} payments) for this sale — invoices are created now; future ones stay scheduled until their due date.</>
+                      {!sellForm.customPrice && sellForm.discountType && discountValue > 0 && p?.isRecurring && Number(sellForm.discountCycles) > 0 && (
+                        <> Discount applies for the first <strong>{sellForm.discountCycles}</strong> {p.billingCycle} cycle{Number(sellForm.discountCycles) !== 1 ? 's' : ''} — billing then reverts to <strong>{p?.currency} {base.toLocaleString()}</strong> automatically.</>
                       )}
-                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.percent).length === 0 && Array.isArray(p?.installmentPlan) && p.installmentPlan.length > 0 && (
+                      {p?.isRecurring && <> This package bills on a <strong>{p.billingCycle}</strong> cycle — a retainer and the first invoice will be created automatically; later invoices on each renewal date.</>}
+                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.value).length > 0 && (
+                        <> Custom installment plan ({sellInstallmentPlan.filter((r) => r.value).length} payments) for this sale — invoices are created now; future ones stay scheduled until their due date.</>
+                      )}
+                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.value).length === 0 && Array.isArray(p?.installmentPlan) && p.installmentPlan.length > 0 && (
                         <> Installment plan ({p.installmentPlan.length} payments) — invoices are created now; future ones stay scheduled until their due date.</>
                       )}
-                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.percent).length === 0 && !(Array.isArray(p?.installmentPlan) && p.installmentPlan.length > 0) && (
+                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.value).length === 0 && !(Array.isArray(p?.installmentPlan) && p.installmentPlan.length > 0) && (
                         <> A single invoice for the full amount will be created automatically.</>
                       )}
                     </p>
@@ -942,7 +1286,7 @@ export default function ClientDetailPage() {
                         type="button"
                         onClick={() => setSellInstallmentPlan([
                           ...sellInstallmentPlan,
-                          { percent: '', dueAt: sellForm.startDate || todayDateStr(), label: '' },
+                          { type: 'percent', value: '', dueAt: sellForm.startDate || todayDateStr(), label: '' },
                         ])}
                         className="text-xs font-medium text-brand-800 hover:text-brand-900"
                       >
@@ -950,20 +1294,27 @@ export default function ClientDetailPage() {
                       </button>
                     </div>
                     {sellInstallmentPlan.length > 0 && (
-                      <div className="grid gap-2 text-[11px] font-medium text-gray-500 px-0.5" style={{ gridTemplateColumns: '1fr 110px 160px 28px' }}>
+                      <div className="grid gap-2 text-[11px] font-medium text-gray-500 px-0.5" style={{ gridTemplateColumns: '1fr 100px 90px 160px 28px' }}>
                         <span>Label</span>
-                        <span>Percent (%)</span>
+                        <span>Type</span>
+                        <span>Value</span>
                         <span>Due date</span>
                         <span />
                       </div>
                     )}
                     {sellInstallmentPlan.map((row, i) => (
-                      <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 110px 160px 28px' }}>
+                      <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 100px 90px 160px 28px' }}>
                         <input value={row.label} placeholder="e.g. Deposit, Milestone 2…"
                           onChange={(e) => setSellInstallmentPlan(sellInstallmentPlan.map((r, j) => j === i ? { ...r, label: e.target.value } : r))}
                           className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
-                        <input value={row.percent} placeholder="e.g. 50" type="number" min="0"
-                          onChange={(e) => setSellInstallmentPlan(sellInstallmentPlan.map((r, j) => j === i ? { ...r, percent: e.target.value } : r))}
+                        <select value={row.type}
+                          onChange={(e) => setSellInstallmentPlan(sellInstallmentPlan.map((r, j) => j === i ? { ...r, type: e.target.value as 'percent' | 'amount' } : r))}
+                          className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600">
+                          <option value="percent">Percentage</option>
+                          <option value="amount">Amount</option>
+                        </select>
+                        <input value={row.value} placeholder={row.type === 'amount' ? 'e.g. 200' : 'e.g. 50'} type="number" min="0"
+                          onChange={(e) => setSellInstallmentPlan(sellInstallmentPlan.map((r, j) => j === i ? { ...r, value: e.target.value } : r))}
                           className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
                         <input
                           type="date"
@@ -977,21 +1328,22 @@ export default function ClientDetailPage() {
                         </button>
                       </div>
                     ))}
-                    {sellInstallmentPlan.filter((r) => r.percent).length > 0 && (
-                      <p className={cn('text-xs', sellInstallmentPlan.reduce((s, r) => s + (Number(r.percent) || 0), 0) === 100 ? 'text-gray-400' : 'text-amber-600')}>
-                        Total: {sellInstallmentPlan.reduce((s, r) => s + (Number(r.percent) || 0), 0)}% (should sum to 100%)
+                    {sellInstallmentPlan.some((r) => r.type === 'percent') && (
+                      <p className={cn('text-xs', sellInstallmentPlan.filter((r) => r.type === 'percent').reduce((s, r) => s + (Number(r.value) || 0), 0) === 100 ? 'text-gray-400' : 'text-amber-600')}>
+                        Percentage installments total: {sellInstallmentPlan.filter((r) => r.type === 'percent').reduce((s, r) => s + (Number(r.value) || 0), 0)}% (should sum to 100% of the price not already covered by fixed amounts)
                       </p>
                     )}
-                    {sellInstallmentPlan.some((r) => r.percent && !r.dueAt) && (
-                      <p className="text-xs text-amber-600">Each installment with a percent needs a due date.</p>
+                    {sellInstallmentPlan.some((r) => r.value && !r.dueAt) && (
+                      <p className="text-xs text-amber-600">Each installment with a value needs a due date.</p>
                     )}
                   </div>
                 )}
 
                 {/* Additional packages in the same sale. Kept below the main
-                    package because the discount / custom price / installment
-                    controls above apply to that one only — these go out at list
-                    price, and everything is billed on one invoice. */}
+                    package because the start date and the installment plan
+                    above apply to that one only; each package added here
+                    carries its own price / discount, and everything is billed
+                    on one invoice. */}
                 {sellForm.packageId && (sellablePackages as any[]).length > 1 && (
                   <div className="border-t border-gray-100 pt-4">
                     <p className="text-xs font-medium text-gray-700 mb-1">
@@ -1000,12 +1352,12 @@ export default function ClientDetailPage() {
                     <p className="text-[11px] text-gray-400 mb-2.5">
                       Each package gets its own workflows. The client receives a single invoice for all of them.
                     </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-72 overflow-y-auto">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[32rem] overflow-y-auto pr-0.5">
                       {(sellablePackages as any[])
                         .filter((p: any) => p.id !== sellForm.packageId)
                         .map((p: any) => {
                           const checked = extraPackageIds.includes(p.id);
-                          const terms = extraTerms[p.id] || { discountType: '', discountValue: '', customPrice: '' };
+                          const terms = extraTerms[p.id] || { discountType: '', discountValue: '', discountCycles: '', customPrice: '', description: '' };
                           const listPrice = Number(p.price || 0);
                           // Mirrors ClientService._computeSoldPrice so the figure
                           // shown here is the one that will actually be charged.
@@ -1016,15 +1368,19 @@ export default function ClientDetailPage() {
                               : terms.discountType === 'fixed'
                                 ? Math.max(0, listPrice - (Number(terms.discountValue) || 0))
                                 : listPrice;
+                          const svcCount = (p.services || []).length || 1;
+                          const extraDiscountValue = Number(terms.discountValue || 0);
                           return (
                             <div
                               key={p.id}
                               className={cn(
                                 'rounded-lg border transition-colors',
-                                checked ? 'border-brand-300 bg-brand-50/60' : 'border-gray-200 hover:bg-gray-50',
+                                checked
+                                  ? 'sm:col-span-2 border-brand-300 bg-white shadow-sm'
+                                  : 'border-gray-200 hover:bg-gray-50',
                               )}
                             >
-                              <label className="flex items-start gap-2 px-3 py-2 cursor-pointer">
+                              <label className={cn('flex items-start gap-2 cursor-pointer', checked ? 'px-4 pt-3.5 pb-2.5' : 'px-3 py-2')}>
                                 <input
                                   type="checkbox"
                                   checked={checked}
@@ -1033,65 +1389,124 @@ export default function ClientDetailPage() {
                                       ? [...prev, p.id]
                                       : prev.filter((x) => x !== p.id)
                                   ))}
-                                  className="w-3.5 h-3.5 mt-0.5 rounded accent-brand-700 shrink-0"
+                                  className={cn('mt-0.5 rounded accent-brand-700 shrink-0', checked ? 'w-4 h-4' : 'w-3.5 h-3.5')}
                                 />
                                 <span className="min-w-0">
-                                  <span className="block text-xs font-medium text-gray-800 truncate">{p.name}</span>
-                                  <span className="block text-[11px] text-gray-400">
+                                  <span className={cn('block font-medium truncate', checked ? 'text-sm text-gray-900' : 'text-xs text-gray-800')}>{p.name}</span>
+                                  <span className={cn('block', checked ? 'text-xs text-gray-500' : 'text-[11px] text-gray-400')}>
                                     {p.currency} {listPrice.toLocaleString()}
                                     {(p.services || []).length > 0 && ` · ${(p.services || []).length} service${(p.services || []).length !== 1 ? 's' : ''}`}
                                   </span>
                                 </span>
                               </label>
 
-                              {/* Same pricing controls the primary package gets.
-                                  Without these an added package could only ever be
-                                  sold at list price, so a discounted bundle had to
-                                  be sold one package at a time — which then billed
-                                  on separate invoices. */}
+                              {/* Same pricing controls the primary package gets, and
+                                  laid out the same way — labelled two-column grid plus
+                                  the summary note — so an added package doesn't read as
+                                  a different, lesser form. Without these an added
+                                  package could only ever be sold at list price, so a
+                                  discounted bundle had to be sold one package at a
+                                  time — which then billed on separate invoices. */}
                               {checked && (
-                                <div className="px-3 pb-2.5 pt-0.5 space-y-1.5 border-t border-brand-200/60 mt-1">
-                                  <div className="grid grid-cols-2 gap-1.5">
-                                    <select
-                                      value={terms.discountType}
-                                      onChange={(e) => setExtraTerms((prev) => ({
-                                        ...prev,
-                                        [p.id]: { ...terms, discountType: e.target.value, discountValue: e.target.value ? terms.discountValue : '' },
-                                      }))}
-                                      className="w-full px-2 py-1.5 text-[11px] border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-brand-600"
-                                    >
-                                      <option value="">No discount</option>
-                                      <option value="percent">% off</option>
-                                      <option value="fixed">Amount off</option>
-                                    </select>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      disabled={!terms.discountType}
-                                      value={terms.discountValue}
-                                      onChange={(e) => setExtraTerms((prev) => ({
-                                        ...prev, [p.id]: { ...terms, discountValue: e.target.value },
-                                      }))}
-                                      placeholder={terms.discountType === 'percent' ? 'e.g. 10' : 'e.g. 150'}
-                                      className="w-full px-2 py-1.5 text-[11px] border border-gray-300 rounded-md disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-600"
-                                    />
+                                <div className="px-4 pb-4 space-y-3 border-t border-gray-100">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3.5">
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-700 mb-1.5">Sell price <span className="text-gray-400 font-normal">(optional override)</span></label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={terms.customPrice}
+                                        onChange={(e) => setExtraTerms((prev) => ({
+                                          ...prev,
+                                          [p.id]: { ...terms, customPrice: e.target.value, discountType: '', discountValue: '', discountCycles: '' },
+                                        }))}
+                                        placeholder="Sell for a custom amount instead of list price"
+                                        className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                                      />
+                                    </div>
+                                    {!terms.customPrice && (
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1.5">Discount <span className="text-gray-400 font-normal">(optional)</span></label>
+                                        <select
+                                          value={terms.discountType}
+                                          onChange={(e) => setExtraTerms((prev) => ({
+                                            ...prev,
+                                            [p.id]: { ...terms, discountType: e.target.value, discountValue: e.target.value ? terms.discountValue : '' },
+                                          }))}
+                                          className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                                        >
+                                          <option value="">No discount</option>
+                                          <option value="percent">Percentage off</option>
+                                          <option value="fixed">Fixed amount off</option>
+                                        </select>
+                                      </div>
+                                    )}
+                                    {!terms.customPrice && terms.discountType && (
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                                          {terms.discountType === 'percent' ? 'Discount %' : 'Discount amount'}
+                                        </label>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          value={terms.discountValue}
+                                          onChange={(e) => setExtraTerms((prev) => ({
+                                            ...prev, [p.id]: { ...terms, discountValue: e.target.value },
+                                          }))}
+                                          placeholder={terms.discountType === 'percent' ? 'e.g. 10' : 'e.g. 50'}
+                                          className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                                        />
+                                      </div>
+                                    )}
+                                    {!terms.customPrice && terms.discountType && p.isRecurring && (
+                                      <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                                          Discount valid for <span className="text-gray-400 font-normal">(billing cycles)</span>
+                                        </label>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          step="1"
+                                          value={terms.discountCycles}
+                                          onChange={(e) => setExtraTerms((prev) => ({
+                                            ...prev, [p.id]: { ...terms, discountCycles: e.target.value },
+                                          }))}
+                                          placeholder={`e.g. 3 (${p.billingCycle} cycles, then full price)`}
+                                          className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                                        />
+                                        <p className="mt-1 text-[11px] text-gray-500">Leave blank for a discount that never expires.</p>
+                                      </div>
+                                    )}
+                                    <div className="sm:col-span-2">
+                                      <label className="block text-xs font-medium text-gray-700 mb-1.5">Description <span className="text-gray-400 font-normal">(optional — carried onto this package&apos;s resulting project(s))</span></label>
+                                      <textarea
+                                        value={terms.description}
+                                        onChange={(e) => setExtraTerms((prev) => ({
+                                          ...prev, [p.id]: { ...terms, description: e.target.value },
+                                        }))}
+                                        rows={2}
+                                        placeholder="What's this package for — scope notes, special requests, etc."
+                                        className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                                      />
+                                    </div>
                                   </div>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    value={terms.customPrice}
-                                    onChange={(e) => setExtraTerms((prev) => ({
-                                      ...prev, [p.id]: { ...terms, customPrice: e.target.value },
-                                    }))}
-                                    placeholder="Sell price (overrides discount)"
-                                    className="w-full px-2 py-1.5 text-[11px] border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-600"
-                                  />
-                                  {sold !== listPrice && (
-                                    <p className="text-[11px] text-brand-800 font-medium">
-                                      Sells for {p.currency} {sold.toLocaleString()}
-                                      <span className="text-gray-400 font-normal"> (was {p.currency} {listPrice.toLocaleString()})</span>
-                                    </p>
-                                  )}
+                                  <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                                    {p.skipProjectCreation
+                                      ? <>No project/workflow will be created (retainer-only package).</>
+                                      : <>This will create <strong>{svcCount}</strong> separate workflow{svcCount !== 1 ? 's' : ''}, one per service, each with its own team and tasks.</>}
+                                    {terms.customPrice && (
+                                      <> Sell price: <strong>{p.currency} {sold.toLocaleString()}</strong> (list is {p.currency} {listPrice.toLocaleString()}).</>
+                                    )}
+                                    {!terms.customPrice && terms.discountType && extraDiscountValue > 0 && (
+                                      <> Price after discount: <strong>{p.currency} {sold.toLocaleString()}</strong> (was {p.currency} {listPrice.toLocaleString()}).</>
+                                    )}
+                                    {!terms.customPrice && terms.discountType && extraDiscountValue > 0 && p.isRecurring && Number(terms.discountCycles) > 0 && (
+                                      <> Discount applies for the first <strong>{terms.discountCycles}</strong> {p.billingCycle} cycle{Number(terms.discountCycles) !== 1 ? 's' : ''} — billing then reverts to <strong>{p.currency} {listPrice.toLocaleString()}</strong> automatically.</>
+                                    )}
+                                    {p.isRecurring
+                                      ? <> This package bills on a <strong>{p.billingCycle}</strong> cycle — a retainer is created, and renewal invoices follow on each renewal date.</>
+                                      : <> It is billed on the same single invoice as the rest of this sale.</>}
+                                  </p>
                                 </div>
                               )}
                             </div>
@@ -1104,6 +1519,35 @@ export default function ClientDetailPage() {
                       </p>
                     )}
                   </div>
+                )}
+
+                {sellRoleSlots.length > 0 && (
+                  <div className="space-y-3 border-t border-gray-100 pt-4">
+                    <div>
+                      <p className="text-xs font-medium text-gray-700">Team Assignment <span className="text-gray-400 font-normal">(optional)</span></p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">Assign team members to stage roles. You can update these later.</p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {sellRoleSlots.map((slot) => (
+                        <div key={slot as string}>
+                          <label className="block text-xs font-medium text-gray-600 mb-1.5 capitalize">{titleCase(String(slot))}</label>
+                          <select
+                            value={sellAssignments[slot as string] || ''}
+                            onChange={(e) => setSellAssignments((a) => ({ ...a, [slot as string]: e.target.value }))}
+                            className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                          >
+                            <option value="">Unassigned</option>
+                            {usersForRoleSlot(teamUsers, slot as string, sellAssignments[slot as string] || null).map((u: any) => (
+                              <option key={u.id} value={u.id}>{u.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {selectedPkg && !sellRoleSlots.length && (extraPackageIds.length > 0 || singlePkgServices.length > 1) && (
+                  <p className="text-xs text-gray-400 -mt-1">Multiple projects will be created — assign each one's team from its own page after the sale.</p>
                 )}
 
                 <div className="flex gap-2">
@@ -1123,13 +1567,24 @@ export default function ClientDetailPage() {
                   </button>
                 </div>
               </div>
-            )}
+              );
+            })()}
 
-            {(soldPackages as any[]).length === 0 ? (
-              <div className="text-center py-10 text-sm text-gray-400">No packages sold to this client yet.</div>
+            {deliveredPackages(soldPackages as any[]).length === 0 ? (
+              <div className="text-center py-10 text-sm text-gray-400">
+                No packages sold to this client yet.
+                {subscriptionList.length > 0 && (
+                  <>
+                    {' '}They do have {subscriptionList.length} subscription{subscriptionList.length !== 1 ? 's' : ''} —{' '}
+                    <button onClick={() => setTab('subscriptions')} className="text-brand-800 hover:text-brand-900 font-medium underline">
+                      see the Subscriptions tab
+                    </button>.
+                  </>
+                )}
+              </div>
             ) : (
               <div className="space-y-3">
-                {(soldPackages as any[]).map((cp: any) => (
+                {deliveredPackages(soldPackages as any[]).map((cp: any) => (
                   <div key={cp.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                     <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100">
                       <div className="flex items-center gap-3 min-w-0">
@@ -1150,6 +1605,11 @@ export default function ClientDetailPage() {
                             )}
                             {cp.startDate ? ` · started ${formatDate(cp.startDate)}` : ''}
                           </p>
+                          {cp.discountEndsAt && (
+                            <p className="text-xs text-amber-600 mt-0.5">
+                              Discount ends {formatDate(cp.discountEndsAt)} — reverts to {cp.currency} {Number(cp.basePrice || 0).toLocaleString()} automatically.
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
@@ -1250,6 +1710,109 @@ export default function ClientDetailPage() {
           </div>
         )}
 
+        {/* Subscriptions tab — the recurring things the agency resells to this
+            client (hosting, domains, mailboxes). Same payload the client sees in
+            their own portal, so staff and client never disagree about whether
+            something is live. */}
+        {tab === 'subscriptions' && (
+          <div className="space-y-3">
+            {subscriptionsLoading ? (
+              <p className="text-sm text-gray-400 text-center py-10">Loading…</p>
+            ) : subscriptionList.length === 0 ? (
+              <div className="text-center py-10 text-sm text-gray-400">
+                No subscriptions for this client.
+                <span className="block text-xs mt-1">
+                  Tick “Subscription” on a package in Admin → Packages, then sell it from the Packages tab.
+                </span>
+              </div>
+            ) : (
+              <>
+                {blockedSubscriptions > 0 && (
+                  <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-red-800">
+                        {blockedSubscriptions === 1
+                          ? '1 subscription is not usable by the client'
+                          : `${blockedSubscriptions} subscriptions are not usable by the client`}
+                      </p>
+                      <p className="text-xs text-red-600 mt-0.5">
+                        Access is restored automatically as soon as the outstanding invoice is settled.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {subscriptionList.map((sub: any) => (
+                  <div
+                    key={sub.id}
+                    className={cn(
+                      'bg-white rounded-xl border overflow-hidden',
+                      sub.usable === false && sub.entitlement !== 'cancelled' ? 'border-red-200' : 'border-gray-200',
+                    )}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center shrink-0">
+                          <RefreshCw className="w-4 h-4 text-violet-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{sub.name}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {sub.vendor ? `${sub.vendor} · ` : ''}
+                            {CYCLE_LABELS[sub.billingCycle] || sub.billingCycle}
+                            {' · '}
+                            {sub.currency} {Number(sub.soldPrice || 0).toLocaleString()}
+                            {sub.renewsAt ? ` · renews ${formatDate(sub.renewsAt)}` : ''}
+                          </p>
+                          {sub.entitlementReason && (
+                            <p className={cn('text-xs mt-0.5', sub.usable === false ? 'text-red-600' : 'text-gray-500')}>
+                              {sub.entitlementReason}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* Can the client use it right now — a different question
+                            from where the sale stands, so both badges are shown. */}
+                        <span
+                          className={cn('px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap', ENTITLEMENT_COLORS[sub.entitlement] || 'bg-gray-100 text-gray-600')}
+                        >
+                          {ENTITLEMENT_LABELS[sub.entitlement] || sub.entitlement}
+                        </span>
+                        <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full capitalize', CP_STATUS[sub.status] || 'bg-gray-100 text-gray-600')}>
+                          {sub.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* What's actually owed, and where to go and chase it. */}
+                    {(sub.outstandingInvoices || []).length > 0 && (
+                      <div className="border-t border-gray-100 bg-gray-50/60 px-5 py-3 space-y-1.5">
+                        {(sub.outstandingInvoices as any[]).map((inv: any) => (
+                          <div key={inv.id} className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs text-gray-500">
+                              Invoice <span className="font-medium text-gray-700">{inv.number}</span>
+                              {inv.dueAt ? ` · due ${formatDate(inv.dueAt)}` : ''}
+                              {' · '}
+                              <span className="font-medium text-gray-700">{sub.currency} {Number(inv.total || 0).toLocaleString()}</span>
+                              {' · '}
+                              <span className="capitalize">{String(inv.status).replace('_', ' ')}</span>
+                            </p>
+                            <Link href={`/invoices/${inv.id}`} className="text-xs font-medium text-brand-800 hover:text-brand-900 whitespace-nowrap">
+                              Open invoice →
+                            </Link>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+
         {/* Projects tab */}
         {tab === 'projects' && (
           <div className="space-y-3">
@@ -1279,6 +1842,16 @@ export default function ClientDetailPage() {
         {/* Invoices tab */}
         {tab === 'invoices' && (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {canCreateInvoices && (
+              <div className="flex items-center justify-end px-5 py-3 border-b border-gray-100">
+                <button
+                  onClick={() => router.push(`/invoices?new=1&clientId=${id}`)}
+                  className="flex items-center gap-1.5 text-sm font-medium text-white bg-brand-700 hover:bg-brand-800 px-3.5 py-1.5 rounded-lg transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" /> New Invoice
+                </button>
+              </div>
+            )}
             <div className="overflow-x-auto">
             <table className="w-full min-w-140">
               <thead>
@@ -1311,6 +1884,177 @@ export default function ClientDetailPage() {
                       <td className="px-5 py-3.5">
                         <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', INV_STATUS[inv.status] || 'bg-gray-100 text-gray-600')}>
                           {inv.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+            </div>
+          </div>
+        )}
+
+        {/* Quotations tab */}
+        {tab === 'quotations' && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="flex items-center justify-end px-5 py-3 border-b border-gray-100">
+              <button
+                onClick={() => router.push(`/documents/new?clientId=${id}&type=quotation`)}
+                className="flex items-center gap-1.5 text-sm font-medium text-white bg-brand-700 hover:bg-brand-800 px-3.5 py-1.5 rounded-lg transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> New Quotation
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-140">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Quotation</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Prospect</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Sent</th>
+                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {!quotations ? (
+                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</td></tr>
+                ) : (quotations as any[]).length === 0 ? (
+                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No quotations for this client.</td></tr>
+                ) : (
+                  (quotations as any[]).map((doc: any) => (
+                    <tr key={doc.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/documents/${doc.id}`)}>
+                      <td className="px-5 py-3.5">
+                        <span className="text-sm font-medium text-gray-900 font-mono flex items-center gap-2">
+                          <FileSignature className="w-4 h-4 text-gray-400" />{doc.number}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">
+                        <p className="text-gray-900">{doc.prospectName}</p>
+                        {doc.businessName && <p className="text-xs text-gray-400">{doc.businessName}</p>}
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">{doc.sentAt ? formatDate(doc.sentAt) : '—'}</td>
+                      <td className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
+                        {formatCurrency(doc.amount, doc.currency)}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', DOC_STATUS[doc.status] || 'bg-gray-100 text-gray-600')}>
+                          {doc.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+            </div>
+          </div>
+        )}
+
+        {/* Proposals tab */}
+        {tab === 'proposals' && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="flex items-center justify-end px-5 py-3 border-b border-gray-100">
+              <button
+                onClick={() => router.push(`/documents/new?clientId=${id}&type=proposal`)}
+                className="flex items-center gap-1.5 text-sm font-medium text-white bg-brand-700 hover:bg-brand-800 px-3.5 py-1.5 rounded-lg transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> New Proposal
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-140">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Proposal</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Prospect</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Sent</th>
+                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {!proposals ? (
+                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</td></tr>
+                ) : (proposals as any[]).length === 0 ? (
+                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No proposals for this client.</td></tr>
+                ) : (
+                  (proposals as any[]).map((doc: any) => (
+                    <tr key={doc.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/documents/${doc.id}`)}>
+                      <td className="px-5 py-3.5">
+                        <span className="text-sm font-medium text-gray-900 font-mono flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-gray-400" />{doc.number}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">
+                        <p className="text-gray-900">{doc.prospectName}</p>
+                        {doc.businessName && <p className="text-xs text-gray-400">{doc.businessName}</p>}
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">{doc.sentAt ? formatDate(doc.sentAt) : '—'}</td>
+                      <td className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
+                        {formatCurrency(doc.amount, doc.currency)}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', DOC_STATUS[doc.status] || 'bg-gray-100 text-gray-600')}>
+                          {doc.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+            </div>
+          </div>
+        )}
+
+        {/* Agreements tab */}
+        {tab === 'agreements' && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="flex items-center justify-end px-5 py-3 border-b border-gray-100">
+              <button
+                onClick={() => router.push(`/documents/new?clientId=${id}&type=agreement`)}
+                className="flex items-center gap-1.5 text-sm font-medium text-white bg-brand-700 hover:bg-brand-800 px-3.5 py-1.5 rounded-lg transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> New Agreement
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-140">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Agreement</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Prospect</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Sent</th>
+                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {!agreements ? (
+                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</td></tr>
+                ) : (agreements as any[]).length === 0 ? (
+                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No agreements for this client.</td></tr>
+                ) : (
+                  (agreements as any[]).map((doc: any) => (
+                    <tr key={doc.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/documents/${doc.id}`)}>
+                      <td className="px-5 py-3.5">
+                        <span className="text-sm font-medium text-gray-900 font-mono flex items-center gap-2">
+                          <FileSignature className="w-4 h-4 text-gray-400" />{doc.number}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">
+                        <p className="text-gray-900">{doc.prospectName}</p>
+                        {doc.businessName && <p className="text-xs text-gray-400">{doc.businessName}</p>}
+                      </td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">{doc.sentAt ? formatDate(doc.sentAt) : '—'}</td>
+                      <td className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
+                        {formatCurrency(doc.amount, doc.currency)}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', DOC_STATUS[doc.status] || 'bg-gray-100 text-gray-600')}>
+                          {doc.status}
                         </span>
                       </td>
                     </tr>

@@ -116,6 +116,16 @@ export default function InvoicesPage() {
     setPage(1);
   }, [searchParams]);
 
+  // Arriving from a client's "New Invoice" button (e.g. /invoices?new=1&clientId=…)
+  // opens the create form pre-scoped to that client instead of landing on the
+  // flat list and making them re-pick a client they just came from.
+  useEffect(() => {
+    const clientIdParam = searchParams.get('clientId');
+    if (!searchParams.get('new')) return;
+    setShowForm(true);
+    if (clientIdParam) setForm((f) => ({ ...f, clientId: clientIdParam }));
+  }, [searchParams]);
+
   useEffect(() => {
     const t = setTimeout(() => { setSearch(rawSearch); setPage(1); }, 350);
     return () => clearTimeout(t);

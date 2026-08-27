@@ -66,6 +66,8 @@ function workerToEditForm(worker: any) {
     currency: worker.currency || 'PKR',
     status: worker.status || 'invited',
     profilePictureUrl: worker.profilePictureUrl || '',
+    // '' means "Default" (org-wide resolution) — see Policies → Attendance.
+    shiftScheduleId: worker.shiftScheduleId || '',
   };
 }
 
@@ -273,6 +275,12 @@ export default function WorkerDetailPage() {
   const { data: designations = [] } = useQuery({
     queryKey: ['hr-designations'],
     queryFn: () => api.get('/hr/designations').then((r) => r.data),
+  });
+
+  // For the Timing Policy picker — same list Policies → Attendance manages.
+  const { data: shiftSchedules = [] } = useQuery({
+    queryKey: ['hr-shift-schedules', 'default'],
+    queryFn: () => api.get('/hr/shift-schedules').then((r) => r.data),
   });
 
   const updateWorker = useMutation({
@@ -691,6 +699,22 @@ export default function WorkerDetailPage() {
                   </select>
                 </div>
                 <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Timing Policy</label>
+                  <select
+                    value={editForm.shiftScheduleId || ''}
+                    onChange={(e) => setEditForm({ ...editForm, shiftScheduleId: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                  >
+                    <option value="">Default (org-wide)</option>
+                    {(shiftSchedules as any[])
+                      .filter((s: any) => !s.isArchived || s.id === editForm.shiftScheduleId)
+                      .map((s: any) => <option key={s.id} value={s.id}>{s.label}{s.isArchived ? ' (archived)' : ''}</option>)}
+                  </select>
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Pins this employee to a specific shift schedule regardless of its dates — until changed. See Policies → Attendance.
+                  </p>
+                </div>
+                <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Role</label>
                   <select
                     value={roleId}
@@ -1083,12 +1107,21 @@ export default function WorkerDetailPage() {
                   <input
                     type="date"
                     value={onboardForm.joiningDate}
-                    onChange={(e) => setOnboardForm({ ...onboardForm, joiningDate: e.target.value })}
+                    onChange={(e) => {
+                      const joining = e.target.value;
+                      let probation = onboardForm.probationEndDate;
+                      if (joining) {
+                        const d = new Date(joining);
+                        d.setMonth(d.getMonth() + 3);
+                        probation = d.toISOString().slice(0, 10);
+                      }
+                      setOnboardForm({ ...onboardForm, joiningDate: joining, probationEndDate: probation });
+                    }}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Probation End Date</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Probation End Date <span className="text-gray-400 font-normal">(auto: joining + 3 months)</span></label>
                   <input
                     type="date"
                     value={onboardForm.probationEndDate}

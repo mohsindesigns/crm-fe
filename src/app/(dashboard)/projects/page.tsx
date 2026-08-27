@@ -43,7 +43,7 @@ function SkeletonRows() {
               <div className="h-4 bg-gray-100 rounded w-40" />
             </div>
           </td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-28" /></td>
+          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
           <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
           <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16" /></td>
           <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-24" /></td>
@@ -69,6 +69,7 @@ export default function ProjectsPage() {
   const [teamMemberId, setTeamMemberId] = useState('');
   const [overdue,   setOverdue]   = useState(false);
   const [hideCancelled, setHideCancelled] = useState(true);
+  const [payViaCrm, setPayViaCrm] = useState(false);
   const [page,      setPage]      = useState(1);
   const [navigatingId, setNavigatingId] = useState<string | null>(null);
   const router = useRouter();
@@ -89,7 +90,7 @@ export default function ProjectsPage() {
   }, [rawSearch]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['projects', { page, search, status, service, stage, clientId, type, overdue, strategistId, teamMemberId, hideCancelled }],
+    queryKey: ['projects', { page, search, status, service, stage, clientId, type, overdue, strategistId, teamMemberId, hideCancelled, payViaCrm }],
     queryFn: () =>
       api.get('/projects', {
         params: {
@@ -102,6 +103,7 @@ export default function ProjectsPage() {
           roleSlot: strategistId ? STRATEGIST_ROLE_PRIORITY.join(',') : undefined,
           teamMemberId: teamMemberId || undefined,
           excludeCancelled: hideCancelled || undefined,
+          payViaCrm: payViaCrm || undefined,
         },
       }).then((r) => r.data),
     placeholderData: (prev) => prev,
@@ -195,6 +197,22 @@ export default function ProjectsPage() {
       <Header title="Projects" />
       <div className="flex-1 p-4 sm:p-6 space-y-4 overflow-y-auto">
 
+        {/* ── Service type tabs ── */}
+        <div className="-mx-4 sm:mx-0 px-4 sm:px-0 flex gap-1 overflow-x-auto scrollbar-hide">
+          {[{ key: '', name: 'All Services' }, ...(serviceTypes as any[])].map((s: any) => (
+            <button
+              key={s.key || 'all'}
+              onClick={() => { setService(s.key); setStage(''); setPage(1); }}
+              className={cn(
+                'shrink-0 whitespace-nowrap px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors',
+                service === s.key ? 'bg-gray-900 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
+              )}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+
         {/* ── Toolbar ── */}
         <div className="flex flex-col gap-2.5">
           <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
@@ -223,14 +241,6 @@ export default function ProjectsPage() {
                 className="flex-1 min-w-36 sm:min-w-0 sm:flex-none text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-600"
               >
                 {STATUS_OPTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              <select
-                value={service}
-                onChange={(e) => { setService(e.target.value); setStage(''); setPage(1); }}
-                className="flex-1 min-w-36 sm:min-w-0 sm:flex-none text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-600"
-              >
-                <option value="">All services</option>
-                {(serviceTypes as any[]).map((s: any) => <option key={s.key} value={s.key}>{s.name}</option>)}
               </select>
             </div>
           </div>
@@ -295,6 +305,18 @@ export default function ProjectsPage() {
               />
               Hide cancelled
             </label>
+            <label className={cn(
+              'flex items-center gap-1.5 shrink-0 whitespace-nowrap text-xs font-medium px-2.5 py-1.5 rounded-lg border cursor-pointer transition-colors',
+              payViaCrm ? 'bg-brand-50 border-brand-300 text-brand-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+            )}>
+              <input
+                type="checkbox"
+                checked={payViaCrm}
+                onChange={(e) => { setPayViaCrm(e.target.checked); setPage(1); }}
+                className="w-3.5 h-3.5 rounded accent-brand-600"
+              />
+              Pay via CRM
+            </label>
 
             <Link
               href="/projects/new"
@@ -312,9 +334,9 @@ export default function ProjectsPage() {
           <table className="w-full min-w-[900px]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/50">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Service</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Package</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Type</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Stage</th>
                 <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Strategist</th>
@@ -354,12 +376,12 @@ export default function ProjectsPage() {
                               : <FolderKanban className="w-4 h-4 text-brand-700" />}
                           </div>
                           <span className={cn('text-sm font-medium transition-colors', isNavigating ? 'text-brand-700' : 'text-gray-900')}>
-                            {project.name}
+                            {project.client?.name || '—'}
                           </span>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{project.client?.name || '—'}</td>
                       <td className="px-5 py-3.5 text-sm text-gray-600 capitalize">{project.serviceTypeKey}</td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600">{project.package?.name || '—'}</td>
                       <td className="px-5 py-3.5">
                         <span className={cn('px-2 py-0.5 text-xs font-medium rounded-full', project.isRecurring ? 'bg-violet-100 text-violet-700' : 'bg-gray-100 text-gray-500')}>
                           {project.isRecurring ? 'Recurring' : 'One-time'}

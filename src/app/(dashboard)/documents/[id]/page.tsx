@@ -11,8 +11,17 @@ import Header from '@/components/layout/Header';
 import { cn, formatDate, formatCurrency, titleCase, downloadAuthedFile, viewAuthedFile } from '@/lib/utils';
 import { invalidateMany, afterDocumentChange } from '@/lib/queryInvalidation';
 import { DOC_STATUS_COLORS } from '../page';
+import RichTextEditor from '@/components/RichTextEditor';
+import { TimelineSteps, documentTimelineSteps } from '@/components/TimelineSteps';
 
 const EDITABLE_STATUSES = ['draft', 'rejected', 'expired'];
+// Quick-insert wording for the "Terms & Scope of Work" field on agreements/proposals —
+// admin picks one as a starting point and can freely edit the inserted text.
+const PAYMENT_SCHEDULE_SNIPPETS = [
+  { label: '100% Upfront', html: '<p><strong>Payment Schedule:</strong> 100% payment due upfront before work begins.</p>' },
+  { label: '50% Upfront / 50% on Completion', html: '<p><strong>Payment Schedule:</strong> 50% payment due upfront, remaining 50% due on completion and before the project goes live on the domain.</p>' },
+  { label: 'Date-wise Split', html: '<p><strong>Payment Schedule:</strong> [amount/%] due on [date], [amount/%] due on [date].</p>' },
+];
 /** Local calendar YYYY-MM-DD — avoid toISOString() UTC drift. */
 function todayStr() {
   const d = new Date();
@@ -124,6 +133,7 @@ export default function DocumentDetailPage() {
       email: doc.email, phone: doc.phone || '',
       currency: doc.currency, amount: doc.amount,
       discountType: doc.discountType || '', discountValue: doc.discountValue || '',
+      discountCycles: doc.discountCycles || '',
       validUntil: doc.validUntil || '', scopeTerms: doc.scopeTerms || '',
     });
     // Legacy single-service documents (no services array) become a one-row list.
@@ -382,6 +392,7 @@ export default function DocumentDetailPage() {
         amount: isCompareMode ? 0 : (baseAmount || undefined),
         discountType: form.discountType || undefined,
         discountValue: form.discountType ? form.discountValue : undefined,
+        discountCycles: form.discountType ? (form.discountCycles || undefined) : undefined,
         lineItems: doc.type === 'quotation' && hasLineItems
           ? lines.filter((l) => l.description && l.unitPrice).map((l) => ({ description: l.description, qty: Number(l.qty) || 1, unitPrice: Number(l.unitPrice) }))
           : (isCompareMode ? [] : undefined),
@@ -497,6 +508,13 @@ export default function DocumentDetailPage() {
           <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600">{titleCase(doc.type)}</span>
         </div>
 
+        {/* Same stage-progress pill row shown on the client's Timeline tab
+            (Created → Sent → Viewed → Approved/Rejected/Expired), scoped to
+            just this document. */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+          <TimelineSteps steps={documentTimelineSteps(doc)} />
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Left */}
           <div className="lg:col-span-2 space-y-5">
@@ -530,6 +548,9 @@ export default function DocumentDetailPage() {
                             <div className="text-xs text-brand-700 mt-1">
                               {doc.discountType === 'percent' ? `${doc.discountValue}% off` : `${formatCurrency(doc.discountValue, doc.currency)} off`}
                               {doc.basePrice != null && <span className="text-gray-400"> · was {formatCurrency(doc.basePrice, doc.currency)}</span>}
+                              {Number(doc.discountCycles) > 0 && (
+                                <span className="text-gray-400"> · first {doc.discountCycles} billing cycle{Number(doc.discountCycles) !== 1 ? 's' : ''} only</span>
+                              )}
                             </div>
                           ) : (
                             <div className="text-xs text-gray-400 mt-1">{serviceLabel}</div>
@@ -1017,6 +1038,16 @@ export default function DocumentDetailPage() {
                             className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
                         </div>
                       )}
+                      {form.discountType && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                            Discount valid for <span className="text-gray-400 font-normal">(billing cycles, recurring packages only)</span>
+                          </label>
+                          <input type="number" min="1" step="1" value={form.discountCycles} onChange={(e) => setForm({ ...form, discountCycles: e.target.value })}
+                            placeholder="e.g. 3 — blank means it never expires"
+                            className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
+                        </div>
+                      )}
                     </div>
                     {form.discountType && Number(form.discountValue) > 0 && !isCompareMode && (() => {
                       const finalAmount = applyDiscountPreview(baseAmount);
@@ -1040,11 +1071,33 @@ export default function DocumentDetailPage() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                      Terms &amp; Scope of Work <span className="text-gray-400 font-normal">(optional)</span>
-                    </label>
-                    <textarea value={form.scopeTerms} onChange={(e) => setForm({ ...form, scopeTerms: e.target.value })} rows={3}
-                      className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 resize-none" />
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <label className="block text-xs font-medium text-gray-600">
+                        Terms &amp; Scope of Work <span className="text-gray-400 font-normal">(optional)</span>
+                      </label>
+                      {form.templateId && (
+                        <a href={`/admin?tab=templates&edit=${form.templateId}`} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-[11px] font-medium text-brand-700 hover:text-brand-800 shrink-0">
+                          <Pencil className="w-3 h-3" /> Edit document template
+                        </a>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-gray-400 -mt-1 mb-1.5">
+                      This field is specific to this document. The rest of the document&rsquo;s wording comes from its template — use the link above to change that for every document that uses it.
+                    </p>
+                    {(doc.type === 'agreement' || doc.type === 'proposal') && (
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {PAYMENT_SCHEDULE_SNIPPETS.map((s) => (
+                          <button key={s.label} type="button"
+                            onClick={() => setForm({ ...form, scopeTerms: form.scopeTerms ? `${form.scopeTerms}${s.html}` : s.html })}
+                            className="text-xs font-medium text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-full px-3 py-1 transition-colors">
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <RichTextEditor value={form.scopeTerms} onChange={(html) => setForm({ ...form, scopeTerms: html })}
+                      minHeight="min-h-20" />
                   </div>
 
                   <div className="flex gap-2">

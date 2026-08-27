@@ -113,6 +113,24 @@ export function afterDocumentChange(documentId?: string | null) {
   return keys;
 }
 
+/** Lead status / assignment / conversion. */
+export function afterLeadChange(leadId?: string | null) {
+  const keys: Array<readonly unknown[]> = [
+    ['leads'],
+    ['clients'],
+    ['clients-all'],
+  ];
+  if (leadId) keys.push(['lead', leadId]);
+  return keys;
+}
+
+/** Lead form create / update / activate / deactivate. */
+export function afterLeadFormChange(formId?: string | null) {
+  const keys: Array<readonly unknown[]> = [['lead-forms']];
+  if (formId) keys.push(['lead-form', formId]);
+  return keys;
+}
+
 /** Retainer create / update. */
 export function afterRetainerChange() {
   return [

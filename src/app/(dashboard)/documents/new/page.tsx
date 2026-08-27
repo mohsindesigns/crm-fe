@@ -1,19 +1,29 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ChevronRight, ChevronDown, ChevronUp, Plus, Trash2, RotateCcw } from 'lucide-react';
+import { ArrowLeft, ChevronRight, ChevronDown, ChevronUp, Plus, Trash2, RotateCcw, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import { invalidateMany, afterDocumentChange } from '@/lib/queryInvalidation';
+import RichTextEditor from '@/components/RichTextEditor';
+import { sanitizeRichHtml, richTextProseClass } from '@/lib/richText';
 
 const DOC_TYPES = [
   { value: 'quotation', label: 'Quotation' },
   { value: 'agreement', label: 'Agreement' },
   { value: 'proposal',  label: 'Proposal'  },
+];
+
+// Quick-insert wording for the "Terms & Scope of Work" field on agreements/proposals —
+// admin picks one as a starting point and can freely edit the inserted text.
+const PAYMENT_SCHEDULE_SNIPPETS = [
+  { label: '100% Upfront', html: '<p><strong>Payment Schedule:</strong> 100% payment due upfront before work begins.</p>' },
+  { label: '50% Upfront / 50% on Completion', html: '<p><strong>Payment Schedule:</strong> 50% payment due upfront, remaining 50% due on completion and before the project goes live on the domain.</p>' },
+  { label: 'Date-wise Split', html: '<p><strong>Payment Schedule:</strong> [amount/%] due on [date], [amount/%] due on [date].</p>' },
 ];
 
 type LineItem = { description: string; qty: string; unitPrice: string };
@@ -40,6 +50,7 @@ const DEFAULT_QUOTATION_VALID_DAYS = 7;
 
 export default function NewDocumentPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const qc = useQueryClient();
   const [form, setForm] = useState({
     type: 'quotation',
@@ -53,6 +64,7 @@ export default function NewDocumentPage() {
     amount: '',
     discountType: '',
     discountValue: '',
+    discountCycles: '',
     // Quotations default to a 7-day validity window; admin can change freely.
     validUntil: daysFromToday(DEFAULT_QUOTATION_VALID_DAYS),
     scopeTerms: '',
@@ -131,6 +143,20 @@ export default function NewDocumentPage() {
     setForm((f) => ({ ...f, clientId }));
   }
 
+  // Arriving from a client's "New Quotation"/"New Agreement" button (e.g.
+  // /documents/new?clientId=…&type=agreement) pre-scopes the doc to that
+  // client and type instead of landing on a blank picker they'd have to
+  // re-fill with data they just came from.
+  useEffect(() => {
+    const clientIdParam = searchParams.get('clientId');
+    const typeParam = searchParams.get('type');
+    if (typeParam && DOC_TYPES.some((t) => t.value === typeParam)) {
+      setForm((f) => ({ ...f, type: typeParam }));
+    }
+    if (clientIdParam) selectClient(clientIdParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   // Autofill once per client, not on every refetch — otherwise React Query
   // refocusing the window would wipe out edits the admin had already made.
   const prefilledFor = useRef('');
@@ -158,6 +184,7 @@ export default function NewDocumentPage() {
     (t: any) => t.type === form.type && t.isActive &&
       (selectedKeys.length === 0 || t.serviceTypeKey === 'standard' || selectedKeys.includes(t.serviceTypeKey))
   );
+  const selectedTemplateName = (templates as any[]).find((t: any) => t.id === form.templateId)?.name || '';
 
   function packagesFor(key: string) {
     return (packages as any[]).filter(
@@ -357,6 +384,7 @@ export default function NewDocumentPage() {
         amount: baseAmount || undefined,
         discountType: form.discountType || undefined,
         discountValue: form.discountValue || undefined,
+        discountCycles: form.discountCycles || undefined,
         scopeTerms: form.scopeTerms,
         validUntil: form.validUntil,
       }).then((r) => setPreview(r.data.rendered || ''))
@@ -562,7 +590,11 @@ export default function NewDocumentPage() {
                                   <select value={row.packageId} onChange={(e) => selectServicePackage(s.key, e.target.value)}
                                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 bg-white">
                                     <option value="">Manual price</option>
-                                    {packagesFor(s.key).map((p: any) => <option key={p.id} value={p.id}>{p.name}{p.price ? ` · ${p.currency} ${p.price}` : ''}</option>)}
+                                    {/* Subscriptions are marked here because what the
+                                        client agrees to decides how it bills and whether
+                                        their access to it lapses when unpaid — not
+                                        something to discover after conversion. */}
+                                    {packagesFor(s.key).map((p: any) => <option key={p.id} value={p.id}>{p.name}{p.isSubscription ? ' · Subscription' : ''}{p.price ? ` · ${p.currency} ${p.price}` : ''}</option>)}
                                   </select>
                                   <p className="text-[10px] text-gray-400 mt-1">Only fills price for this service — not a client choice.</p>
                                 </div>
@@ -589,7 +621,14 @@ export default function NewDocumentPage() {
                                       <label className="flex items-center gap-2.5 px-3 py-2 cursor-pointer select-none">
                                         <input type="checkbox" checked={offered} onChange={() => togglePackageMenuOption(s.key, p.id)}
                                           className="w-4 h-4 rounded accent-brand-700 shrink-0" />
-                                        <span className="text-sm text-gray-800 flex-1 min-w-0 break-words">{p.tier || p.name}</span>
+                                        <span className="text-sm text-gray-800 flex-1 min-w-0 break-words">
+                                          {p.tier || p.name}
+                                          {p.isSubscription && (
+                                            <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-violet-50 text-violet-700 whitespace-nowrap">
+                                              Subscription{p.vendor ? ` · ${p.vendor}` : ''}
+                                            </span>
+                                          )}
+                                        </span>
                                         {p.price != null && (
                                           <span className={`text-xs font-mono shrink-0 ${hasOverride ? 'text-gray-400 line-through' : 'text-gray-500'}`}>
                                             {p.currency} {Number(p.price).toLocaleString()}
@@ -814,6 +853,16 @@ export default function NewDocumentPage() {
                               className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
                           </div>
                         )}
+                        {form.discountType && (
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                              Discount valid for <span className="text-gray-400 font-normal">(billing cycles, recurring packages only)</span>
+                            </label>
+                            <input type="number" min="1" step="1" value={form.discountCycles} onChange={(e) => set('discountCycles', e.target.value)}
+                              placeholder="e.g. 3 — blank means it never expires"
+                              className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
+                          </div>
+                        )}
                       </div>
                       {form.discountType && discountValue > 0 && !isCompareMode && (
                         <p className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3.5 py-2.5">
@@ -860,9 +909,19 @@ export default function NewDocumentPage() {
                   <label className="block text-xs font-medium text-gray-600 mb-1.5">
                     Terms &amp; Scope of Work <span className="text-gray-400 font-normal">(optional)</span>
                   </label>
-                  <textarea value={form.scopeTerms} onChange={(e) => set('scopeTerms', e.target.value)} rows={3}
-                    placeholder="Overall scope of work / terms for this document…"
-                    className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 resize-none" />
+                  {(form.type === 'agreement' || form.type === 'proposal') && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {PAYMENT_SCHEDULE_SNIPPETS.map((s) => (
+                        <button key={s.label} type="button"
+                          onClick={() => set('scopeTerms', form.scopeTerms ? `${form.scopeTerms}${s.html}` : s.html)}
+                          className="text-xs font-medium text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-full px-3 py-1 transition-colors">
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <RichTextEditor value={form.scopeTerms} onChange={(html) => set('scopeTerms', html)}
+                    placeholder="Overall scope of work / terms for this document…" minHeight="min-h-20" />
                 </div>
               </div>
 
@@ -884,11 +943,29 @@ export default function NewDocumentPage() {
 
             {/* Live preview */}
             <div className="lg:sticky lg:top-6 bg-white rounded-xl border border-gray-200 p-4 sm:p-5 min-w-0">
-              <h2 className="text-sm font-semibold text-gray-900 mb-3">Preview</h2>
-              {previewLoading && <p className="text-xs text-gray-400 mb-2">Rendering…</p>}
-              <div className="text-sm text-gray-700 whitespace-pre-wrap break-words min-h-40 border border-dashed border-gray-200 rounded-lg p-4 bg-gray-50/50">
-                {preview || <span className="text-gray-400">Fill in the form to see a live preview.</span>}
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-sm font-semibold text-gray-900">Preview</h2>
+                {form.templateId && (
+                  <a href={`/admin?tab=templates&edit=${form.templateId}`} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs font-medium text-brand-700 hover:text-brand-800">
+                    <Pencil className="w-3.5 h-3.5" /> Edit template
+                  </a>
+                )}
               </div>
+              {selectedTemplateName && (
+                <p className="text-[11px] text-gray-400 mb-2">
+                  Most of this wording comes from the &ldquo;{selectedTemplateName}&rdquo; template — edit it above to change it for every document that uses it. Only the Terms &amp; Scope of Work field below is specific to this one document.
+                </p>
+              )}
+              {previewLoading && <p className="text-xs text-gray-400 mb-2">Rendering…</p>}
+              {preview ? (
+                <div className={`text-sm text-gray-700 break-words min-h-40 border border-dashed border-gray-200 rounded-lg p-4 bg-gray-50/50 ${richTextProseClass}`}
+                  dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(preview) }} />
+              ) : (
+                <div className="text-sm text-gray-400 min-h-40 border border-dashed border-gray-200 rounded-lg p-4 bg-gray-50/50">
+                  Fill in the form to see a live preview.
+                </div>
+              )}
             </div>
           </div>
         </div>

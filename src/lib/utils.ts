@@ -42,6 +42,14 @@ export function formatDate(date: string | Date, format = 'MMM d, yyyy') {
   return dateFnsFormat(new Date(date), format);
 }
 
+/** Today as a local "YYYY-MM-DD" string — pass to a `<input type="date">`'s
+ *  `min` to grey out/disable every date before today in the native picker. */
+export function todayDateInput(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 // Payroll runs/periods are stored as "YYYY-MM" — render as "July-2026" instead
 // of the raw key everywhere it's shown to a user.
 const MONTH_NAMES = [
@@ -197,6 +205,34 @@ export async function downloadAuthedFile(url: string, filename: string, params?:
   URL.revokeObjectURL(objectUrl);
 }
 
+// POST variant of downloadAuthedFile, for downloads whose input is a selection
+// rather than a URL — the Admin → Export Data screen posts a list of employee
+// ids and column keys, which is both too long for a query string and (being an
+// export of bank details) something the Activity Log should record, and
+// middleware/activityLogger on the backend only logs mutating verbs.
+export async function postAuthedFile(url: string, body: unknown, fallbackFilename: string) {
+  let res;
+  try {
+    res = await api.post(url, body, { responseType: 'blob' });
+  } catch (err) {
+    throw new Error(await extractBlobErrorMessage(err, 'Download failed.'));
+  }
+  // Prefer the server's own filename (it carries the date stamp) and fall back
+  // to the caller's if the header is missing or unreadable.
+  const disposition = String(res.headers?.['content-disposition'] || '');
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  const filename = match ? match[1] : fallbackFilename;
+
+  const objectUrl = URL.createObjectURL(res.data);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(objectUrl);
+}
+
 // Same as downloadAuthedFile, but opens the file in a new tab for viewing instead
 // of forcing a save-to-disk — used for "View PDF" buttons alongside "Download".
 export async function viewAuthedFile(url: string, params?: Record<string, unknown>) {
@@ -210,18 +246,6 @@ export async function viewAuthedFile(url: string, params?: Record<string, unknow
   window.open(objectUrl, '_blank');
   // Revoke well after the new tab has had time to load the object URL — revoking
   // immediately can race the new tab's fetch of it and show a blank page.
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
-}
-
-// Opens a file in a new tab for viewing instead of forcing a "save as".
-// Uses a fetched Blob so even when the media server returns
-// `Content-Disposition: attachment`, the browser can still render a preview.
-export async function openFileInNewTab(url: string) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('Failed to open file.');
-  const blob = await res.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  window.open(objectUrl, '_blank');
   setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
 }
 

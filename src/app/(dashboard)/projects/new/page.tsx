@@ -14,10 +14,10 @@ import { usersForRoleSlot } from '@/lib/projectTeam';
 
 type ServiceRow = {
   serviceTypeKey: string; workflowTemplateId: string; packageId: string;
-  discountType: string; discountValue: string; customPrice: string;
+  discountType: string; discountValue: string; discountCycles: string; customPrice: string;
 };
 
-const BLANK_SERVICE: ServiceRow = { serviceTypeKey: '', workflowTemplateId: '', packageId: '', discountType: '', discountValue: '', customPrice: '' };
+const BLANK_SERVICE: ServiceRow = { serviceTypeKey: '', workflowTemplateId: '', packageId: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' };
 
 export default function NewProjectPage() {
   const router = useRouter();
@@ -112,6 +112,7 @@ export default function NewProjectPage() {
           startDate: form.startDate || undefined,
           discountType: svc.customPrice ? undefined : (svc.discountType || undefined),
           discountValue: !svc.customPrice && svc.discountType && svc.discountValue ? Number(svc.discountValue) : undefined,
+          discountCycles: !svc.customPrice && svc.discountType && svc.discountCycles ? Number(svc.discountCycles) : undefined,
           customPrice: svc.customPrice ? Number(svc.customPrice) : undefined,
         }).then((r) => r.data);
         createdProjects.push(...(result.projects || []));
@@ -331,7 +332,7 @@ export default function NewProjectPage() {
                         <label className="block text-xs font-medium text-gray-600 mb-1.5">Package</label>
                         <select
                           value={svc.packageId}
-                          onChange={(e) => setService(i, { packageId: e.target.value, discountType: '', discountValue: '', customPrice: '' })}
+                          onChange={(e) => setService(i, { packageId: e.target.value, discountType: '', discountValue: '', discountCycles: '', customPrice: '' })}
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
                         >
                           <option value="">No package</option>
@@ -396,6 +397,22 @@ export default function NewProjectPage() {
                                 />
                               </div>
                             )}
+                            {!svc.customPrice && svc.discountType && pkg?.isRecurring && (
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                                  Discount valid for <span className="text-gray-400 font-normal">(billing cycles)</span>
+                                </label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  value={svc.discountCycles}
+                                  onChange={(e) => setService(i, { discountCycles: e.target.value })}
+                                  placeholder={`e.g. 3 (${pkg.billingCycle} cycles, then full price)`}
+                                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                                />
+                              </div>
+                            )}
                           </div>
                           <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                             This will sell the package and create <strong>{svcCount}</strong> workflow{svcCount !== 1 ? 's' : ''}, one per included service.
@@ -404,6 +421,9 @@ export default function NewProjectPage() {
                             )}
                             {!svc.customPrice && svc.discountType && discountValue > 0 && (
                               <> Price after discount: <strong>{pkg?.currency} {finalPrice.toLocaleString()}</strong> (was {pkg?.currency} {base.toLocaleString()}).</>
+                            )}
+                            {!svc.customPrice && svc.discountType && discountValue > 0 && pkg?.isRecurring && Number(svc.discountCycles) > 0 && (
+                              <> Discount applies for the first <strong>{svc.discountCycles}</strong> {pkg.billingCycle} cycle{Number(svc.discountCycles) !== 1 ? 's' : ''} — then reverts to <strong>{pkg?.currency} {base.toLocaleString()}</strong> automatically.</>
                             )}
                             {pkg?.isRecurring && <> Bills on a <strong>{pkg.billingCycle}</strong> cycle — a retainer is created automatically at the price above.</>}
                           </p>

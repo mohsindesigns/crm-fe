@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { LayoutDashboard, FileText, LogOut, Bell, CheckCheck, CreditCard, FileCheck, MessagesSquare } from 'lucide-react';
+import { LayoutDashboard, FileText, LogOut, Bell, CheckCheck, CreditCard, FileCheck, MessagesSquare, Target, RefreshCw } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { usePortalStore } from '@/store/portal';
 import NotificationBridge from '@/components/NotificationBridge';
@@ -196,6 +196,20 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   });
   const hasMessages = (messageRooms as any[]).length > 0;
 
+  // Subscriptions nav only for clients who actually have one — most don't, and an
+  // always-present tab that opens onto "nothing here" is worse than no tab.
+  const { data: subscriptions = [] } = useQuery({
+    queryKey: ['portal-subscriptions-nav'],
+    queryFn: () => portalFetch('/portal/subscriptions', token!),
+    enabled: !!token && !!contact && pathname !== '/portal/login',
+    refetchInterval: 60_000,
+  });
+  const subscriptionList = subscriptions as any[];
+  const hasSubscriptions = subscriptionList.length > 0;
+  // Anything not usable needs the client's attention, so it gets a count badge
+  // on the nav rather than waiting to be found inside the page.
+  const blockedSubscriptions = subscriptionList.filter((sub: any) => sub.usable === false).length;
+
   if (!hasHydrated) return null;
   if (!contact && pathname !== '/portal/login') return null;
 
@@ -208,7 +222,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     ...(hasMessages
       ? [{ href: '/portal/messages', label: 'Messages', icon: MessagesSquare, exact: false }]
       : []),
+    ...(hasSubscriptions
+      ? [{ href: '/portal/subscriptions', label: 'Subscriptions', icon: RefreshCw, exact: false, badge: blockedSubscriptions }]
+      : []),
     { href: '/portal/invoices', label: 'Invoices', icon: FileText, exact: false },
+    { href: '/portal/leads', label: 'Leads', icon: Target, exact: false },
   ];
 
   return (
@@ -260,7 +278,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
         {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-0.5">
-          {NAV.map(({ href, label, icon: Icon, exact }) => {
+          {NAV.map(({ href, label, icon: Icon, exact, badge }: any) => {
             const active = exact ? pathname === href : pathname.startsWith(href);
             return (
               <Link key={href} href={href}
@@ -274,6 +292,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
               >
                 <Icon className="w-4 h-4 shrink-0" style={active ? { color: primaryColor } : {}} />
                 {label}
+                {badge > 0 && (
+                  <span className="ml-auto min-w-5 px-1.5 py-0.5 text-[10px] font-semibold text-center rounded-full bg-red-500 text-white">
+                    {badge}
+                  </span>
+                )}
               </Link>
             );
           })}

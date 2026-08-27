@@ -1,22 +1,27 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Palette, Settings, Workflow, Package, Shield, ScrollText, Building2, CreditCard,
   Plus, Save, Pencil, Trash2, X, ChevronDown, ChevronUp, Check, Upload, Search, Filter,
+  ClipboardCheck, Download,
 } from 'lucide-react';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import CompaniesTab from '@/components/admin/CompaniesTab';
 import PaymentMethodsTab from '@/components/admin/PaymentMethodsTab';
+import ExportDataTab from '@/components/admin/ExportDataTab';
 import ActiveToggle from '@/components/ActiveToggle';
 import ShowInactiveToggle, { useShowInactive } from '@/components/ShowInactiveToggle';
+import ColorInput from '@/components/ColorInput';
+import { BORDER_RADIUS_OPTIONS, type BorderRadius } from '@/lib/leadFormTheme';
 import { useAuthStore } from '@/store/auth';
 import { cn, titleCase, uploadErrorMessage, inactiveRow } from '@/lib/utils';
 import { toast } from 'sonner';
+import RichTextEditor, { type RichTextEditorHandle } from '@/components/RichTextEditor';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -38,6 +43,7 @@ const ALL_PERMISSIONS = [
   { key: 'hr.read',          label: 'View HR & payroll' },
   { key: 'hr.manage',        label: 'Manage HR & payroll' },
   { key: 'admin.access',     label: 'Access admin panel' },
+  { key: 'reports.read',     label: 'View member reports' },
   { key: 'seo.read',         label: 'View SEO data' },
   { key: 'seo.manage',       label: 'Manage SEO data' },
 ];
@@ -46,7 +52,18 @@ const STAGE_TYPES = ['work', 'approval'] as const;
 const ADVANCE_RULES = ['single_action', 'all_tasks_done', 'all_tasks_approved', 'manual'] as const;
 const ACTIONS = ['complete', 'approve', 'reject', 'rewind'] as const;
 
-type Tab = 'branding' | 'companies' | 'payments' | 'services' | 'workflows' | 'roles' | 'packages' | 'templates';
+type Tab = 'branding' | 'companies' | 'payments' | 'services' | 'workflows' | 'roles' | 'packages' | 'templates' | 'client-req-forms' | 'export';
+
+const CLIENT_REQ_FIELD_TYPES = [
+  { value: 'text', label: 'Short text' },
+  { value: 'textarea', label: 'Long text' },
+  { value: 'email', label: 'Email' },
+  { value: 'phone', label: 'Phone' },
+  { value: 'select', label: 'Dropdown' },
+  { value: 'multiselect', label: 'Dropdown (multi-select)' },
+  { value: 'checkbox', label: 'Checkbox' },
+  { value: 'file', label: 'File attachment' },
+] as const;
 
 const MERGE_TOKENS = [
   'customer_name', 'business_name', 'customer_email', 'customer_phone',
@@ -66,6 +83,19 @@ function slugify(s: string) {
   return s.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 }
 
+// Which company details print by default on the Keywords/Backlinks SEO report
+// letterhead (project page → Keywords/Backlinks tabs). Only Logo is checked by
+// default — the full address/tax/contact block used to print unconditionally.
+const SEO_REPORT_FIELD_OPTS = [
+  { key: 'logo',    label: 'Logo' },
+  { key: 'address', label: 'Address' },
+  { key: 'tax',     label: 'Tax/EIN' },
+  { key: 'email',   label: 'Email' },
+  { key: 'phone',   label: 'Phone' },
+  { key: 'website', label: 'Website' },
+  { key: 'note',    label: 'Note' },
+];
+
 // ─── Branding Tab ─────────────────────────────────────────────────────────────
 
 function BrandingTab() {
@@ -84,6 +114,8 @@ function BrandingTab() {
     invoiceNotes: '', invoiceTerms: '',
     legalName: '', usOfficeAddress: '', pkOfficeAddress: '',
     einNumber: '', contactEmail: '', letterheadNote: '',
+    seoReportLetterheadFields: ['logo'] as string[],
+    paymentThankYouSubject: '', paymentThankYouBody: '',
   });
 
   // What the PDF renderers fall back to when a letterhead field is left blank —
@@ -109,11 +141,27 @@ function BrandingTab() {
       einNumber: branding.einNumber || '',
       contactEmail: branding.contactEmail || '',
       letterheadNote: branding.letterheadNote || '',
+      seoReportLetterheadFields: typeof branding.seoReportLetterheadFields === 'string' && branding.seoReportLetterheadFields
+        ? branding.seoReportLetterheadFields.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : ['logo'],
+      paymentThankYouSubject: branding.paymentThankYouSubject || '',
+      paymentThankYouBody: branding.paymentThankYouBody || '',
     });
   }, [branding]);
 
+  const thankYouDefaults = branding?.paymentThankYouDefaults || { subject: '', body: '' };
+
+  function toggleSeoReportField(key: string) {
+    setForm((prev) => ({
+      ...prev,
+      seoReportLetterheadFields: prev.seoReportLetterheadFields.includes(key)
+        ? prev.seoReportLetterheadFields.filter((k) => k !== key)
+        : [...prev.seoReportLetterheadFields, key],
+    }));
+  }
+
   const mutation = useMutation({
-    mutationFn: () => api.put('/admin/branding', form).then((r) => r.data),
+    mutationFn: () => api.put('/admin/branding', { ...form, seoReportLetterheadFields: form.seoReportLetterheadFields.join(',') }).then((r) => r.data),
     onSuccess: (data) => { updateBranding(data); qc.invalidateQueries({ queryKey: ['branding'] }); },
   });
 
@@ -259,6 +307,24 @@ function BrandingTab() {
       </div>
 
       <div className="pt-2 border-t border-gray-100">
+        <h3 className="text-sm font-semibold text-gray-900">SEO Report Letterhead</h3>
+        <p className="text-xs text-gray-500 mt-0.5">
+          Which of the details above print on the Keywords/Backlinks report PDFs (project page → Keywords/Backlinks
+          tabs). Only Logo is checked by default.
+        </p>
+      </div>
+      <div className="flex items-center gap-3 flex-wrap text-sm text-gray-600">
+        {SEO_REPORT_FIELD_OPTS.map((opt) => (
+          <label key={opt.key} className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={form.seoReportLetterheadFields.includes(opt.key)}
+              onChange={() => toggleSeoReportField(opt.key)}
+              className="w-3.5 h-3.5 rounded accent-brand-700" />
+            {opt.label}
+          </label>
+        ))}
+      </div>
+
+      <div className="pt-2 border-t border-gray-100">
         <h3 className="text-sm font-semibold text-gray-900">Invoice Notes &amp; Terms</h3>
         <p className="text-xs text-gray-500 mt-0.5">
           Notes appear on invoice PDFs. Terms &amp; Conditions appear on every invoice and quotation / agreement / proposal PDF.
@@ -274,6 +340,32 @@ function BrandingTab() {
           <label className="block text-xs font-medium text-gray-700 mb-1.5">Terms &amp; Conditions</label>
           <textarea value={form.invoiceTerms} onChange={(e) => setForm({ ...form, invoiceTerms: e.target.value })}
             rows={4} placeholder="Your invoice terms and conditions…" className={`${inp} resize-none`} />
+        </div>
+      </div>
+
+      <div className="pt-2 border-t border-gray-100">
+        <h3 className="text-sm font-semibold text-gray-900">Payment Thank-You Email</h3>
+        <p className="text-xs text-gray-500 mt-0.5">
+          Sent automatically to the client whenever an invoice is fully paid — by card via Stripe, or
+          marked paid manually. Your logo above is included automatically. Leave blank to use the
+          default shown as placeholder text. Available placeholders:{' '}
+          <code className="text-[11px] bg-gray-100 px-1 py-0.5 rounded">{'{{clientName}}'}</code>{' '}
+          <code className="text-[11px] bg-gray-100 px-1 py-0.5 rounded">{'{{brandName}}'}</code>{' '}
+          <code className="text-[11px] bg-gray-100 px-1 py-0.5 rounded">{'{{invoiceNumber}}'}</code>{' '}
+          <code className="text-[11px] bg-gray-100 px-1 py-0.5 rounded">{'{{amount}}'}</code>{' '}
+          <code className="text-[11px] bg-gray-100 px-1 py-0.5 rounded">{'{{methodLabel}}'}</code>
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-5">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">Subject</label>
+          <input value={form.paymentThankYouSubject} onChange={(e) => setForm({ ...form, paymentThankYouSubject: e.target.value })}
+            placeholder={thankYouDefaults.subject} className={inp} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1.5">Body</label>
+          <textarea value={form.paymentThankYouBody} onChange={(e) => setForm({ ...form, paymentThankYouBody: e.target.value })}
+            rows={6} placeholder={thankYouDefaults.body} className={`${inp} resize-none`} />
         </div>
       </div>
 
@@ -1100,14 +1192,26 @@ function RolesTab() {
 // ─── Packages Tab ─────────────────────────────────────────────────────────────
 
 type SvcRow = { serviceTypeKey: string; workflowTemplateId: string };
+type InstallmentRow = { type: 'percent' | 'amount'; value: string; offsetDays: string; label: string };
+
+// Older packages were saved before `type`/`value` existed and only carry
+// { percent, offsetDays, label } — read those as percent-type rows.
+function normalizeInstallmentRow(p: any): InstallmentRow {
+  const type: 'percent' | 'amount' = p.type === 'amount' ? 'amount' : 'percent';
+  const rawValue = p.value !== undefined && p.value !== null && p.value !== ''
+    ? p.value
+    : (type === 'amount' ? p.amount : p.percent);
+  return { type, value: rawValue != null ? String(rawValue) : '', offsetDays: String(p.offsetDays ?? '0'), label: p.label || '' };
+}
 
 function PackagesTab() {
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const blankPackageForm = {
-    name: '', serviceTypeKey: '', tier: '', price: '', currency: 'USD',
+    name: '', serviceTypeKey: '', tier: '', price: '', currency: 'USD', description: '',
     isRecurring: false, billingCycle: 'monthly', skipProjectCreation: false,
-    installmentPlan: [] as { percent: string; offsetDays: string; label: string }[],
+    isSubscription: false, vendor: '',
+    installmentPlan: [] as InstallmentRow[],
     features: [] as string[],
   };
   const [form, setForm] = useState(blankPackageForm);
@@ -1115,10 +1219,11 @@ function PackagesTab() {
   // Single open-editor id: details, features and services are one form now.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<{
-    name: string; tier: string; price: string; currency: string; isRecurring: boolean; billingCycle: string;
-    skipProjectCreation: boolean; installmentPlan: { percent: string; offsetDays: string; label: string }[];
+    name: string; tier: string; price: string; currency: string; description: string; isRecurring: boolean; billingCycle: string;
+    skipProjectCreation: boolean; isSubscription: boolean; vendor: string;
+    installmentPlan: InstallmentRow[];
     features: string[];
-  }>({ name: '', tier: '', price: '', currency: 'USD', isRecurring: false, billingCycle: 'monthly', skipProjectCreation: false, installmentPlan: [], features: [] });
+  }>({ name: '', tier: '', price: '', currency: 'USD', description: '', isRecurring: false, billingCycle: 'monthly', skipProjectCreation: false, isSubscription: false, vendor: '', installmentPlan: [], features: [] });
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [serviceFilter, setServiceFilter] = useState('');
@@ -1153,8 +1258,8 @@ function PackagesTab() {
       ...form,
       price: form.price ? Number(form.price) : null,
       installmentPlan: form.isRecurring ? null : form.installmentPlan
-        .filter((p) => p.percent)
-        .map((p) => ({ percent: Number(p.percent), offsetDays: Number(p.offsetDays) || 0, label: p.label || undefined })),
+        .filter((p) => p.value)
+        .map((p) => ({ type: p.type, value: Number(p.value), offsetDays: Number(p.offsetDays) || 0, label: p.label || undefined })),
       features: form.features.map((f) => f.trim()).filter(Boolean),
     }),
     onSuccess: () => {
@@ -1177,8 +1282,8 @@ function PackagesTab() {
         ...data,
         price: data.price ? Number(data.price) : null,
         installmentPlan: data.isRecurring ? null : data.installmentPlan
-          .filter((p) => p.percent)
-          .map((p) => ({ percent: Number(p.percent), offsetDays: Number(p.offsetDays) || 0, label: p.label || undefined })),
+          .filter((p) => p.value)
+          .map((p) => ({ type: p.type, value: Number(p.value), offsetDays: Number(p.offsetDays) || 0, label: p.label || undefined })),
         features: data.features.map((f) => f.trim()).filter(Boolean),
       });
       await api.put(`/admin/packages/${id}/services`, {
@@ -1213,10 +1318,11 @@ function PackagesTab() {
     setEditingId(pkg.id);
     setEditForm({
       name: pkg.name || '', tier: pkg.tier || '', price: pkg.price ?? '',
-      currency: pkg.currency || 'USD', isRecurring: !!pkg.isRecurring, billingCycle: pkg.billingCycle || 'monthly',
+      currency: pkg.currency || 'USD', description: pkg.description || '', isRecurring: !!pkg.isRecurring, billingCycle: pkg.billingCycle || 'monthly',
       skipProjectCreation: !!pkg.skipProjectCreation,
+      isSubscription: !!pkg.isSubscription, vendor: pkg.vendor || '',
       installmentPlan: Array.isArray(pkg.installmentPlan) && pkg.installmentPlan.length
-        ? pkg.installmentPlan.map((p: any) => ({ percent: String(p.percent ?? ''), offsetDays: String(p.offsetDays ?? '0'), label: p.label || '' }))
+        ? pkg.installmentPlan.map(normalizeInstallmentRow)
         : [],
       features: Array.isArray(pkg.features) ? pkg.features : [],
     });
@@ -1358,6 +1464,12 @@ function PackagesTab() {
                 <option value="annual">Annual</option>
               </select>
             </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Description <span className="text-gray-400 font-normal">(optional)</span></label>
+              <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
+                rows={2} placeholder="Scope notes, what's included/excluded, anything worth flagging when this package is sold"
+                className={inp} />
+            </div>
           </div>
           <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
             <input type="checkbox" checked={form.isRecurring}
@@ -1371,6 +1483,27 @@ function PackagesTab() {
               className="w-4 h-4 rounded accent-brand-700" />
             Retainer only — don&apos;t create a project/workflow (e.g. hosting)
           </label>
+          {/* Subscriptions are the recurring lines the agency BUYS IN and resells —
+              hosting, domains, mailbox seats — rather than work the team performs.
+              Ticking this groups every sale of the package under Retainers →
+              Subscriptions, and gates the client's access on payment: while the
+              invoice is unpaid or overdue their portal shows it as suspended. */}
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={form.isSubscription}
+              onChange={(e) => setForm({ ...form, isSubscription: e.target.checked, isRecurring: e.target.checked || form.isRecurring })}
+              className="w-4 h-4 rounded accent-brand-700" />
+            Subscription — bought in and resold (hosting, domain, mailbox), and only usable once paid
+          </label>
+          {form.isSubscription && (
+            <div className="pl-6 space-y-1.5">
+              <label className="block text-xs font-medium text-gray-600">Vendor <span className="text-gray-400 font-normal">(who it&apos;s bought from)</span></label>
+              <input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })}
+                placeholder="Hostinger" className={`${inp} max-w-xs`} />
+              <p className="text-xs text-gray-400">
+                Named on the invoice line and in the client&apos;s portal, so a renewal can be matched against the supplier&apos;s own bill.
+              </p>
+            </div>
+          )}
 
           {!form.isRecurring && (
             <div className="pt-2 border-t border-gray-200 space-y-2">
@@ -1378,27 +1511,34 @@ function PackagesTab() {
                 <p className="text-xs font-medium text-gray-600">Installment plan <span className="text-gray-400 font-normal">(optional — splits a one-time sale into staggered invoices)</span></p>
                 <button
                   type="button"
-                  onClick={() => setForm({ ...form, installmentPlan: [...form.installmentPlan, { percent: '', offsetDays: '0', label: '' }] })}
+                  onClick={() => setForm({ ...form, installmentPlan: [...form.installmentPlan, { type: 'percent', value: '', offsetDays: '0', label: '' }] })}
                   className="text-xs font-medium text-brand-800 hover:text-brand-900"
                 >
                   + Add installment
                 </button>
               </div>
               {form.installmentPlan.length > 0 && (
-                <div className="grid gap-2 text-[11px] font-medium text-gray-500 px-0.5" style={{ gridTemplateColumns: '1fr 110px 190px 28px' }}>
+                <div className="grid gap-2 text-[11px] font-medium text-gray-500 px-0.5" style={{ gridTemplateColumns: '1fr 100px 100px 190px 28px' }}>
                   <span>Label</span>
-                  <span>Percent (%)</span>
+                  <span>Type</span>
+                  <span>Value</span>
                   <span>Due (days after sale)</span>
                   <span />
                 </div>
               )}
               {form.installmentPlan.map((row, i) => (
-                <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 110px 190px 28px' }}>
+                <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 100px 100px 190px 28px' }}>
                   <input value={row.label} placeholder="e.g. Deposit, Milestone 2…"
                     onChange={(e) => setForm({ ...form, installmentPlan: form.installmentPlan.map((r, j) => j === i ? { ...r, label: e.target.value } : r) })}
                     className={inp} />
-                  <input value={row.percent} placeholder="e.g. 50" type="number" min="0"
-                    onChange={(e) => setForm({ ...form, installmentPlan: form.installmentPlan.map((r, j) => j === i ? { ...r, percent: e.target.value } : r) })}
+                  <select value={row.type}
+                    onChange={(e) => setForm({ ...form, installmentPlan: form.installmentPlan.map((r, j) => j === i ? { ...r, type: e.target.value as 'percent' | 'amount' } : r) })}
+                    className={inp}>
+                    <option value="percent">Percentage</option>
+                    <option value="amount">Amount</option>
+                  </select>
+                  <input value={row.value} placeholder={row.type === 'amount' ? 'e.g. 200' : 'e.g. 50'} type="number" min="0"
+                    onChange={(e) => setForm({ ...form, installmentPlan: form.installmentPlan.map((r, j) => j === i ? { ...r, value: e.target.value } : r) })}
                     className={inp} />
                   <input value={row.offsetDays} placeholder="e.g. 30" type="number" min="0"
                     onChange={(e) => setForm({ ...form, installmentPlan: form.installmentPlan.map((r, j) => j === i ? { ...r, offsetDays: e.target.value } : r) })}
@@ -1409,9 +1549,9 @@ function PackagesTab() {
                   </button>
                 </div>
               ))}
-              {form.installmentPlan.length > 0 && (
-                <p className={cn('text-xs', form.installmentPlan.reduce((s, r) => s + (Number(r.percent) || 0), 0) === 100 ? 'text-gray-400' : 'text-amber-600')}>
-                  Total: {form.installmentPlan.reduce((s, r) => s + (Number(r.percent) || 0), 0)}% (should sum to 100%)
+              {form.installmentPlan.some((r) => r.type === 'percent') && (
+                <p className={cn('text-xs', form.installmentPlan.filter((r) => r.type === 'percent').reduce((s, r) => s + (Number(r.value) || 0), 0) === 100 ? 'text-gray-400' : 'text-amber-600')}>
+                  Percentage installments total: {form.installmentPlan.filter((r) => r.type === 'percent').reduce((s, r) => s + (Number(r.value) || 0), 0)}% (should sum to 100% of the price not already covered by fixed amounts)
                 </p>
               )}
             </div>
@@ -1478,6 +1618,11 @@ function PackagesTab() {
                   ) : (
                     <span className="text-xs text-gray-400 font-mono">{pkg.serviceTypeKey}{pkg.tier ? ` · ${pkg.tier}` : ''}</span>
                   )}
+                  {pkg.isSubscription && (
+                    <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-violet-50 text-violet-700">
+                      Subscription{pkg.vendor ? ` · ${pkg.vendor}` : ''}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 sm:gap-4 shrink-0 ml-auto">
@@ -1541,6 +1686,12 @@ function PackagesTab() {
                       <option value="annual">Annual</option>
                     </select>
                   </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Description <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                      rows={2} placeholder="Scope notes, what's included/excluded, anything worth flagging when this package is sold"
+                      className={inp} />
+                  </div>
                 </div>
                 <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                   <input type="checkbox" checked={editForm.isRecurring}
@@ -1554,33 +1705,56 @@ function PackagesTab() {
                     className="w-4 h-4 rounded accent-brand-700" />
                   Retainer only — don't create a project/workflow (e.g. hosting)
                 </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                  <input type="checkbox" checked={editForm.isSubscription}
+                    onChange={(e) => setEditForm({ ...editForm, isSubscription: e.target.checked, isRecurring: e.target.checked || editForm.isRecurring })}
+                    className="w-4 h-4 rounded accent-brand-700" />
+                  Subscription — bought in and resold (hosting, domain, mailbox), and only usable once paid
+                </label>
+                {editForm.isSubscription && (
+                  <div className="pl-6 space-y-1.5">
+                    <label className="block text-xs font-medium text-gray-600">Vendor <span className="text-gray-400 font-normal">(who it&apos;s bought from)</span></label>
+                    <input value={editForm.vendor} onChange={(e) => setEditForm({ ...editForm, vendor: e.target.value })}
+                      placeholder="Hostinger" className={`${inp} max-w-xs`} />
+                    <p className="text-xs text-gray-400">
+                      Changing this only affects future invoice lines — packages already sold keep the label they were billed under.
+                    </p>
+                  </div>
+                )}
 
                 {!editForm.isRecurring && (
                   <div className="pt-2 border-t border-gray-200 space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-xs font-medium text-gray-600">Installment plan <span className="text-gray-400 font-normal">(optional — splits a one-time sale into staggered invoices)</span></p>
                       <button
-                        onClick={() => setEditForm({ ...editForm, installmentPlan: [...editForm.installmentPlan, { percent: '', offsetDays: '0', label: '' }] })}
+                        onClick={() => setEditForm({ ...editForm, installmentPlan: [...editForm.installmentPlan, { type: 'percent', value: '', offsetDays: '0', label: '' }] })}
                         className="text-xs font-medium text-brand-800 hover:text-brand-900"
                       >
                         + Add installment
                       </button>
                     </div>
                     {editForm.installmentPlan.length > 0 && (
-                      <div className="grid gap-2 text-[11px] font-medium text-gray-500 px-0.5" style={{ gridTemplateColumns: '1fr 110px 190px 28px' }}>
+                      <div className="grid gap-2 text-[11px] font-medium text-gray-500 px-0.5" style={{ gridTemplateColumns: '1fr 100px 100px 190px 28px' }}>
                         <span>Label</span>
-                        <span>Percent (%)</span>
+                        <span>Type</span>
+                        <span>Value</span>
                         <span>Due (days after sale)</span>
                         <span />
                       </div>
                     )}
                     {editForm.installmentPlan.map((row, i) => (
-                      <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 110px 190px 28px' }}>
+                      <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 100px 100px 190px 28px' }}>
                         <input value={row.label} placeholder="e.g. Deposit, Milestone 2…"
                           onChange={(e) => setEditForm({ ...editForm, installmentPlan: editForm.installmentPlan.map((r, j) => j === i ? { ...r, label: e.target.value } : r) })}
                           className={inp} />
-                        <input value={row.percent} placeholder="e.g. 50" type="number" min="0"
-                          onChange={(e) => setEditForm({ ...editForm, installmentPlan: editForm.installmentPlan.map((r, j) => j === i ? { ...r, percent: e.target.value } : r) })}
+                        <select value={row.type}
+                          onChange={(e) => setEditForm({ ...editForm, installmentPlan: editForm.installmentPlan.map((r, j) => j === i ? { ...r, type: e.target.value as 'percent' | 'amount' } : r) })}
+                          className={inp}>
+                          <option value="percent">Percentage</option>
+                          <option value="amount">Amount</option>
+                        </select>
+                        <input value={row.value} placeholder={row.type === 'amount' ? 'e.g. 200' : 'e.g. 50'} type="number" min="0"
+                          onChange={(e) => setEditForm({ ...editForm, installmentPlan: editForm.installmentPlan.map((r, j) => j === i ? { ...r, value: e.target.value } : r) })}
                           className={inp} />
                         <input value={row.offsetDays} placeholder="e.g. 30" type="number" min="0"
                           onChange={(e) => setEditForm({ ...editForm, installmentPlan: editForm.installmentPlan.map((r, j) => j === i ? { ...r, offsetDays: e.target.value } : r) })}
@@ -1591,9 +1765,9 @@ function PackagesTab() {
                         </button>
                       </div>
                     ))}
-                    {editForm.installmentPlan.length > 0 && (
-                      <p className={cn('text-xs', editForm.installmentPlan.reduce((s, r) => s + (Number(r.percent) || 0), 0) === 100 ? 'text-gray-400' : 'text-amber-600')}>
-                        Total: {editForm.installmentPlan.reduce((s, r) => s + (Number(r.percent) || 0), 0)}% (should sum to 100%)
+                    {editForm.installmentPlan.some((r) => r.type === 'percent') && (
+                      <p className={cn('text-xs', editForm.installmentPlan.filter((r) => r.type === 'percent').reduce((s, r) => s + (Number(r.value) || 0), 0) === 100 ? 'text-gray-400' : 'text-amber-600')}>
+                        Percentage installments total: {editForm.installmentPlan.filter((r) => r.type === 'percent').reduce((s, r) => s + (Number(r.value) || 0), 0)}% (should sum to 100% of the price not already covered by fixed amounts)
                       </p>
                     )}
                   </div>
@@ -1721,12 +1895,444 @@ function insertTokenAtCursor(
   });
 }
 
+// ─── Client Req Boilerplate Tab ───────────────────────────────────────────────
+
+interface ClientReqFieldDraft { label: string; type: string; required: boolean; options: string }
+const CLIENT_REQ_BLANK_FIELD: ClientReqFieldDraft = { label: '', type: 'text', required: false, options: '' };
+
+function fieldsToDraft(fields: any[]): ClientReqFieldDraft[] {
+  return (fields || []).map((f: any) => ({
+    label: f.label, type: f.type, required: !!f.required, options: (f.options || []).join(', '),
+  }));
+}
+
+function draftToFieldPayload(fields: ClientReqFieldDraft[]) {
+  return fields
+    .filter((f) => f.label.trim())
+    .map((f, i) => ({
+      key: f.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || `field_${i + 1}`,
+      label: f.label.trim(),
+      type: f.type,
+      required: f.required,
+      ...(f.type === 'select' || f.type === 'multiselect' ? { options: f.options.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
+    }));
+}
+
+/** The question-list editor shared by the "new template" and "edit template"
+ *  forms below — same field-row shape as ClientRequestModal's builder on the
+ *  project page, so a template edited here looks identical to one built
+ *  inline when composing a send. */
+function ClientReqFieldsEditor({ fields, onChange }: { fields: ClientReqFieldDraft[]; onChange: (next: ClientReqFieldDraft[]) => void }) {
+  function update(i: number, patch: Partial<ClientReqFieldDraft>) {
+    onChange(fields.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
+  }
+  function remove(i: number) {
+    onChange(fields.filter((_, idx) => idx !== i));
+  }
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="block text-xs font-medium text-gray-600">Questions</label>
+        <button type="button" onClick={() => onChange([...fields, { ...CLIENT_REQ_BLANK_FIELD }])}
+          className="flex items-center gap-1 text-xs font-medium text-brand-700 hover:text-brand-800">
+          <Plus className="w-3.5 h-3.5" /> Add question
+        </button>
+      </div>
+      {fields.map((f, i) => (
+        <div key={i} className="border border-gray-200 rounded-lg p-2.5 space-y-2 bg-white">
+          <div className="flex items-center gap-2">
+            <input value={f.label} onChange={(e) => update(i, { label: e.target.value })}
+              placeholder="What should we ask?" className={`${inp} text-sm py-1.5`} />
+            <button type="button" onClick={() => remove(i)}
+              className="p-1 rounded shrink-0 text-gray-300 hover:text-red-600 hover:bg-red-50">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <select value={f.type} onChange={(e) => update(i, { type: e.target.value })} className={`${inp} text-sm py-1.5 w-auto`}>
+              {CLIENT_REQ_FIELD_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+            <label className="flex items-center gap-1 text-xs text-gray-500 shrink-0 whitespace-nowrap">
+              <input type="checkbox" checked={f.required} onChange={(e) => update(i, { required: e.target.checked })} />
+              Required
+            </label>
+          </div>
+          {(f.type === 'select' || f.type === 'multiselect') && (
+            <input value={f.options} onChange={(e) => update(i, { options: e.target.value })}
+              placeholder="Options, comma separated" className={`${inp} text-sm py-1.5`} />
+          )}
+        </div>
+      ))}
+      {fields.length === 0 && (
+        <p className="text-xs text-gray-400 text-center py-4 border border-dashed border-gray-200 rounded-lg">Add at least one question.</p>
+      )}
+    </div>
+  );
+}
+
+interface ClientReqThemeDraft {
+  headline: string; description: string; buttonText: string;
+  primaryColor: string; backgroundColor: string;
+  showLogo: boolean; showName: boolean; showHeadline: boolean;
+  borderRadius: BorderRadius;
+}
+const CLIENT_REQ_BLANK_THEME: ClientReqThemeDraft = {
+  headline: '', description: '', buttonText: '', primaryColor: '', backgroundColor: '',
+  showLogo: true, showName: true, showHeadline: true, borderRadius: 'rounded',
+};
+
+/** Same Appearance builder as ClientRequestModal's (the compose screen) and
+ *  LeadFormModal's — a boilerplate's theme is just the starting point a send
+ *  pre-fills, so it needs the identical set of controls. */
+function ClientReqAppearanceEditor({ theme, onChange }: { theme: ClientReqThemeDraft; onChange: (next: ClientReqThemeDraft) => void }) {
+  const [expanded, setExpanded] = useState(Object.entries(theme).some(([k, v]) => (
+    k === 'primaryColor' || k === 'backgroundColor' || k === 'headline' || k === 'description' || k === 'buttonText'
+  ) && !!v));
+
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-2 px-3.5 py-2.5 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100"
+      >
+        Appearance
+        <span className="ml-auto text-gray-400 font-normal">{expanded ? 'Hide' : 'Customize'}</span>
+      </button>
+      {expanded && (
+        <div className="p-3.5 space-y-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Public headline</label>
+              <input value={theme.headline} onChange={(e) => onChange({ ...theme, headline: e.target.value })}
+                placeholder="Falls back to the send's subject" className={inp} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Button text</label>
+              <input value={theme.buttonText} onChange={(e) => onChange({ ...theme, buttonText: e.target.value })}
+                placeholder="Submit requirements" className={inp} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Description (optional)</label>
+            <textarea value={theme.description} onChange={(e) => onChange({ ...theme, description: e.target.value })}
+              placeholder="Falls back to the send's message" rows={2} className={inp} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <ColorInput label="Accent color" value={theme.primaryColor} onChange={(v) => onChange({ ...theme, primaryColor: v })} fallback="#0B1D5E" />
+            <ColorInput label="Background" value={theme.backgroundColor} onChange={(v) => onChange({ ...theme, backgroundColor: v })} fallback="#FFFFFF" />
+          </div>
+          <div className="grid grid-cols-2 gap-3 items-end">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Corner style</label>
+              <select value={theme.borderRadius} onChange={(e) => onChange({ ...theme, borderRadius: e.target.value as BorderRadius })} className={inp}>
+                {BORDER_RADIUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5 pb-2">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={theme.showLogo} onChange={(e) => onChange({ ...theme, showLogo: e.target.checked })} />
+                Show your logo
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={theme.showName} onChange={(e) => onChange({ ...theme, showName: e.target.checked })} />
+                Show your name
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={theme.showHeadline} onChange={(e) => onChange({ ...theme, showHeadline: e.target.checked })} />
+                Show headline
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClientReqBoilerplateTab() {
+  const qc = useQueryClient();
+  const inactive = useShowInactive();
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState('');
+
+  const blankForm = {
+    name: '', description: '', serviceTypeKey: '', defaultSubject: '', defaultMessage: '', successMessage: '',
+    fields: [{ ...CLIENT_REQ_BLANK_FIELD }] as ClientReqFieldDraft[],
+    theme: { ...CLIENT_REQ_BLANK_THEME },
+  };
+  const [form, setForm] = useState(blankForm);
+  const [editForm, setEditForm] = useState(blankForm);
+
+  const { data: templates = [] } = useQuery({
+    queryKey: ['requirement-form-templates-admin', inactive.key],
+    queryFn: () => api.get('/requirement-forms', { params: inactive.params }).then((r) => r.data),
+  });
+
+  const { data: serviceTypes = [] } = useQuery({
+    queryKey: ['service-types'],
+    queryFn: () => api.get('/admin/service-types').then((r) => r.data),
+  });
+
+  function serviceLabel(key: string | null) {
+    if (!key) return null;
+    return (serviceTypes as any[]).find((s: any) => s.key === key)?.name || key;
+  }
+
+  const createMutation = useMutation({
+    mutationFn: () => api.post('/requirement-forms', {
+      name: form.name,
+      description: form.description || null,
+      serviceTypeKey: form.serviceTypeKey || null,
+      defaultSubject: form.defaultSubject || null,
+      defaultMessage: form.defaultMessage || null,
+      successMessage: form.successMessage || null,
+      fields: draftToFieldPayload(form.fields),
+      theme: form.theme,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['requirement-form-templates-admin'] });
+      qc.invalidateQueries({ queryKey: ['requirement-form-templates'] });
+      setShowForm(false);
+      setForm(blankForm);
+      toast.success('Client requirement form created.');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err?.response?.data?.error || 'Failed to create form.'),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (id: string) => api.put(`/requirement-forms/${id}`, {
+      name: editForm.name,
+      description: editForm.description || null,
+      serviceTypeKey: editForm.serviceTypeKey || null,
+      defaultSubject: editForm.defaultSubject || null,
+      defaultMessage: editForm.defaultMessage || null,
+      successMessage: editForm.successMessage || null,
+      fields: draftToFieldPayload(editForm.fields),
+      theme: editForm.theme,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['requirement-form-templates-admin'] });
+      qc.invalidateQueries({ queryKey: ['requirement-form-templates'] });
+      setEditId(null);
+      toast.success('Client requirement form updated.');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err?.response?.data?.error || 'Failed to update form.'),
+  });
+
+  const toggleActive = useMutation({
+    mutationFn: ({ id, next }: { id: string; next: boolean }) =>
+      next ? api.post(`/requirement-forms/${id}/activate`) : api.delete(`/requirement-forms/${id}`),
+    onSuccess: (_d, { next }) => {
+      qc.invalidateQueries({ queryKey: ['requirement-form-templates-admin'] });
+      qc.invalidateQueries({ queryKey: ['requirement-form-templates'] });
+      setDeleteId(null);
+      setDeleteError('');
+      toast.success(next ? 'Set to Active.' : 'Set to Inactive.');
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message || 'Could not change status.';
+      setDeleteError(msg);
+      toast.error(msg);
+    },
+  });
+
+  function openEdit(tmpl: any) {
+    setEditId(tmpl.id);
+    setEditForm({
+      name: tmpl.name,
+      description: tmpl.description || '',
+      serviceTypeKey: tmpl.serviceTypeKey || '',
+      defaultSubject: tmpl.defaultSubject || '',
+      defaultMessage: tmpl.defaultMessage || '',
+      successMessage: tmpl.successMessage || '',
+      fields: fieldsToDraft(tmpl.fields),
+      theme: { ...CLIENT_REQ_BLANK_THEME, ...(tmpl.theme || {}) },
+    });
+  }
+
+  const canCreate = form.name.trim() && draftToFieldPayload(form.fields).length > 0;
+  const canSave = editForm.name.trim() && draftToFieldPayload(editForm.fields).length > 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="px-4 sm:px-5 py-4 border-b border-gray-100 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 basis-full sm:basis-auto">
+            <h3 className="text-sm font-semibold text-gray-900">Client Req Boilerplate</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Premade requirement forms staff pick from when emailing a client. Mark one as the default for a service and it&apos;s auto-selected when composing a request on a project for that service — staff can still pick a different one for that send.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <ShowInactiveToggle {...inactive.toggleProps} />
+            <button onClick={() => setShowForm(!showForm)} className={btnPrimary}>
+              <Plus className="w-4 h-4" /> Add Form
+            </button>
+          </div>
+        </div>
+
+        {showForm && (
+          <div className="px-5 py-4 border-b border-gray-100 bg-gray-50 space-y-3">
+            <p className="text-xs font-semibold text-gray-700">New Client Requirement Form</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
+                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="Website Design Intake" className={inp} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Default for service (optional)</label>
+                <select value={form.serviceTypeKey} onChange={(e) => setForm({ ...form, serviceTypeKey: e.target.value })} className={inp}>
+                  <option value="">Not a default — pick manually only</option>
+                  {(serviceTypes as any[]).map((s: any) => <option key={s.key} value={s.key}>{s.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Description (internal only)</label>
+              <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
+                placeholder="When to use this one…" className={inp} />
+            </div>
+            <ClientReqFieldsEditor fields={form.fields} onChange={(fields) => setForm({ ...form, fields })} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Default email subject</label>
+                <input value={form.defaultSubject} onChange={(e) => setForm({ ...form, defaultSubject: e.target.value })} className={inp} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Thank-you message</label>
+                <input value={form.successMessage} onChange={(e) => setForm({ ...form, successMessage: e.target.value })}
+                  placeholder="Thanks — we'll be in touch." className={inp} />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Default email message</label>
+              <textarea value={form.defaultMessage} onChange={(e) => setForm({ ...form, defaultMessage: e.target.value })}
+                rows={3} className={inp} />
+            </div>
+            <ClientReqAppearanceEditor theme={form.theme} onChange={(theme) => setForm({ ...form, theme })} />
+            <div className="flex gap-2">
+              <button onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !canCreate} className={btnPrimary}>
+                {createMutation.isPending ? 'Saving…' : 'Save'}
+              </button>
+              <button onClick={() => { setShowForm(false); setForm(blankForm); }} className={btnGhost}><X className="w-4 h-4" /></button>
+            </div>
+          </div>
+        )}
+
+        <div className="divide-y divide-gray-100">
+          {(templates as any[]).length === 0 && (
+            <p className="px-5 py-8 text-sm text-gray-400 text-center">No client requirement forms yet.</p>
+          )}
+          {(templates as any[]).map((tmpl) => (
+            <div key={tmpl.id} className={cn('px-5 py-3.5', inactiveRow(tmpl.isActive))}>
+              {editId === tmpl.id ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className={inp} />
+                    <select value={editForm.serviceTypeKey} onChange={(e) => setEditForm({ ...editForm, serviceTypeKey: e.target.value })} className={inp}>
+                      <option value="">Not a default — pick manually only</option>
+                      {(serviceTypes as any[]).map((s: any) => <option key={s.key} value={s.key}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <input value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                    placeholder="Internal note…" className={inp} />
+                  <ClientReqFieldsEditor fields={editForm.fields} onChange={(fields) => setEditForm({ ...editForm, fields })} />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input value={editForm.defaultSubject} onChange={(e) => setEditForm({ ...editForm, defaultSubject: e.target.value })}
+                      placeholder="Default subject" className={inp} />
+                    <input value={editForm.successMessage} onChange={(e) => setEditForm({ ...editForm, successMessage: e.target.value })}
+                      placeholder="Thank-you message" className={inp} />
+                  </div>
+                  <textarea value={editForm.defaultMessage} onChange={(e) => setEditForm({ ...editForm, defaultMessage: e.target.value })}
+                    rows={3} placeholder="Default email message" className={inp} />
+                  <ClientReqAppearanceEditor theme={editForm.theme} onChange={(theme) => setEditForm({ ...editForm, theme })} />
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => updateMutation.mutate(tmpl.id)} disabled={updateMutation.isPending || !canSave} className={btnPrimary}>
+                      <Save className="w-3.5 h-3.5" />{updateMutation.isPending ? 'Saving…' : 'Save'}
+                    </button>
+                    <button onClick={() => setEditId(null)} className={btnGhost}><X className="w-4 h-4" /></button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium text-gray-900">{tmpl.name}</p>
+                      {tmpl.serviceTypeKey && (
+                        <span className="px-2 py-0.5 text-[11px] font-medium rounded-full bg-brand-50 text-brand-700">
+                          Default · {serviceLabel(tmpl.serviceTypeKey)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {(tmpl.fields || []).length} question{(tmpl.fields || []).length === 1 ? '' : 's'} · sent {tmpl.timesSent || 0} time{tmpl.timesSent === 1 ? '' : 's'}
+                      {tmpl.description ? ` · ${tmpl.description}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${tmpl.isActive ? 'bg-brand-100 text-brand-800' : 'bg-gray-100 text-gray-500'}`}>
+                      {tmpl.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                    <button onClick={() => openEdit(tmpl)} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <ActiveToggle
+                      isActive={!!tmpl.isActive}
+                      label="requirement form"
+                      disabled={toggleActive.isPending}
+                      onToggle={(next) => {
+                        if (next) { toggleActive.mutate({ id: tmpl.id, next }); return; }
+                        setDeleteId(tmpl.id); setDeleteError('');
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {deleteId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-1">Set this form to Inactive?</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              It stops being offered when composing a new request. Requests already sent from it keep working — their questions were snapshotted at send time. You can set it back to Active here at any time.
+            </p>
+            {deleteError && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-4">{deleteError}</p>}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setDeleteId(null); setDeleteError(''); }} className={btnGhost}>Cancel</button>
+              <button
+                onClick={() => toggleActive.mutate({ id: deleteId, next: false })}
+                disabled={toggleActive.isPending}
+                className="bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              >
+                {toggleActive.isPending ? 'Saving…' : 'Set Inactive'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DocumentTemplatesTab() {
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ type: 'quotation', serviceTypeKey: '', name: '', body: '', defaultTerms: '' });
   const [editId, setEditId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ type: 'quotation', serviceTypeKey: '', name: '', body: '', defaultTerms: '', isActive: true });
+  // Only one of the "new" / "edit" template forms is ever open at once, so a
+  // single ref per form is enough for the {{token}} chips to reach whichever
+  // RichTextEditor instance is currently mounted.
+  const newBodyEditorRef = useRef<RichTextEditorHandle>(null);
+  const editBodyEditorRef = useRef<RichTextEditorHandle>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const inactive = useShowInactive();
@@ -1790,6 +2396,25 @@ function DocumentTemplatesTab() {
     });
   }
 
+  // Deep link from the New/Edit Document page's "Edit template" link
+  // (?tab=templates&edit=<id>) — jumps straight into that template's edit
+  // form once the list has loaded, instead of leaving the admin to hunt for
+  // it in the list themselves. Only applied once so closing the form (Cancel)
+  // doesn't keep reopening it.
+  const deepLinkEditId = useSearchParams().get('edit');
+  const appliedDeepLinkEdit = useRef(false);
+  useEffect(() => {
+    if (appliedDeepLinkEdit.current || !deepLinkEditId || !(templates as any[]).length) return;
+    const tmpl = (templates as any[]).find((t: any) => t.id === deepLinkEditId);
+    if (tmpl) {
+      appliedDeepLinkEdit.current = true;
+      openEdit(tmpl);
+      requestAnimationFrame(() => {
+        document.querySelector(`[data-template-row="${tmpl.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    }
+  }, [deepLinkEditId, templates]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-xl border border-gray-200">
@@ -1844,20 +2469,33 @@ function DocumentTemplatesTab() {
               <div className="flex flex-wrap gap-1 mb-1.5">
                 {MERGE_TOKENS.map((t) => (
                   <button key={t} type="button"
-                    onClick={() => insertTokenAtCursor('new-template-body', form.body, t, (v) => setForm({ ...form, body: v }))}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => (form.type === 'service_fragment'
+                      ? insertTokenAtCursor('new-template-body', form.body, t, (v) => setForm({ ...form, body: v }))
+                      : newBodyEditorRef.current?.insertText(`{{${t}}}`))}
                     className="px-1.5 py-0.5 text-[11px] font-mono bg-white border border-gray-200 rounded text-gray-600 hover:border-brand-500 hover:text-brand-800 transition-colors">
                     {`{{${t}}}`}
                   </button>
                 ))}
               </div>
-              <textarea id="new-template-body" value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })}
-                rows={8} placeholder="Dear {{customer_name}}, thank you for considering {{agency_name}} for {{service}}…"
-                className={`${inp} font-mono text-xs`} />
+              {form.type === 'service_fragment' ? (
+                <textarea id="new-template-body" value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })}
+                  rows={8} placeholder="▸ {{service}}{{package}}&#10;  Investment: {{currency}} {{price}}"
+                  className={`${inp} font-mono text-xs`} />
+              ) : (
+                <RichTextEditor ref={newBodyEditorRef} value={form.body} onChange={(html) => setForm({ ...form, body: html })}
+                  placeholder="Dear {{customer_name}}, thank you for considering {{agency_name}} for {{service}}…" minHeight="min-h-48" />
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Default Terms (optional)</label>
-              <textarea value={form.defaultTerms} onChange={(e) => setForm({ ...form, defaultTerms: e.target.value })}
-                rows={3} placeholder="50% upfront, 50% on delivery…" className={inp} />
+              {form.type === 'service_fragment' ? (
+                <textarea value={form.defaultTerms} onChange={(e) => setForm({ ...form, defaultTerms: e.target.value })}
+                  rows={3} placeholder="50% upfront, 50% on delivery…" className={inp} />
+              ) : (
+                <RichTextEditor value={form.defaultTerms} onChange={(html) => setForm({ ...form, defaultTerms: html })}
+                  placeholder="50% upfront, 50% on delivery…" minHeight="min-h-16" />
+              )}
             </div>
             <div className="flex gap-2">
               <button onClick={() => createMutation.mutate()}
@@ -1875,7 +2513,7 @@ function DocumentTemplatesTab() {
             <p className="px-5 py-8 text-sm text-gray-400 text-center">No document templates yet.</p>
           )}
           {(templates as any[]).map((tmpl) => (
-            <div key={tmpl.id} className={cn('px-5 py-3.5', inactiveRow(tmpl.isActive))}>
+            <div key={tmpl.id} data-template-row={tmpl.id} className={cn('px-5 py-3.5', inactiveRow(tmpl.isActive))}>
               {editId === tmpl.id ? (
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1891,16 +2529,29 @@ function DocumentTemplatesTab() {
                   <div className="flex flex-wrap gap-1">
                     {MERGE_TOKENS.map((t) => (
                       <button key={t} type="button"
-                        onClick={() => insertTokenAtCursor(`edit-template-body-${tmpl.id}`, editForm.body, t, (v) => setEditForm({ ...editForm, body: v }))}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => (editForm.type === 'service_fragment'
+                          ? insertTokenAtCursor(`edit-template-body-${tmpl.id}`, editForm.body, t, (v) => setEditForm({ ...editForm, body: v }))
+                          : editBodyEditorRef.current?.insertText(`{{${t}}}`))}
                         className="px-1.5 py-0.5 text-[11px] font-mono bg-gray-50 border border-gray-200 rounded text-gray-600 hover:border-brand-500 hover:text-brand-800 transition-colors">
                         {`{{${t}}}`}
                       </button>
                     ))}
                   </div>
-                  <textarea id={`edit-template-body-${tmpl.id}`} value={editForm.body} onChange={(e) => setEditForm({ ...editForm, body: e.target.value })}
-                    rows={8} className={`${inp} font-mono text-xs`} />
-                  <textarea value={editForm.defaultTerms} onChange={(e) => setEditForm({ ...editForm, defaultTerms: e.target.value })}
-                    rows={3} placeholder="Default terms…" className={inp} />
+                  {editForm.type === 'service_fragment' ? (
+                    <textarea id={`edit-template-body-${tmpl.id}`} value={editForm.body} onChange={(e) => setEditForm({ ...editForm, body: e.target.value })}
+                      rows={8} className={`${inp} font-mono text-xs`} />
+                  ) : (
+                    <RichTextEditor ref={editBodyEditorRef} value={editForm.body} onChange={(html) => setEditForm({ ...editForm, body: html })}
+                      minHeight="min-h-48" />
+                  )}
+                  {editForm.type === 'service_fragment' ? (
+                    <textarea value={editForm.defaultTerms} onChange={(e) => setEditForm({ ...editForm, defaultTerms: e.target.value })}
+                      rows={3} placeholder="Default terms…" className={inp} />
+                  ) : (
+                    <RichTextEditor value={editForm.defaultTerms} onChange={(html) => setEditForm({ ...editForm, defaultTerms: html })}
+                      placeholder="Default terms…" minHeight="min-h-16" />
+                  )}
                   <div className="flex items-center gap-3">
                     <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
                       <input type="checkbox" checked={editForm.isActive}
@@ -1983,9 +2634,11 @@ const TABS = [
   { key: 'roles',      label: 'Roles',      icon: Shield   },
   { key: 'packages',   label: 'Packages',   icon: Package  },
   { key: 'templates',  label: 'Document Templates', icon: ScrollText },
+  { key: 'client-req-forms', label: 'Client Req Boilerplate', icon: ClipboardCheck },
+  { key: 'export',     label: 'Export Data', icon: Download },
 ] as const;
 
-const VALID_TABS = ['branding', 'companies', 'payments', 'services', 'workflows', 'roles', 'packages', 'templates'] as const;
+const VALID_TABS = ['branding', 'companies', 'payments', 'services', 'workflows', 'roles', 'packages', 'templates', 'client-req-forms', 'export'] as const;
 
 export default function AdminPage() {
   const searchParams = useSearchParams();
@@ -2026,6 +2679,8 @@ export default function AdminPage() {
           {tab === 'roles'     && <RolesTab />}
           {tab === 'packages'  && <PackagesTab />}
           {tab === 'templates' && <DocumentTemplatesTab />}
+          {tab === 'client-req-forms' && <ClientReqBoilerplateTab />}
+          {tab === 'export'    && <ExportDataTab />}
         </div>
       </div>
     </div>

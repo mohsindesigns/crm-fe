@@ -8,14 +8,14 @@ import { toast } from 'sonner';
 import api from '@/lib/api';
 import Pagination from '@/components/Pagination';
 import { cn, formatPeriod, titleCase } from '@/lib/utils';
-import { attendanceSourceLabel, shouldTreatUnmarkedAsAbsent } from '@/lib/attendanceDate';
+import { attendanceSourceLabel, shouldTreatUnmarkedAsAbsent, nowInKarachi } from '@/lib/attendanceDate';
 import AttendanceStatusBadges, { attendanceLabelClass } from '@/components/AttendanceStatusBadges';
 import { marksAttendance } from '@/lib/routePermissions';
 import { useAuthStore } from '@/store/auth';
 
 const MARKABLE_STATUSES = ['present', 'absent', 'leave', 'half_day', 'holiday', 'weekend'];
 
-// Org-wide attendance: Monthly Summary + Attendance Log, plus manual marking.
+// Org-wide attendance: Attendance Log, Today's Attendance, manual marking, and Monthly Summary.
 //
 // Attendance is normally self-marked by each employee (GPS check-in), so this is
 // primarily a review surface — but people do forget to check in, and there was
@@ -47,7 +47,7 @@ export default function AttendanceBoard() {
   // record this month" to "every active worker's status on this one day"
   // (including the ones with no record at all, so it's actually possible to see
   // who hasn't marked).
-  const [logDate, setLogDate] = useState('');
+  const [logDate, setLogDate] = useState(() => nowInKarachi().date);
 
   const { data: workers = [], isLoading: loadingWorkers } = useQuery({
     queryKey: ['hr-workers'],
@@ -72,10 +72,27 @@ export default function AttendanceBoard() {
   });
   const logDateAttendance: any[] = logDateResp?.data || [];
 
+  // Same "attendance day" the self-marking flow uses (Asia/Karachi, 12PM→12PM
+  // shift), not the browser's local date — so this always matches what today's
+  // check-ins actually landed on.
+  const today = nowInKarachi().date;
+  const { data: todayResp, isLoading: loadingToday } = useQuery({
+    queryKey: ['hr-attendance-day', today],
+    queryFn: () => api.get('/hr/attendance', { params: { date: today, page: 1, limit: 500 } }).then((r) => r.data),
+  });
+  const todayAttendance: any[] = todayResp?.data || [];
+
   // Admins, super admins and partners never mark attendance, so they're not
   // listed in the roll call and can't be marked absent for it.
   const isAttendanceWorker = (w: any) => w.status === 'active' && marksAttendance(w.user?.role?.key);
   const activeWorkers = (workers as any[]).filter(isAttendanceWorker);
+
+  const todayCounts = activeWorkers.reduce((acc: Record<string, number>, w: any) => {
+    const rec = todayAttendance.find((x: any) => x.workerId === w.id);
+    const status = rec?.status || (shouldTreatUnmarkedAsAbsent(today) ? 'absent' : 'not_marked');
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
 
   function refreshAttendance() {
     qc.invalidateQueries({ queryKey: ['hr-attendance'] });
@@ -119,7 +136,268 @@ export default function AttendanceBoard() {
 
   return (
     <div className="space-y-5">
-      {/* Manual marking — the fallback when someone forgets to check in */}
+      {/* Attendance Log */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Attendance Log</h3>
+            {logDate && (
+              <p className="text-xs text-gray-400 mt-0.5">
+                Every active worker for this day — including anyone who hasn&apos;t marked yet
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {!logDate && (
+              <input
+                type="month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+              />
+            )}
+            <input
+              type="date"
+              value={logDate}
+              onChange={(e) => setLogDate(e.target.value)}
+              placeholder="Pick an exact date"
+              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+            />
+            {logDate && (
+              <button
+                onClick={() => setLogDate('')}
+                className="text-xs font-medium text-gray-500 hover:text-gray-700 px-2 py-1.5"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-160">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Worker</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Date</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check In</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check Out</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Source</th>
+                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
+                {canManage && logDate && <th className="px-5 py-3 w-12" />}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {logDate ? (
+                loadingLogDate || loadingWorkers ? (
+                  <tr><td colSpan={canManage ? 7 : 6} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</td></tr>
+                ) : activeWorkers.length === 0 ? (
+                  <tr><td colSpan={canManage ? 7 : 6} className="px-5 py-8 text-sm text-gray-400 text-center">No active workers found.</td></tr>
+                ) : (
+                  activeWorkers
+                    .map((w: any) => ({ w, a: logDateAttendance.find((x: any) => x.workerId === w.id) }))
+                    // Not-marked first — that's the whole point of picking a specific day.
+                    .sort((x, y) => (x.a ? 1 : 0) - (y.a ? 1 : 0))
+                    .map(({ w, a }) => {
+                      const mapLink = (lat: any, lng: any) =>
+                        lat != null && lng != null ? `https://www.google.com/maps?q=${lat},${lng}` : null;
+                      const checkInMap = a ? mapLink(a.checkInLat, a.checkInLng) : null;
+                      const checkOutMap = a ? mapLink(a.checkOutLat, a.checkOutLng) : null;
+                      const showAbsent = !a && logDate && shouldTreatUnmarkedAsAbsent(logDate);
+                      const displayStatus = a?.status || (showAbsent ? 'absent' : null);
+                      return (
+                        <tr key={w.id} className={cn('hover:bg-gray-50', !a && !showAbsent && 'bg-amber-50/40', showAbsent && 'bg-red-50/30')}>
+                          <td className="px-5 py-3.5 text-sm font-medium">
+                            {w.id ? (
+                              <Link href={workerAttendanceHref(w.id, month)} className={EMPLOYEE_LINK_CLASS}>
+                                {w.user?.name}
+                              </Link>
+                            ) : (
+                              <span className="text-gray-900">{w.user?.name}</span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">{logDate}</td>
+                          <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
+                            {a?.checkIn ? (
+                              <span className="flex items-center gap-1.5">
+                                {a.checkIn.slice(0, 5)}
+                                {checkInMap ? (
+                                  <a href={checkInMap} target="_blank" rel="noreferrer" title="View check-in location" className="text-brand-700 hover:text-brand-900">
+                                    <MapPin className="w-3.5 h-3.5" />
+                                  </a>
+                                ) : (
+                                  <MapPinOff className="w-3.5 h-3.5 text-gray-300" />
+                                )}
+                              </span>
+                            ) : '—'}
+                          </td>
+                          <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
+                            {a?.checkOut ? (
+                              <span className="flex items-center gap-1.5">
+                                {a.checkOut.slice(0, 5)}
+                                {checkOutMap ? (
+                                  <a href={checkOutMap} target="_blank" rel="noreferrer" title="View check-out location" className="text-brand-700 hover:text-brand-900">
+                                    <MapPin className="w-3.5 h-3.5" />
+                                  </a>
+                                ) : (
+                                  <MapPinOff className="w-3.5 h-3.5 text-gray-300" />
+                                )}
+                              </span>
+                            ) : '—'}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            {a && (
+                              <span className={cn('px-2 py-0.5 text-[10px] font-medium rounded-full uppercase tracking-wide',
+                                a.source === 'self' ? 'bg-violet-50 text-violet-600'
+                                  : a.source === 'system' ? 'bg-slate-100 text-slate-600'
+                                    : 'bg-gray-100 text-gray-500')}>
+                                {attendanceSourceLabel(a.source)}
+                              </span>
+                            )}
+                            {showAbsent && (
+                              <span className="px-2 py-0.5 text-[10px] font-medium rounded-full uppercase tracking-wide bg-slate-100 text-slate-600">
+                                System
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            {displayStatus ? (
+                              a ? (
+                                <AttendanceStatusBadges record={a} />
+                              ) : showAbsent ? (
+                                <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', attendanceLabelClass('Absent'))}>
+                                  Absent
+                                </span>
+                              ) : null
+                            ) : (
+                              <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', attendanceLabelClass('Not Marked'))}>
+                                Not Marked
+                              </span>
+                            )}
+                          </td>
+                          {canManage && (
+                            <td className="px-5 py-3.5 text-right">
+                              <button
+                                type="button"
+                                title={a ? 'Correct this record' : 'Mark this employee for this day'}
+                                onClick={() => openMarkForm(w.id, logDate, a)}
+                                className="p-1.5 text-gray-400 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
+                )
+              ) : loadingAttendance ? (
+                <tr><td colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</td></tr>
+              ) : attendance.length === 0 ? (
+                <tr><td colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">No attendance records for this month.</td></tr>
+              ) : (
+                (attendance as any[]).map((a: any) => {
+                  const mapLink = (lat: any, lng: any) =>
+                    lat != null && lng != null ? `https://www.google.com/maps?q=${lat},${lng}` : null;
+                  const checkInMap = mapLink(a.checkInLat, a.checkInLng);
+                  const checkOutMap = mapLink(a.checkOutLat, a.checkOutLng);
+                  return (
+                  <tr key={a.id} className="hover:bg-gray-50">
+                    <td className="px-5 py-3.5 text-sm font-medium">
+                      {a.workerId || a.worker?.id ? (
+                        <Link href={workerAttendanceHref(String(a.workerId || a.worker?.id), month)} className={EMPLOYEE_LINK_CLASS}>
+                          {a.worker?.user?.name}
+                        </Link>
+                      ) : (
+                        <span className="text-gray-900">{a.worker?.user?.name}</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">{(a.date || '').slice(0, 10)}</td>
+                    <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
+                      {a.checkIn ? (
+                        <span className="flex items-center gap-1.5">
+                          {a.checkIn.slice(0, 5)}
+                          {checkInMap ? (
+                            <a href={checkInMap} target="_blank" rel="noreferrer" title="View check-in location" className="text-brand-700 hover:text-brand-900">
+                              <MapPin className="w-3.5 h-3.5" />
+                            </a>
+                          ) : (
+                            <MapPinOff className="w-3.5 h-3.5 text-gray-300" />
+                          )}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
+                      {a.checkOut ? (
+                        <span className="flex items-center gap-1.5">
+                          {a.checkOut.slice(0, 5)}
+                          {checkOutMap ? (
+                            <a href={checkOutMap} target="_blank" rel="noreferrer" title="View check-out location" className="text-brand-700 hover:text-brand-900">
+                              <MapPin className="w-3.5 h-3.5" />
+                            </a>
+                          ) : (
+                            <MapPinOff className="w-3.5 h-3.5 text-gray-300" />
+                          )}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <span className={cn('px-2 py-0.5 text-[10px] font-medium rounded-full uppercase tracking-wide',
+                        a.source === 'self' ? 'bg-violet-50 text-violet-600'
+                          : a.source === 'system' ? 'bg-slate-100 text-slate-600'
+                            : 'bg-gray-100 text-gray-500')}>
+                        {attendanceSourceLabel(a.source)}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <AttendanceStatusBadges record={a} />
+                    </td>
+                  </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        {!logDate && (
+          <Pagination
+            page={attendanceResp?.page || 1}
+            totalPages={attendanceResp?.totalPages || 1}
+            total={attendanceResp?.total || 0}
+            limit={attendanceResp?.limit || 50}
+            onPageChange={setAttLogPage}
+          />
+        )}
+      </div>
+
+      {/* Today's Attendance — a one-glance roll call, right below the log. */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Today&apos;s Attendance — {today}</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Live roll call for {activeWorkers.length} active employee{activeWorkers.length === 1 ? '' : 's'}</p>
+          </div>
+          {loadingToday || loadingWorkers ? (
+            <span className="text-xs text-gray-400">Loading…</span>
+          ) : (
+            <div className="flex items-center gap-4 text-xs flex-wrap">
+              <span className="text-gray-500">Present <strong className="text-brand-800">{todayCounts.present || 0}</strong></span>
+              <span className="text-gray-500">Absent <strong className="text-red-600">{todayCounts.absent || 0}</strong></span>
+              <span className="text-gray-500">Leave <strong className="text-amber-600">{todayCounts.leave || 0}</strong></span>
+              <span className="text-gray-500">Half-day <strong className="text-blue-600">{todayCounts.half_day || 0}</strong></span>
+              <span className="text-gray-500">Not marked <strong className="text-gray-900">{todayCounts.not_marked || 0}</strong></span>
+              <button
+                type="button"
+                onClick={() => setLogDate(today)}
+                className="text-brand-700 hover:text-brand-900 font-medium underline underline-offset-2 decoration-brand-300"
+              >
+                View log
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Manual marking — the fallback when someone forgot to check in */}
       {canManage && (
         <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 space-y-4">
           <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -354,239 +632,6 @@ export default function AttendanceBoard() {
               </tbody>
             </table>
           </div>
-        )}
-      </div>
-
-      {/* Attendance Log */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">Attendance Log</h3>
-            {logDate && (
-              <p className="text-xs text-gray-400 mt-0.5">
-                Every active worker for this day — including anyone who hasn&apos;t marked yet
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {!logDate && (
-              <input
-                type="month"
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-                className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-              />
-            )}
-            <input
-              type="date"
-              value={logDate}
-              onChange={(e) => setLogDate(e.target.value)}
-              placeholder="Pick an exact date"
-              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-            />
-            {logDate && (
-              <button
-                onClick={() => setLogDate('')}
-                className="text-xs font-medium text-gray-500 hover:text-gray-700 px-2 py-1.5"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-160">
-            <thead>
-              <tr className="border-b border-gray-100">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Worker</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Date</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check In</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check Out</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Source</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
-                {canManage && logDate && <th className="px-5 py-3 w-12" />}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {logDate ? (
-                loadingLogDate || loadingWorkers ? (
-                  <tr><td colSpan={canManage ? 7 : 6} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</td></tr>
-                ) : activeWorkers.length === 0 ? (
-                  <tr><td colSpan={canManage ? 7 : 6} className="px-5 py-8 text-sm text-gray-400 text-center">No active workers found.</td></tr>
-                ) : (
-                  activeWorkers
-                    .map((w: any) => ({ w, a: logDateAttendance.find((x: any) => x.workerId === w.id) }))
-                    // Not-marked first — that's the whole point of picking a specific day.
-                    .sort((x, y) => (x.a ? 1 : 0) - (y.a ? 1 : 0))
-                    .map(({ w, a }) => {
-                      const mapLink = (lat: any, lng: any) =>
-                        lat != null && lng != null ? `https://www.google.com/maps?q=${lat},${lng}` : null;
-                      const checkInMap = a ? mapLink(a.checkInLat, a.checkInLng) : null;
-                      const checkOutMap = a ? mapLink(a.checkOutLat, a.checkOutLng) : null;
-                      const showAbsent = !a && logDate && shouldTreatUnmarkedAsAbsent(logDate);
-                      const displayStatus = a?.status || (showAbsent ? 'absent' : null);
-                      return (
-                        <tr key={w.id} className={cn('hover:bg-gray-50', !a && !showAbsent && 'bg-amber-50/40', showAbsent && 'bg-red-50/30')}>
-                          <td className="px-5 py-3.5 text-sm font-medium">
-                            {w.id ? (
-                              <Link href={workerAttendanceHref(w.id, month)} className={EMPLOYEE_LINK_CLASS}>
-                                {w.user?.name}
-                              </Link>
-                            ) : (
-                              <span className="text-gray-900">{w.user?.name}</span>
-                            )}
-                          </td>
-                          <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">{logDate}</td>
-                          <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
-                            {a?.checkIn ? (
-                              <span className="flex items-center gap-1.5">
-                                {a.checkIn.slice(0, 5)}
-                                {checkInMap ? (
-                                  <a href={checkInMap} target="_blank" rel="noreferrer" title="View check-in location" className="text-brand-700 hover:text-brand-900">
-                                    <MapPin className="w-3.5 h-3.5" />
-                                  </a>
-                                ) : (
-                                  <MapPinOff className="w-3.5 h-3.5 text-gray-300" />
-                                )}
-                              </span>
-                            ) : '—'}
-                          </td>
-                          <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
-                            {a?.checkOut ? (
-                              <span className="flex items-center gap-1.5">
-                                {a.checkOut.slice(0, 5)}
-                                {checkOutMap ? (
-                                  <a href={checkOutMap} target="_blank" rel="noreferrer" title="View check-out location" className="text-brand-700 hover:text-brand-900">
-                                    <MapPin className="w-3.5 h-3.5" />
-                                  </a>
-                                ) : (
-                                  <MapPinOff className="w-3.5 h-3.5 text-gray-300" />
-                                )}
-                              </span>
-                            ) : '—'}
-                          </td>
-                          <td className="px-5 py-3.5">
-                            {a && (
-                              <span className={cn('px-2 py-0.5 text-[10px] font-medium rounded-full uppercase tracking-wide',
-                                a.source === 'self' ? 'bg-violet-50 text-violet-600'
-                                  : a.source === 'system' ? 'bg-slate-100 text-slate-600'
-                                    : 'bg-gray-100 text-gray-500')}>
-                                {attendanceSourceLabel(a.source)}
-                              </span>
-                            )}
-                            {showAbsent && (
-                              <span className="px-2 py-0.5 text-[10px] font-medium rounded-full uppercase tracking-wide bg-slate-100 text-slate-600">
-                                System
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-5 py-3.5">
-                            {displayStatus ? (
-                              a ? (
-                                <AttendanceStatusBadges record={a} />
-                              ) : showAbsent ? (
-                                <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', attendanceLabelClass('Absent'))}>
-                                  Absent
-                                </span>
-                              ) : null
-                            ) : (
-                              <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', attendanceLabelClass('Not Marked'))}>
-                                Not Marked
-                              </span>
-                            )}
-                          </td>
-                          {canManage && (
-                            <td className="px-5 py-3.5 text-right">
-                              <button
-                                type="button"
-                                title={a ? 'Correct this record' : 'Mark this employee for this day'}
-                                onClick={() => openMarkForm(w.id, logDate, a)}
-                                className="p-1.5 text-gray-400 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-colors"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })
-                )
-              ) : loadingAttendance ? (
-                <tr><td colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</td></tr>
-              ) : attendance.length === 0 ? (
-                <tr><td colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">No attendance records for this month.</td></tr>
-              ) : (
-                (attendance as any[]).map((a: any) => {
-                  const mapLink = (lat: any, lng: any) =>
-                    lat != null && lng != null ? `https://www.google.com/maps?q=${lat},${lng}` : null;
-                  const checkInMap = mapLink(a.checkInLat, a.checkInLng);
-                  const checkOutMap = mapLink(a.checkOutLat, a.checkOutLng);
-                  return (
-                  <tr key={a.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-3.5 text-sm font-medium">
-                      {a.workerId || a.worker?.id ? (
-                        <Link href={workerAttendanceHref(String(a.workerId || a.worker?.id), month)} className={EMPLOYEE_LINK_CLASS}>
-                          {a.worker?.user?.name}
-                        </Link>
-                      ) : (
-                        <span className="text-gray-900">{a.worker?.user?.name}</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">{(a.date || '').slice(0, 10)}</td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
-                      {a.checkIn ? (
-                        <span className="flex items-center gap-1.5">
-                          {a.checkIn.slice(0, 5)}
-                          {checkInMap ? (
-                            <a href={checkInMap} target="_blank" rel="noreferrer" title="View check-in location" className="text-brand-700 hover:text-brand-900">
-                              <MapPin className="w-3.5 h-3.5" />
-                            </a>
-                          ) : (
-                            <MapPinOff className="w-3.5 h-3.5 text-gray-300" />
-                          )}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
-                      {a.checkOut ? (
-                        <span className="flex items-center gap-1.5">
-                          {a.checkOut.slice(0, 5)}
-                          {checkOutMap ? (
-                            <a href={checkOutMap} target="_blank" rel="noreferrer" title="View check-out location" className="text-brand-700 hover:text-brand-900">
-                              <MapPin className="w-3.5 h-3.5" />
-                            </a>
-                          ) : (
-                            <MapPinOff className="w-3.5 h-3.5 text-gray-300" />
-                          )}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className={cn('px-2 py-0.5 text-[10px] font-medium rounded-full uppercase tracking-wide',
-                        a.source === 'self' ? 'bg-violet-50 text-violet-600'
-                          : a.source === 'system' ? 'bg-slate-100 text-slate-600'
-                            : 'bg-gray-100 text-gray-500')}>
-                        {attendanceSourceLabel(a.source)}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <AttendanceStatusBadges record={a} />
-                    </td>
-                  </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-        {!logDate && (
-          <Pagination
-            page={attendanceResp?.page || 1}
-            totalPages={attendanceResp?.totalPages || 1}
-            total={attendanceResp?.total || 0}
-            limit={attendanceResp?.limit || 50}
-            onPageChange={setAttLogPage}
-          />
         )}
       </div>
     </div>

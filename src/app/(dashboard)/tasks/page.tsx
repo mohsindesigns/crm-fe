@@ -3,18 +3,18 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckSquare, Search, AlertTriangle, Plus, X, Bell, MessageSquareText, Upload, Paperclip, Trash2, Calendar, Flag, CircleDot } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import Avatar from '@/components/Avatar';
 import Linkify from '@/components/Linkify';
-import TaskDetailModal from '@/components/TaskDetailModal';
-import { cn, formatDate, titleCase, uploadErrorMessage, formatFileSize } from '@/lib/utils';
+import { cn, formatDate, todayDateInput, titleCase, uploadErrorMessage, formatFileSize } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
 
 const STATUS_COLORS: Record<string, string> = {
   todo: 'bg-gray-100 text-gray-600',
+  accepted: 'bg-cyan-100 text-cyan-700',
   in_progress: 'bg-blue-100 text-blue-700',
   submitted: 'bg-amber-100 text-amber-700',
   in_review: 'bg-violet-100 text-violet-700',
@@ -26,6 +26,7 @@ const STATUS_COLORS: Record<string, string> = {
 const STATUS_FILTERS = [
   { label: 'All open', value: '' },
   { label: 'To do', value: 'todo' },
+  { label: 'Accepted', value: 'accepted' },
   { label: 'In progress', value: 'in_progress' },
   { label: 'Submitted', value: 'submitted' },
   { label: 'In review', value: 'in_review' },
@@ -80,8 +81,12 @@ function taskTimestamps(task: any) {
   return lines;
 }
 
+const TASK_VIEWS = ['mine', 'assigned_by_me', 'all', 'overdue', 'approvals', 'completed'] as const;
+type TaskView = typeof TASK_VIEWS[number];
+
 export default function TasksPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const qc = useQueryClient();
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const currentUser = useAuthStore((s) => s.user);
@@ -97,7 +102,7 @@ export default function TasksPage() {
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTask, setNewTask] = useState({
     projectId: '', title: '', assigneeId: '', reviewerId: '', type: 'issue',
-    pageName: '', dueAt: '', remarks: '',
+    pageName: '', dueAt: '', remarks: '', requiresTechnicalAudit: false,
   });
   // Files staged in the Add Task dialog. They can only be uploaded once the task
   // exists (the media endpoint keys artifacts on taskId), so they're held here and
@@ -115,44 +120,83 @@ export default function TasksPage() {
     () => () => newTaskPreviews.forEach((url) => url && URL.revokeObjectURL(url)),
     [newTaskPreviews],
   );
-  const [view, setView] = useState<'mine' | 'assigned_by_me' | 'all'>('mine');
-  // Clicking a row used to jump to the whole project page, which left custom tasks
-  // with nowhere to attach a deliverable or mark themselves complete. Open the same
-  // task modal the project board uses instead.
-  const [openTask, setOpenTask] = useState<{ projectId: string; taskId: string } | null>(null);
+  // The sidebar's Tasks submenu links to /tasks?view=<key> — a real, bookmarkable
+  // subpage per the sidebar's expandable-submenu pattern (same as Admin Panel's
+  // ?tab=). The URL is the single source of truth (no local state to drift out
+  // of sync with it) — "all" only counts as valid when the viewer can actually
+  // use it, so a stale/typed link doesn't strand a non-admin on an empty query.
+  function isValidView(v: string | null): v is TaskView {
+    return !!v && (TASK_VIEWS as readonly string[]).includes(v) && !(v === 'all' && !canSeeAllTasks);
+  }
+  const viewParam = searchParams.get('view');
+  // Admins land on the org-wide view by default — "My Tasks" as a first screen
+  // reads as a filtered/empty inbox for someone whose job is to see everything.
+  const defaultView: TaskView = canSeeAllTasks ? 'all' : 'mine';
+  const view: TaskView = isValidView(viewParam) ? viewParam : defaultView;
+
+  function setView(v: TaskView) {
+    router.replace(`/tasks?view=${v}`);
+  }
+  // Clicking a row opens the full task page (/tasks/:projectId/:taskId) — the
+  // same destination the project board uses. It used to jump to the whole project
+  // page, which left custom tasks with nowhere to attach a deliverable or mark
+  // themselves complete.
+  function openTask(task: { projectId: string; id: string }) {
+    router.push(`/tasks/${task.projectId}/${task.id}`);
+  }
+
+  // Approvals, Completed and Overdue are org-wide for admins (same permission
+  // as All Tasks) but stay a personal tracking view for everyone else.
+  const useAllEndpoint = view === 'all' || ((view === 'approvals' || view === 'completed' || view === 'overdue') && canSeeAllTasks);
 
   const filterParams = useMemo(() => {
     const params: Record<string, string> = {};
-    if (statusFilter) params.status = statusFilter;
+    if (view === 'approvals') {
+      // Forced regardless of the status chips (hidden for this view anyway) —
+      // an approvals queue that could be filtered to "done" makes no sense.
+      params.requiresTechnicalAudit = 'true';
+      params.auditStatus = 'pending';
+    } else if (view === 'completed') {
+      params.status = 'completed';
+    } else if (statusFilter) {
+      params.status = statusFilter;
+    }
     if (projectFilter) params.projectId = projectFilter;
     if (typeFilter) params.type = typeFilter;
-    if (dueFilter) params.due = dueFilter;
+    // Overdue tab forces the due filter regardless of the dropdown — the tab
+    // IS the filter, same as Approvals/Completed forcing their own status.
+    if (view === 'overdue') params.due = 'overdue';
+    else if (dueFilter) params.due = dueFilter;
     if (sort) params.sort = sort;
     if (search.trim()) params.search = search.trim();
     // "Assignee" narrows who the task sits on — meaningless on My Tasks (that's
-    // always me). "Assigned by" narrows who created it — meaningless on Assigned
-    // by me (that's always me). Each view only sends the filter it can use.
-    if (view !== 'mine' && assigneeFilter) params.assigneeId = assigneeFilter;
+    // always me) and on Approvals (the pending task has no assignee yet).
+    // "Assigned by" narrows who created it — meaningless on Assigned by me
+    // (that's always me). Each view only sends the filter it can use.
+    if (view !== 'mine' && view !== 'approvals' && assigneeFilter) params.assigneeId = assigneeFilter;
     if (view !== 'assigned_by_me' && createdByFilter) params.createdBy = createdByFilter;
     if (view === 'assigned_by_me') params.scope = 'assigned_by_me';
+    // Only reached for employees — canSeeAllTasks admins hit /tasks instead,
+    // which has no notion of scope.
+    if (view === 'approvals' && !useAllEndpoint) params.scope = 'approvals';
     return params;
-  }, [statusFilter, projectFilter, typeFilter, dueFilter, sort, search, assigneeFilter, createdByFilter, view]);
+  }, [statusFilter, projectFilter, typeFilter, dueFilter, sort, search, assigneeFilter, createdByFilter, view, useAllEndpoint]);
 
   const { data: myTasks = [], isLoading: loadingMine } = useQuery({
     queryKey: ['my-tasks', view, filterParams],
     queryFn: () => api.get('/tasks/mine', { params: filterParams }).then((r) => r.data),
-    enabled: view === 'mine' || view === 'assigned_by_me',
+    enabled: !useAllEndpoint,
   });
 
   const { data: allTasks = [], isLoading: loadingAll } = useQuery({
-    queryKey: ['all-tasks', filterParams],
+    queryKey: ['all-tasks', view, filterParams],
     queryFn: () => api.get('/tasks', { params: filterParams }).then((r) => r.data),
-    enabled: view === 'all' && canSeeAllTasks,
+    enabled: useAllEndpoint && canSeeAllTasks,
   });
 
-  const tasks = view === 'all' ? allTasks : myTasks;
-  const isLoading = view === 'all' ? loadingAll : loadingMine;
-  const showAssigneeCol = view === 'all' || view === 'assigned_by_me';
+  const tasks = useAllEndpoint ? allTasks : myTasks;
+  const isLoading = useAllEndpoint ? loadingAll : loadingMine;
+  const showAssigneeCol = view !== 'mine';
 
   const { data: projectsResp } = useQuery({
     queryKey: ['tasks-page-projects'],
@@ -189,6 +233,7 @@ export default function TasksPage() {
         remarks: payload.remarks.trim() || undefined,
         type: payload.type || 'issue',
         pageName: payload.pageName.trim() || undefined,
+        requiresTechnicalAudit: payload.requiresTechnicalAudit || undefined,
       }).then((r) => r.data);
 
       // Attachment upload is reported separately: the task itself is already
@@ -216,9 +261,10 @@ export default function TasksPage() {
       qc.invalidateQueries({ queryKey: ['all-tasks'] });
       setShowAddTask(false);
       const hadAssignee = !!newTask.assigneeId;
+      const neededAudit = newTask.requiresTechnicalAudit;
       setNewTask({
         projectId: '', title: '', assigneeId: '', reviewerId: '', type: 'issue',
-        pageName: '', dueAt: '', remarks: '',
+        pageName: '', dueAt: '', remarks: '', requiresTechnicalAudit: false,
       });
       setNewTaskFiles([]);
       if (uploadError) {
@@ -226,7 +272,9 @@ export default function TasksPage() {
         return;
       }
       const filePart = fileCount ? ` ${fileCount} file${fileCount === 1 ? '' : 's'} attached.` : '';
-      toast.success((hadAssignee ? 'Task created and assignee notified.' : 'Task created.') + filePart);
+      toast.success((neededAudit
+        ? 'Task created — sent for technical audit approval before it is assigned.'
+        : hadAssignee ? 'Task created and assignee notified.' : 'Task created.') + filePart);
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to create task. You may not have permission to add tasks on this project.'),
   });
@@ -270,6 +318,9 @@ export default function TasksPage() {
             { key: 'mine' as const, label: 'My Tasks' },
             { key: 'assigned_by_me' as const, label: 'Assigned by me' },
             ...(canSeeAllTasks ? [{ key: 'all' as const, label: 'All Tasks' }] : []),
+            { key: 'overdue' as const, label: 'Overdue' },
+            { key: 'approvals' as const, label: 'Approvals' },
+            { key: 'completed' as const, label: 'Completed' },
           ]).map((v) => (
             <button
               key={v.key}
@@ -307,22 +358,27 @@ export default function TasksPage() {
             </button>
           </div>
 
-          <div className="-mx-4 sm:mx-0 px-4 sm:px-0 flex gap-1 overflow-x-auto scrollbar-hide sm:flex-wrap">
-            {STATUS_FILTERS.map((opt) => (
-              <button
-                key={opt.value || 'open'}
-                onClick={() => setStatusFilter(opt.value)}
-                className={cn(
-                  'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors',
-                  statusFilter === opt.value
-                    ? 'bg-brand-700 text-white'
-                    : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          {/* Approvals is always "pending" and Completed is always "done or
+              approved" — a status chip row that can't actually change anything
+              would just be confusing next to the tab that already says so. */}
+          {view !== 'approvals' && view !== 'completed' && (
+            <div className="-mx-4 sm:mx-0 px-4 sm:px-0 flex gap-1 overflow-x-auto scrollbar-hide sm:flex-wrap">
+              {STATUS_FILTERS.map((opt) => (
+                <button
+                  key={opt.value || 'open'}
+                  onClick={() => setStatusFilter(opt.value)}
+                  className={cn(
+                    'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors',
+                    statusFilter === opt.value
+                      ? 'bg-brand-700 text-white'
+                      : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-2">
             <select
@@ -336,7 +392,7 @@ export default function TasksPage() {
               ))}
             </select>
 
-            {view !== 'mine' && (
+            {view !== 'mine' && view !== 'approvals' && (
               <select
                 value={assigneeFilter}
                 onChange={(e) => setAssigneeFilter(e.target.value)}
@@ -383,15 +439,19 @@ export default function TasksPage() {
               ))}
             </select>
 
-            <select
-              value={dueFilter}
-              onChange={(e) => setDueFilter(e.target.value)}
-              className={selectClass}
-            >
-              {DUE_FILTERS.map((opt) => (
-                <option key={opt.value || 'any'} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+            {/* Overdue tab already forces this — a dropdown that could switch it
+                to "Due today" would just fight the tab you're standing on. */}
+            {view !== 'overdue' && (
+              <select
+                value={dueFilter}
+                onChange={(e) => setDueFilter(e.target.value)}
+                className={selectClass}
+              >
+                {DUE_FILTERS.map((opt) => (
+                  <option key={opt.value || 'any'} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            )}
 
             <select
               value={sort}
@@ -495,12 +555,27 @@ export default function TasksPage() {
                   <label className="block text-xs font-medium text-gray-700 mb-1.5">Due date</label>
                   <input
                     type="date"
+                    min={todayDateInput()}
                     value={newTask.dueAt}
                     onChange={(e) => setNewTask((x) => ({ ...x, dueAt: e.target.value }))}
                     className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
                   />
                 </div>
               </div>
+              <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={newTask.requiresTechnicalAudit}
+                  onChange={(e) => setNewTask((x) => ({ ...x, requiresTechnicalAudit: e.target.checked }))}
+                  className="w-3.5 h-3.5 mt-0.5 rounded accent-brand-600"
+                />
+                <span>
+                  Technical Audit
+                  <span className="block text-xs text-gray-400">
+                    Task is created unassigned and held for an administrator to approve first — only then is the chosen assignee actually assigned and notified.
+                  </span>
+                </span>
+              </label>
               {/* Only meaningful for page-scoped work — asking every task which
                   page it is about would be noise on the other types. */}
               {['content', 'design', 'review'].includes(newTask.type) && (
@@ -595,7 +670,10 @@ export default function TasksPage() {
                 </p>
               </div>
               <p className="text-[11px] text-gray-400">
-                Starts as <span className="font-medium text-gray-600">To do</span>. Assignee gets a notification right away.
+                Starts as <span className="font-medium text-gray-600">To do</span>.
+                {newTask.requiresTechnicalAudit
+                  ? ' Held unassigned until an administrator approves the technical audit.'
+                  : ' Assignee gets a notification right away.'}
                 {newTask.dueAt ? ' An automatic reminder is sent 24 hours before the due date.' : ' Add a due date to enable the automatic 24h reminder.'}
               </p>
               <div className="flex gap-2 justify-end pt-1">
@@ -621,14 +699,31 @@ export default function TasksPage() {
           <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-semibold text-gray-900">
-                {view === 'all' ? 'All tasks' : view === 'assigned_by_me' ? 'Assigned by me' : 'My tasks'}
+                {view === 'all' ? 'All tasks'
+                  : view === 'assigned_by_me' ? 'Assigned by me'
+                    : view === 'overdue' ? 'Overdue'
+                      : view === 'approvals' ? 'Approvals'
+                        : view === 'completed' ? 'Completed'
+                          : 'My tasks'}
               </h3>
               <p className="text-xs text-gray-400 mt-0.5">
                 {view === 'all'
                   ? 'Every task across projects.'
                   : view === 'assigned_by_me'
                     ? 'Tasks you created and assigned — track status, remarks, and who is working on them.'
-                    : 'Tasks assigned to you or waiting for your review.'}
+                    : view === 'overdue'
+                      ? (useAllEndpoint
+                        ? 'Every unfinished task across the org whose due date has passed.'
+                        : 'Your unfinished tasks whose due date has passed.')
+                      : view === 'approvals'
+                        ? (useAllEndpoint
+                          ? 'Tasks flagged for technical audit, awaiting your approval before they can be assigned.'
+                          : 'Tasks you flagged for technical audit, or that are waiting on you as the pending assignee — an administrator still needs to approve them.')
+                        : view === 'completed'
+                          ? (useAllEndpoint
+                            ? 'Every completed or approved task across the org.'
+                            : 'Tasks assigned to you or under your review that are done or approved.')
+                          : 'Tasks assigned to you or waiting for your review.'}
               </p>
             </div>
             <span className="text-xs text-gray-400">{tasks.length} task{tasks.length !== 1 ? 's' : ''}</span>
@@ -654,7 +749,7 @@ export default function TasksPage() {
                   return (
                     <div
                       key={task.id}
-                      onClick={() => setOpenTask({ projectId: task.projectId, taskId: task.id })}
+                      onClick={() => openTask(task)}
                       className={cn('px-4 py-3 space-y-2 cursor-pointer hover:bg-gray-50/80 transition-colors', isOverdue && 'bg-red-50/40')}
                     >
                       <div className="flex items-start gap-2">
@@ -683,6 +778,11 @@ export default function TasksPage() {
                                 You assigned
                               </span>
                             )}
+                            {task.requiresTechnicalAudit && task.auditStatus === 'pending' && (
+                              <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                                Awaiting technical audit
+                              </span>
+                            )}
                             {!task.project?.name && task.project?.client?.name && (
                               <span className={META_PILL_BASE}>{task.project.client.name}</span>
                             )}
@@ -690,7 +790,7 @@ export default function TasksPage() {
                             {task.type && (
                               <span className={cn(META_PILL_BASE, 'inline-flex items-center gap-1 whitespace-nowrap')}>
                                 <Flag className="w-2.5 h-2.5 text-brand-700" />
-                                {titleCase(task.type === 'blog_post' ? 'Blog' : task.type)}
+                                {titleCase(task.type === 'blog_post' ? 'Blog' : task.type === 'blog_image' ? 'Blog Image' : task.type)}
                               </span>
                             )}
                           </div>
@@ -719,8 +819,11 @@ export default function TasksPage() {
                         <div className="flex items-center gap-2 flex-wrap">
                           {(showAssigneeCol || assignedByMe) && (
                             <span className="flex items-center gap-1.5 min-w-0">
-                              <Avatar name={task.assignee?.name} size="xs" />
-                              <span className="text-xs text-gray-600 truncate">{task.assignee?.name || 'Unassigned'}</span>
+                              <Avatar name={task.assignee?.name || task.pendingAssignee?.name} size="xs" />
+                              <span className="text-xs text-gray-600 truncate">
+                                {task.assignee?.name
+                                  || (task.pendingAssignee?.name ? `Pending: ${task.pendingAssignee.name}` : 'Unassigned')}
+                              </span>
                             </span>
                           )}
                           {task.reminderAt && (
@@ -770,7 +873,7 @@ export default function TasksPage() {
                     return (
                       <tr
                         key={task.id}
-                        onClick={() => setOpenTask({ projectId: task.projectId, taskId: task.id })}
+                        onClick={() => openTask(task)}
                         className={cn('cursor-pointer hover:bg-gray-50/80 transition-colors align-top', isOverdue && 'bg-red-50/40')}
                       >
                         <td className="px-5 py-3.5">
@@ -782,6 +885,11 @@ export default function TasksPage() {
                                 {assignedByMe && (
                                   <span className="inline-flex items-center rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">
                                     You assigned
+                                  </span>
+                                )}
+                                {task.requiresTechnicalAudit && task.auditStatus === 'pending' && (
+                                  <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                                    Awaiting technical audit
                                   </span>
                                 )}
                                 {task.project?.client?.name && <span className={META_PILL_BASE}>{task.project.client.name}</span>}
@@ -799,7 +907,7 @@ export default function TasksPage() {
                                 {task.type && (
                                   <span className={cn(META_PILL_BASE, 'inline-flex items-center gap-1')}>
                                     <Flag className="w-2.5 h-2.5 text-brand-700" />
-                                    {titleCase(task.type === 'blog_post' ? 'Blog' : task.type)}
+                                    {titleCase(task.type === 'blog_post' ? 'Blog' : task.type === 'blog_image' ? 'Blog Image' : task.type)}
                                   </span>
                                 )}
                               </div>
@@ -815,9 +923,10 @@ export default function TasksPage() {
                         {showAssigneeCol && (
                           <td className="px-3 py-3.5 align-top">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <Avatar name={task.assignee?.name} size="xs" />
+                              <Avatar name={task.assignee?.name || task.pendingAssignee?.name} size="xs" />
                               <span className="text-xs text-gray-600 truncate">
-                                {task.assignee?.name || 'Unassigned'}
+                                {task.assignee?.name
+                                  || (task.pendingAssignee?.name ? `Pending: ${task.pendingAssignee.name}` : 'Unassigned')}
                               </span>
                             </div>
                           </td>
@@ -872,14 +981,6 @@ export default function TasksPage() {
           )}
         </div>
 
-        {openTask && (
-          <TaskDetailModal
-            projectId={openTask.projectId}
-            taskId={openTask.taskId}
-            allowOpenInProject
-            onClose={() => setOpenTask(null)}
-          />
-        )}
       </div>
     </div>
   );

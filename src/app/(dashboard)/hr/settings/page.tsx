@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Building2, Briefcase, Plus, ArrowLeft, Percent, CalendarDays, Clock } from 'lucide-react';
+import { CheckCircle, Building2, Briefcase, Plus, ArrowLeft, Percent, CalendarDays, ArrowUpRight } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
@@ -39,10 +40,6 @@ export default function HrSettingsPage() {
   const [holidayForm, setHolidayForm] = useState({
     name: '', date: '', endDate: '', isRecurring: false,
   });
-  const [scheduleForm, setScheduleForm] = useState({
-    label: '', startDate: '', endDate: '',
-    shiftStartTime: '15:00', shiftEndTime: '00:30', lateGraceMinutes: '15',
-  });
 
   const { data: settings, isLoading } = useQuery({
     queryKey: ['hr-payroll-settings'],
@@ -70,13 +67,6 @@ export default function HrSettingsPage() {
     queryFn: () => api.get('/hr/holidays', { params: inactive.params }).then((r) => r.data),
   });
 
-  const { data: shiftSchedules = [] } = useQuery({
-    queryKey: ['hr-shift-schedules', inactive.key],
-    queryFn: () => api.get('/hr/shift-schedules', {
-      params: { includeArchived: inactive.params?.includeInactive },
-    }).then((r) => r.data),
-  });
-
   const createHoliday = useMutation({
     mutationFn: (payload: typeof holidayForm) => api.post('/hr/holidays', {
       ...payload, endDate: payload.endDate || null,
@@ -98,39 +88,6 @@ export default function HrSettingsPage() {
       toast.success(vars.next ? 'Holiday set to Active.' : 'Holiday set to Inactive.');
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Could not update that holiday.'),
-  });
-
-  const createSchedule = useMutation({
-    mutationFn: (payload: typeof scheduleForm) => api.post('/hr/shift-schedules', {
-      ...payload, lateGraceMinutes: parseInt(payload.lateGraceMinutes, 10) || 0,
-    }).then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['hr-shift-schedules'] });
-      setScheduleForm({ label: '', startDate: '', endDate: '', shiftStartTime: '15:00', shiftEndTime: '00:30', lateGraceMinutes: '15' });
-      toast.success('Shift schedule added.');
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Could not add that schedule.'),
-  });
-
-  const updateSchedule = useMutation({
-    mutationFn: ({ id, updates }: { id: string; updates: any }) =>
-      api.patch(`/hr/shift-schedules/${id}`, updates).then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['hr-shift-schedules'] });
-      toast.success('Shift schedule updated.');
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Could not update that schedule.'),
-  });
-
-  const archiveSchedule = useMutation({
-    mutationFn: ({ id, next }: { id: string; next: boolean }) => (next
-      ? api.post(`/hr/shift-schedules/${id}/restore`)
-      : api.delete(`/hr/shift-schedules/${id}`)).then((r) => r.data),
-    onSuccess: (_d, vars) => {
-      qc.invalidateQueries({ queryKey: ['hr-shift-schedules'] });
-      toast.success(vars.next ? 'Schedule restored.' : 'Schedule archived.');
-    },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Could not update that schedule.'),
   });
 
   const selectedTaxYear = useMemo(
@@ -257,15 +214,6 @@ export default function HrSettingsPage() {
         requireEmployeeConfirmation: settings.requireEmployeeConfirmation ?? true,
         employeeReviewWindowDays: settings.employeeReviewWindowDays ?? 3,
         leavePolicyJson: settings.leavePolicyJson ?? { annual: 14, sick: 7, casual: 7, unpaid: 0 },
-        shiftStartTime: settings.shiftStartTime ?? '15:00',
-        shiftEndTime: settings.shiftEndTime ?? '00:30',
-        lateGraceMinutes: settings.lateGraceMinutes ?? 15,
-        lateOccurrencesPerDeduction: settings.lateOccurrencesPerDeduction ?? 3,
-        latePenaltyLeaveType: settings.latePenaltyLeaveType ?? 'casual',
-        halfDayMinPercent: settings.halfDayMinPercent ?? 40,
-        halfDayFullPercent: settings.halfDayFullPercent ?? 75,
-        halfDayRestrictedDays: settings.halfDayRestrictedDays ?? [1, 5],
-        weekendDays: settings.weekendDays ?? [0, 6],
       });
     }
   }, [settings]);
@@ -281,18 +229,6 @@ export default function HrSettingsPage() {
 
   function setLeave(key: string, value: number) {
     setForm({ ...form, leavePolicyJson: { ...form.leavePolicyJson, [key]: value } });
-  }
-
-  function toggleRestrictedDay(day: number) {
-    const current: number[] = form.halfDayRestrictedDays ?? [];
-    const next = current.includes(day) ? current.filter((d) => d !== day) : [...current, day].sort();
-    setForm({ ...form, halfDayRestrictedDays: next });
-  }
-
-  function toggleWeekendDay(day: number) {
-    const current: number[] = form.weekendDays ?? [];
-    const next = current.includes(day) ? current.filter((d) => d !== day) : [...current, day].sort();
-    setForm({ ...form, weekendDays: next });
   }
 
   if (isLoading) return <div className="flex flex-col h-full"><Header title="HR Settings" /><div className="flex-1 flex items-center justify-center text-sm text-gray-400">Loading…</div></div>;
@@ -407,127 +343,6 @@ export default function HrSettingsPage() {
                     label="holiday"
                     disabled={toggleHoliday.isPending}
                     onToggle={(next) => toggleHoliday.mutate({ id: h.id, next })}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {/* Shift schedules — seasonal timings, e.g. Ramadan */}
-        <div id="shift-schedules" className="bg-white rounded-xl border border-gray-200 p-5 space-y-4 scroll-mt-6">
-          <div className="flex items-start gap-2">
-            <Clock className="w-4 h-4 text-brand-700 mt-0.5" />
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900">Shift schedules</h3>
-              <p className="text-xs text-gray-500 mt-1">
-                Named timings that apply for a date range — set up exactly like a tax year. During Ramadan
-                (or any other period with different hours) the matching schedule takes over automatically, and
-                lateness is judged against <em>those</em> hours. Days outside every schedule fall back to the
-                default shift below. Because each schedule is pinned to its own dates, changing this year&apos;s
-                timings never re-scores last year&apos;s attendance.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
-            <input
-              value={scheduleForm.label}
-              onChange={(e) => setScheduleForm({ ...scheduleForm, label: e.target.value })}
-              placeholder="Schedule name (e.g. Ramadan 2027)"
-              className="sm:col-span-3 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-            />
-            <div>
-              <label className="block text-[11px] text-gray-500 mb-1">Starts</label>
-              <input
-                type="date"
-                value={scheduleForm.startDate}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, startDate: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] text-gray-500 mb-1">Ends</label>
-              <input
-                type="date"
-                value={scheduleForm.endDate}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, endDate: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] text-gray-500 mb-1">Late grace (min)</label>
-              <input
-                type="number"
-                min={0}
-                value={scheduleForm.lateGraceMinutes}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, lateGraceMinutes: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] text-gray-500 mb-1">Shift starts</label>
-              <input
-                type="time"
-                value={scheduleForm.shiftStartTime}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, shiftStartTime: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] text-gray-500 mb-1">Shift ends</label>
-              <input
-                type="time"
-                value={scheduleForm.shiftEndTime}
-                onChange={(e) => setScheduleForm({ ...scheduleForm, shiftEndTime: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-              />
-            </div>
-            <button
-              disabled={createSchedule.isPending || !scheduleForm.label.trim() || !scheduleForm.startDate || !scheduleForm.endDate}
-              onClick={() => createSchedule.mutate(scheduleForm)}
-              className="flex items-center justify-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-3 py-2 rounded-lg self-end"
-            >
-              <Plus className="w-4 h-4" /> Add
-            </button>
-          </div>
-
-          {(shiftSchedules as any[]).length === 0 ? (
-            <p className="text-xs text-gray-400">
-              No seasonal schedules — the default shift below applies all year.
-            </p>
-          ) : (
-            <ul className="divide-y divide-gray-100 border border-gray-100 rounded-lg">
-              {(shiftSchedules as any[]).map((s: any) => (
-                <li key={s.id} className={cn('flex items-center gap-3 px-3 py-2.5', inactiveRow(!s.isArchived))}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-gray-900">{s.label}</span>
-                      {s.isArchived && <InactiveBadge />}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {String(s.startDate).slice(0, 10)} → {String(s.endDate).slice(0, 10)} ·{' '}
-                      {s.shiftStartTime}–{s.shiftEndTime} · {s.lateGraceMinutes} min grace
-                    </p>
-                  </div>
-                  {/* In use / paused. A schedule can be prepared in advance and
-                      switched on only when its season actually arrives. */}
-                  <button
-                    type="button"
-                    onClick={() => updateSchedule.mutate({ id: s.id, updates: { isActive: !s.isActive } })}
-                    disabled={updateSchedule.isPending || s.isArchived}
-                    className={cn(
-                      'text-xs font-medium px-2 py-1 rounded-md transition-colors disabled:opacity-50',
-                      s.isActive ? 'bg-brand-100 text-brand-800 hover:bg-brand-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200',
-                    )}
-                  >
-                    {s.isActive ? 'In use' : 'Paused'}
-                  </button>
-                  <ActiveToggle
-                    isActive={!s.isArchived}
-                    label="schedule"
-                    disabled={archiveSchedule.isPending}
-                    onToggle={(next) => archiveSchedule.mutate({ id: s.id, next })}
                   />
                 </li>
               ))}
@@ -837,162 +652,23 @@ export default function HrSettingsPage() {
           </div>
         </div>
 
-        {/* Weekly off days */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        {/* Attendance & late policy, weekly off days, and shift schedules now
+            live under Policies → Attendance (sidebar) instead of here — keeps
+            "what timing is active for everyone" in one place instead of
+            duplicated across two settings screens. */}
+        <Link
+          href="/policies/attendance"
+          className="flex items-center justify-between gap-3 bg-white rounded-xl border border-gray-200 p-5 hover:border-brand-300 hover:bg-brand-50/30 transition-colors group"
+        >
           <div>
-            <h3 className="text-sm font-semibold text-gray-900">Weekly Off Days</h3>
+            <h3 className="text-sm font-semibold text-gray-900">Attendance &amp; Shift Timing</h3>
             <p className="text-xs text-gray-500 mt-1">
-              These days are treated as paid weekends — auto-marked on attendance, excluded from leave day counts, and check-in is not required.
+              Shift start/end, late grace period, half-day thresholds, weekly off days, and seasonal shift
+              schedules (e.g. Ramadan) moved to <span className="font-medium">Policies → Attendance</span>.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { d: 1, label: 'Mon' },
-              { d: 2, label: 'Tue' },
-              { d: 3, label: 'Wed' },
-              { d: 4, label: 'Thu' },
-              { d: 5, label: 'Fri' },
-              { d: 6, label: 'Sat' },
-              { d: 0, label: 'Sun' },
-            ].map(({ d, label }) => {
-              const active = (form.weekendDays ?? []).includes(d);
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => toggleWeekendDay(d)}
-                  className={cn(
-                    'px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors',
-                    active ? 'bg-brand-700 border-brand-700 text-white' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50',
-                  )}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          <p className="text-xs text-gray-400">Default is Saturday and Sunday. Save settings below to apply.</p>
-        </div>
-
-        {/* Attendance & late policy */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">Attendance &amp; Late Policy</h3>
-            <p className="text-xs text-gray-500 mt-1">Controls shift timing, when a check-in counts as late, and when a checkout counts as a half-day.</p>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">Shift Start</label>
-              <input
-                type="time"
-                value={form.shiftStartTime ?? '15:00'}
-                onChange={(e) => setForm({ ...form, shiftStartTime: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">Shift End</label>
-              <input
-                type="time"
-                value={form.shiftEndTime ?? '00:30'}
-                onChange={(e) => setForm({ ...form, shiftEndTime: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">Grace Period (min)</label>
-              <input
-                type="number"
-                min="0"
-                value={form.lateGraceMinutes ?? ''}
-                onChange={(e) => setForm({ ...form, lateGraceMinutes: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-              />
-              <p className="text-xs text-gray-400 mt-1">Minutes after shift start before a check-in is marked late</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">Late Arrivals per Deduction</label>
-              <input
-                type="number"
-                min="1"
-                value={form.lateOccurrencesPerDeduction ?? ''}
-                onChange={(e) => setForm({ ...form, lateOccurrencesPerDeduction: parseInt(e.target.value) || 1 })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-              />
-              <p className="text-xs text-gray-400 mt-1">e.g. 3 = every 3 late arrivals in a month costs 1 leave day</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">Leave Type Deducted for Lateness</label>
-              <select
-                value={form.latePenaltyLeaveType ?? 'casual'}
-                onChange={(e) => setForm({ ...form, latePenaltyLeaveType: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 bg-white"
-              >
-                {(['annual', 'sick', 'casual', 'unpaid', 'other'] as const).map((t) => (
-                  <option key={t} value={t} className="capitalize">{t}</option>
-                ))}
-              </select>
-              <p className="text-xs text-gray-400 mt-1">If no balance remains, the day becomes unpaid instead</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">Half-day Min %</label>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={form.halfDayMinPercent ?? ''}
-                onChange={(e) => setForm({ ...form, halfDayMinPercent: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-              />
-              <p className="text-xs text-gray-400 mt-1">Below this % of the shift = absent</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1.5">Full-day Min %</label>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={form.halfDayFullPercent ?? ''}
-                onChange={(e) => setForm({ ...form, halfDayFullPercent: parseFloat(e.target.value) || 0 })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-              />
-              <p className="text-xs text-gray-400 mt-1">At or above this % of the shift = full day. Between the two = half-day.</p>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1.5">Restricted Half-day Checkout Days</label>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { d: 1, label: 'Mon' },
-                { d: 2, label: 'Tue' },
-                { d: 3, label: 'Wed' },
-                { d: 4, label: 'Thu' },
-                { d: 5, label: 'Fri' },
-                { d: 6, label: 'Sat' },
-                { d: 0, label: 'Sun' },
-              ].map(({ d, label }) => {
-                const active = (form.halfDayRestrictedDays ?? []).includes(d);
-                return (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => toggleRestrictedDay(d)}
-                    className={cn(
-                      'px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors',
-                      active ? 'bg-brand-700 border-brand-700 text-white' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50',
-                    )}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-xs text-gray-400 mt-1">
-              On these days, a half-day checkout needs a pre-approved half-day leave request — otherwise it's recorded as an unauthorized absence.
-              On other days, employees can check out early and it's simply marked as a half-day.
-            </p>
-          </div>
-        </div>
+          <ArrowUpRight className="w-4 h-4 text-gray-400 group-hover:text-brand-700 transition-colors shrink-0" />
+        </Link>
 
         {/* Leave policy */}
         <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
