@@ -77,6 +77,18 @@ export default function PayrollRunDetailPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Recalculate failed.'),
   });
 
+  // Toggling OT here updates the run, then recalculates so the change actually
+  // shows up in the items below — flipping the flag alone doesn't touch existing rows.
+  const updateOvertimeMutation = useMutation({
+    mutationFn: (includeOvertime: boolean) => api.patch(`/hr/payroll/${id}`, { includeOvertime }).then((r) => r.data),
+    onSuccess: async () => {
+      qc.invalidateQueries({ queryKey: ['hr-payroll'] });
+      await qc.invalidateQueries({ queryKey: ['hr-payroll-run', id] });
+      await calculateMutation.mutateAsync();
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update overtime setting.'),
+  });
+
   const revertMutation = useMutation({
     mutationFn: () => api.post(`/hr/payroll/${id}/revert`).then((r) => r.data),
     onSuccess: () => {
@@ -159,6 +171,25 @@ export default function PayrollRunDetailPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {(run.status === 'draft' || run.status === 'open_for_review') ? (
+              <label
+                className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer"
+                title="If unchecked, this month's payroll won't pay out overtime — attendance overtime hours are still recorded either way. Toggling this recalculates the run."
+              >
+                <input
+                  type="checkbox"
+                  checked={run.includeOvertime !== false}
+                  disabled={updateOvertimeMutation.isPending}
+                  onChange={(e) => updateOvertimeMutation.mutate(e.target.checked)}
+                  className="w-4 h-4 rounded accent-brand-700"
+                />
+                Include OT
+              </label>
+            ) : (
+              <span className="text-xs text-gray-400">
+                OT {run.includeOvertime !== false ? 'included' : 'excluded'}
+              </span>
+            )}
             <span className={cn('px-3 py-1 text-xs font-medium rounded-full', RUN_STATUS_COLORS[run.status] || 'bg-gray-100 text-gray-600')}>
               {titleCase(run.status)}
             </span>

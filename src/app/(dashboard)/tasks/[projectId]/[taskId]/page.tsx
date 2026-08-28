@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   ArrowLeft, CheckCircle, Upload, Paperclip, XCircle, Send, X,
   User, Users, Calendar, FileText, History, ThumbsUp, AlertTriangle, Building2,
-  Clock, Hourglass, ShieldCheck,
+  Clock, Hourglass, ShieldCheck, Trash2,
 } from 'lucide-react';
 import { useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { toast } from 'sonner';
@@ -181,6 +181,7 @@ export default function TaskDetailPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
+  const isStrictAdmin = useAuthStore((s) => s.isAdmin());
   const [uploading, setUploading] = useState(false);
   const [rejectNote, setRejectNote] = useState('');
   const [showReject, setShowReject] = useState(false);
@@ -354,6 +355,10 @@ export default function TaskDetailPage() {
   const deliverableFiles = (artifacts as any[]).filter((a: any) => a.kind !== 'brief' && a.kind !== 'review_note');
 
   const isDone = task.status === 'done' || task.status === 'approved';
+  // Mirrors LOCKED_TASK_STATUSES in crm-be/src/routes/media.js — once a task
+  // reaches one of these, the reviewer is looking at exactly what was
+  // submitted, so an uploader can no longer pull a file back themselves.
+  const isSubmissionLocked = ['submitted', 'in_review', 'approved', 'done'].includes(task.status);
   const isAssignee = !!user?.id && task.assigneeId === user.id;
   const isAdmin = user?.role?.key === 'super_admin' || user?.role?.key === 'admin'
     || !!user?.role?.permissions?.['projects.manage'];
@@ -895,19 +900,36 @@ export default function TaskDetailPage() {
               >
                 {deliverableFiles.length > 0 ? (
                   <div className="space-y-2">
-                    {deliverableFiles.map((a: any) => (
-                      <FileRow key={a.id} file={a}>
-                        {!isDone && (
-                          <ActiveToggle
-                            isActive
-                            label="file"
-                            disabled={deleteArtifact.isPending}
-                            onToggle={() => deleteArtifact.mutate(a.fileUrl)}
-                            className="p-0.5 shrink-0"
-                          />
-                        )}
-                      </FileRow>
-                    ))}
+                    {deliverableFiles.map((a: any) => {
+                      // Whoever uploaded a file can pull it back themselves if it
+                      // was attached by mistake — but only before the task is
+                      // submitted for review; after that only an admin can.
+                      const canSelfRemove = !isStrictAdmin && a.uploadedBy === user?.id && !isSubmissionLocked;
+                      return (
+                        <FileRow key={a.id} file={a}>
+                          {isStrictAdmin && !isDone && (
+                            <ActiveToggle
+                              isActive
+                              label="file"
+                              disabled={deleteArtifact.isPending}
+                              onToggle={() => deleteArtifact.mutate(a.fileUrl)}
+                              className="p-0.5 shrink-0"
+                            />
+                          )}
+                          {canSelfRemove && (
+                            <button
+                              type="button"
+                              title="Remove this attachment"
+                              disabled={deleteArtifact.isPending}
+                              onClick={() => deleteArtifact.mutate(a.fileUrl)}
+                              className="p-1 text-gray-400 hover:text-red-500 shrink-0 disabled:opacity-50"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </FileRow>
+                      );
+                    })}
                   </div>
                 ) : (
                   <Empty>Nothing uploaded yet — the finished work goes here.</Empty>

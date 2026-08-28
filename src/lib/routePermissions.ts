@@ -23,6 +23,10 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { href: '/leads', permission: 'leads.read' },
   { href: '/notifications', permission: null },
   { href: '/invoices', permission: 'billing.read' },
+  // Deliberately its own permission, not billing.read — Personal invoices are
+  // a fully separate section (own contacts/numbering/data) that must be
+  // grantable independently of who can see official billing.
+  { href: '/personal-invoices', permission: 'personalInvoices.read' },
   { href: '/documents', permission: 'admin.access' },
   { href: '/billing', permission: 'billing.read' },
   { href: '/retainers', permission: 'billing.read' },

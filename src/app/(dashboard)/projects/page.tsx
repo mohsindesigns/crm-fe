@@ -13,8 +13,9 @@ import { cn, formatDate, titleCase } from '@/lib/utils';
 const STATUS_OPTS = [
   { label: 'All statuses', value: '' },
   { label: 'Active',    value: 'active'    },
-  { label: 'Completed', value: 'completed' },
   { label: 'On Hold',   value: 'on_hold'   },
+  { label: 'Blocked',   value: 'blocked'   },
+  { label: 'Completed', value: 'completed' },
   { label: 'Cancelled', value: 'cancelled' },
 ];
 
@@ -22,6 +23,7 @@ const STATUS_COLORS: Record<string, string> = {
   active:    'bg-brand-100 text-brand-800',
   completed: 'bg-blue-100   text-blue-700',
   on_hold:   'bg-amber-100  text-amber-700',
+  blocked:   'bg-orange-100 text-orange-700',
   cancelled: 'bg-red-100    text-red-700',
 };
 

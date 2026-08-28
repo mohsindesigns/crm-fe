@@ -73,6 +73,26 @@ export function afterInvoiceChange(invoiceId?: string | null, clientId?: string 
   return keys;
 }
 
+/**
+ * Personal invoice create / update / payment.
+ *
+ * Deliberately its own list, not a reuse of afterInvoiceChange — Personal
+ * invoices live in a separate table with no effect on official revenue, so
+ * there is nothing to invalidate there (analytics-dashboard, business-overview,
+ * clients). Invalidating those anyway would just be a wasted refetch that
+ * changes nothing, and blurs the point that these two systems are unrelated.
+ */
+export function afterPersonalInvoiceChange(invoiceId?: string | null, contactId?: string | null) {
+  const keys: Array<readonly unknown[]> = [
+    ['personal-invoices'],
+    ['personal-invoices-by-contact'],
+    ['personal-contacts'],
+  ];
+  if (invoiceId) keys.push(['personal-invoice', invoiceId]);
+  if (contactId) keys.push(['personal-contact', contactId]);
+  return keys;
+}
+
 /** Client create / update / sell package. */
 export function afterClientChange(clientId?: string | null) {
   const keys: Array<readonly unknown[]> = [

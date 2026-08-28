@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Users, DollarSign, Plus, UserPlus, AlertCircle, Eye, EyeOff, RefreshCw, Receipt, CheckCircle, XCircle } from 'lucide-react';
+import { Users, DollarSign, Plus, UserPlus, AlertCircle, Eye, EyeOff, RefreshCw, Receipt, CheckCircle, XCircle, Trash2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
@@ -64,6 +64,7 @@ export default function HrPage() {
   const [showInvitePassword, setShowInvitePassword] = useState(false);
   const [newPeriod, setNewPeriod] = useState('');
   const [newWorkingDays, setNewWorkingDays] = useState<number | ''>('');
+  const [newIncludeOvertime, setNewIncludeOvertime] = useState(true);
   const [workerStatusFilter, setWorkerStatusFilter] = useState('');
   const [workerDesigFilter, setWorkerDesigFilter] = useState('');
   const [workerDeptFilter, setWorkerDeptFilter] = useState('');
@@ -72,6 +73,8 @@ export default function HrPage() {
   const [rejectLeaveTarget, setRejectLeaveTarget] = useState<{ id: string; name: string } | null>(null);
   const [rejectLeaveNote, setRejectLeaveNote] = useState('');
   const [revertRunTarget, setRevertRunTarget] = useState<{ id: string; period: string } | null>(null);
+  // Temporary while QA-ing the payroll workflow — remove this delete option later.
+  const [deleteRunTarget, setDeleteRunTarget] = useState<{ id: string; period: string } | null>(null);
   const qc = useQueryClient();
 
   const { data: workers = [], isLoading: loadingWorkers } = useQuery({
@@ -175,14 +178,28 @@ export default function HrPage() {
   });
 
   const createPayrollRun = useMutation({
-    mutationFn: ({ period, workingDaysPerMonth }: { period: string; workingDaysPerMonth: number }) =>
-      api.post('/hr/payroll', { period, workingDaysPerMonth }).then((r) => r.data),
+    mutationFn: ({ period, workingDaysPerMonth, includeOvertime }: { period: string; workingDaysPerMonth: number; includeOvertime: boolean }) =>
+      api.post('/hr/payroll', { period, workingDaysPerMonth, includeOvertime }).then((r) => r.data),
     onSuccess: (run) => {
       qc.invalidateQueries({ queryKey: ['hr-payroll'] });
       setNewPeriod('');
       router.push(`/hr/payroll/${run.id}`);
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || e?.response?.data?.error || 'Failed to create payroll run.'),
+  });
+
+  // Temporary while QA-ing the payroll workflow — remove this delete option later.
+  const deletePayrollRun = useMutation({
+    mutationFn: (id: string) => api.delete(`/hr/payroll/${id}`).then((r) => r.data),
+    onSuccess: () => {
+      setDeleteRunTarget(null);
+      qc.invalidateQueries({ queryKey: ['hr-payroll'] });
+      toast.success('Payroll run deleted.');
+    },
+    onError: (e: any) => {
+      setDeleteRunTarget(null);
+      toast.error(e?.response?.data?.message || 'Failed to delete payroll run.');
+    },
   });
 
   const inviteWorker = useMutation({
@@ -232,6 +249,18 @@ export default function HrPage() {
           if (revertRunTarget) revertPayroll.mutate(revertRunTarget.id);
         }}
         onCancel={() => setRevertRunTarget(null)}
+      />
+      {/* Temporary while QA-ing the payroll workflow — remove this delete option later. */}
+      <ConfirmDialog
+        open={!!deleteRunTarget}
+        title={`Delete ${formatPeriod(deleteRunTarget?.period)}?`}
+        message="This permanently removes the payroll run and all its salary lines — this is not the usual archive/restore, it's a hard delete for testing. There's no undo."
+        confirmLabel="Delete run"
+        danger
+        onConfirm={() => {
+          if (deleteRunTarget) deletePayrollRun.mutate(deleteRunTarget.id);
+        }}
+        onCancel={() => setDeleteRunTarget(null)}
       />
       <Header title="HR & Payroll" />
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
@@ -369,6 +398,18 @@ export default function HrPage() {
                   className="w-full sm:w-20 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
                 />
               </div>
+              <label
+                className="flex items-center gap-1.5 text-xs text-gray-600 whitespace-nowrap cursor-pointer"
+                title="If unchecked, this month's payroll won't pay out overtime — attendance overtime hours are still recorded either way."
+              >
+                <input
+                  type="checkbox"
+                  checked={newIncludeOvertime}
+                  onChange={(e) => setNewIncludeOvertime(e.target.checked)}
+                  className="w-4 h-4 rounded accent-brand-700"
+                />
+                Include OT
+              </label>
               <button
                 onClick={() => {
                   const days = typeof newWorkingDays === 'number' ? newWorkingDays : parseInt(String(newWorkingDays), 10);
@@ -377,7 +418,7 @@ export default function HrPage() {
                     toast.error('Working days must be between 1 and 31.');
                     return;
                   }
-                  createPayrollRun.mutate({ period: newPeriod, workingDaysPerMonth: days });
+                  createPayrollRun.mutate({ period: newPeriod, workingDaysPerMonth: days, includeOvertime: newIncludeOvertime });
                 }}
                 disabled={!newPeriod || createPayrollRun.isPending}
                 className="flex items-center justify-center gap-1.5 whitespace-nowrap bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors w-full sm:w-auto sm:min-w-32"
@@ -812,6 +853,16 @@ export default function HrPage() {
                                 Revert
                               </button>
                             )}
+                            {/* Temporary while QA-ing the payroll workflow — remove this delete option later. */}
+                            <button
+                              onClick={() => setDeleteRunTarget({ id: run.id, period: run.period })}
+                              disabled={deletePayrollRun.isPending}
+                              title="Delete run (temporary, for testing)"
+                              className="text-xs text-red-600 hover:text-red-700 font-medium disabled:opacity-60 inline-flex items-center gap-1"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete
+                            </button>
                           </div>
                         </td>
                       </tr>

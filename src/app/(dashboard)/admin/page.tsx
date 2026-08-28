@@ -40,6 +40,7 @@ const ALL_PERMISSIONS = [
   { key: 'roles.delete',     label: 'Delete roles' },
   { key: 'billing.read',     label: 'View invoices & billing' },
   { key: 'billing.manage',   label: 'Manage billing' },
+  { key: 'personalInvoices.read', label: 'View & manage personal invoices' },
   { key: 'hr.read',          label: 'View HR & payroll' },
   { key: 'hr.manage',        label: 'Manage HR & payroll' },
   { key: 'admin.access',     label: 'Access admin panel' },

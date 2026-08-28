@@ -491,6 +491,16 @@ export default function ProjectDetailPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to cancel project.'),
   });
 
+  const setProjectStatus = useMutation({
+    mutationFn: (status: 'active' | 'on_hold' | 'blocked') =>
+      api.patch(`/projects/${id}/status`, { status }).then((r) => r.data),
+    onSuccess: async (_data, status) => {
+      await invalidateMany(qc, afterProjectChange(id));
+      toast.success(`Project set to ${status === 'on_hold' ? 'On Hold' : titleCase(status)}.`);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change project status.'),
+  });
+
   const addKeyword = useMutation({
     mutationFn: (payload: { primaryKeyword: string; secondaryKeywords?: string; kd?: number | null; volume?: number | null; targetUrl?: string; targetLocation?: string; pageName?: string; assignedWriterId?: string }) =>
       api.post(`/seo/projects/${id}/keywords`, payload).then((r) => r.data),
@@ -1691,13 +1701,30 @@ export default function ProjectDetailPage() {
                 {project.description && <p className="text-sm text-gray-600 mt-2">{project.description}</p>}
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <span className={cn(
-                  'px-2.5 py-1 text-xs font-semibold rounded-full',
-                  project.status === 'active' ? 'bg-brand-100 text-brand-800' :
-                  project.status === 'completed' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
-                )}>
-                  {project.status}
-                </span>
+                {canManageTeam && !['cancelled', 'completed'].includes(project.status) ? (
+                  <select
+                    value={project.status}
+                    disabled={setProjectStatus.isPending}
+                    onChange={(e) => setProjectStatus.mutate(e.target.value as 'active' | 'on_hold' | 'blocked')}
+                    className={cn(
+                      'text-xs font-semibold rounded-full px-2.5 py-1 border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-600',
+                      project.status === 'active' ? 'bg-brand-100 text-brand-800' :
+                      project.status === 'on_hold' ? 'bg-amber-100 text-amber-700' : 'bg-orange-100 text-orange-700'
+                    )}
+                  >
+                    <option value="active">Active</option>
+                    <option value="on_hold">On Hold</option>
+                    <option value="blocked">Blocked</option>
+                  </select>
+                ) : (
+                  <span className={cn(
+                    'px-2.5 py-1 text-xs font-semibold rounded-full',
+                    project.status === 'active' ? 'bg-brand-100 text-brand-800' :
+                    project.status === 'completed' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                  )}>
+                    {project.status}
+                  </span>
+                )}
                 {canManageTeam && !['cancelled', 'completed'].includes(project.status) && (
                   <button onClick={() => setShowCancelConfirm(true)}
                     className="text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors">

@@ -74,6 +74,16 @@ const POLICY_SUB_ITEMS = [
   { label: 'Attendance', href: '/policies/attendance' as const, icon: Clock },
 ];
 
+// Official is the existing invoicing system (billing.read), unchanged.
+// Personal is a fully separate section — its own contacts/numbering/data,
+// gated by its own permission so it can be granted independently of who has
+// billing.* access. See crm-be PersonalInvoice model for why it's a separate
+// table rather than a flag on Invoice.
+const INVOICE_SUB_ITEMS = [
+  { label: 'Official', href: '/invoices' as const, icon: FileText },
+  { label: 'Personal', href: '/personal-invoices' as const, icon: CreditCard, permission: 'personalInvoices.read' },
+];
+
 const REPORTS_SUB_ITEMS = [
   { label: 'Team Reports',     href: '/reports' as const,          icon: PieChart },
   { label: 'Keyword Reports',  href: '/reports/keywords' as const, icon: KeyRound },
@@ -136,7 +146,10 @@ export default function Sidebar() {
   const isReportsPath = pathname.startsWith('/reports');
   const [reportsOpen, setReportsOpen] = useState(isReportsPath);
 
-  // Auto-expand when navigating to admin / tasks / policies / reports
+  const isInvoicesPath = pathname.startsWith('/invoices') || pathname.startsWith('/personal-invoices');
+  const [invoicesOpen, setInvoicesOpen] = useState(isInvoicesPath);
+
+  // Auto-expand when navigating to admin / tasks / policies / reports / invoices
   useEffect(() => {
     if (isAdminPath) setAdminOpen(true);
   }, [isAdminPath]);
@@ -149,6 +162,9 @@ export default function Sidebar() {
   useEffect(() => {
     if (isReportsPath) setReportsOpen(true);
   }, [isReportsPath]);
+  useEffect(() => {
+    if (isInvoicesPath) setInvoicesOpen(true);
+  }, [isInvoicesPath]);
 
   // Close drawer on navigation
   useEffect(() => {
@@ -157,8 +173,16 @@ export default function Sidebar() {
 
   const currentTab = searchParams.get('tab') || 'branding';
   const canSeeAttendance = marksAttendance(roleKey) || hasPermission('hr.read');
-  const visibleNav = NAV_ITEMS.filter((i) => (!i.permission || hasPermission(i.permission))
-    && (!('attendanceOnly' in i && i.attendanceOnly) || canSeeAttendance));
+  // The Invoices entry now covers two independently-permissioned sub-items
+  // (Official = billing.read, Personal = personalInvoices.read), so the
+  // parent link must show for either — routePermissions.ts only names one
+  // permission per route and would otherwise hide Personal entirely from a
+  // user who has personalInvoices.read but not billing.read.
+  const visibleNav = NAV_ITEMS.filter((i) => {
+    if (i.href === '/invoices') return hasPermission('billing.read') || hasPermission('personalInvoices.read');
+    return (!i.permission || hasPermission(i.permission))
+      && (!('attendanceOnly' in i && i.attendanceOnly) || canSeeAttendance);
+  });
   const showAdmin  = hasPermission('admin.access');
 
   // Same permission the Tasks page itself gates "All Tasks" on, and the same
@@ -166,6 +190,8 @@ export default function Sidebar() {
   const canSeeAllTasksNav = hasPermission('projects.manage');
   const visibleTaskSubItems = TASK_SUB_ITEMS.filter((i) => !i.permission || hasPermission(i.permission));
   const activeTaskView = searchParams.get('view') || (canSeeAllTasksNav ? 'all' : 'mine');
+
+  const visibleInvoiceSubItems = INVOICE_SUB_ITEMS.filter((i) => !i.permission || hasPermission(i.permission));
 
   const canSeeMessages = hasPermission('projects.read');
 
@@ -390,6 +416,59 @@ export default function Sidebar() {
                 {policiesOpen && (
                   <div className="ml-3 pl-3 border-l border-white/[0.07] space-y-0.5 mt-0.5">
                     {POLICY_SUB_ITEMS.map((sub) => {
+                      const subActive = pathname === sub.href || pathname.startsWith(`${sub.href}/`);
+                      return (
+                        <Link
+                          key={sub.href}
+                          href={sub.href}
+                          className={cn(
+                            'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all',
+                            subActive
+                              ? 'text-white'
+                              : 'text-white/60 hover:text-white hover:bg-white/6',
+                          )}
+                          style={subActive ? { backgroundColor: `${primaryColor}40`, color: '#fff' } : {}}
+                        >
+                          <sub.icon className="w-3.5 h-3.5 shrink-0" style={subActive ? { color: activeIconColor } : {}} />
+                          {sub.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          // Invoices gets the same expandable-submenu treatment as Policies
+          // above — Official (the existing invoicing system) and Personal (a
+          // fully separate section, own contacts/numbering/data) live side by
+          // side instead of Personal needing its own top-level nav slot.
+          if (item.href === '/invoices' && !collapsed) {
+            return (
+              <div key={item.href}>
+                <button
+                  type="button"
+                  title={item.label}
+                  onClick={() => setInvoicesOpen((v) => !v)}
+                  className={cn(
+                    'flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all w-full',
+                    isInvoicesPath
+                      ? 'text-white shadow-sm'
+                      : 'text-white/75 hover:text-white hover:bg-white/6',
+                  )}
+                  style={isInvoicesPath ? { backgroundColor: activeBg, color: '#fff' } : {}}
+                >
+                  <item.icon className="w-4 h-4 shrink-0" style={isInvoicesPath ? { color: activeIconColor } : {}} />
+                  <span className="flex-1 text-left truncate">{item.label}</span>
+                  <ChevronDown
+                    className={cn('w-3.5 h-3.5 transition-transform duration-200', invoicesOpen && 'rotate-180')}
+                    style={isInvoicesPath ? { color: activeIconColor } : { color: 'rgba(255,255,255,0.4)' }}
+                  />
+                </button>
+                {invoicesOpen && (
+                  <div className="ml-3 pl-3 border-l border-white/[0.07] space-y-0.5 mt-0.5">
+                    {visibleInvoiceSubItems.map((sub) => {
                       const subActive = pathname === sub.href || pathname.startsWith(`${sub.href}/`);
                       return (
                         <Link
