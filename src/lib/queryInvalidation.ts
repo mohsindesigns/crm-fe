@@ -50,7 +50,11 @@ export function afterTaskChange(projectId?: string | null) {
     ['waiting-on-me'],
   ];
   if (projectId) {
-    keys.push(['project', projectId], ['project-tasks', projectId]);
+    // The Blogs tab mirrors blog_post tasks — the backend keeps the sheet row in
+    // step on every transition and deliverable upload (services/BlogSheetSync.js),
+    // so a task change acted on from anywhere must refetch it too, or the tab
+    // still shows the pre-submit state until a hard reload.
+    keys.push(['project', projectId], ['project-tasks', projectId], ['blog-sheet', projectId]);
   }
   return keys;
 }

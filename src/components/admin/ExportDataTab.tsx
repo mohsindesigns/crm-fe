@@ -51,6 +51,7 @@ type Employee = {
   status: string;
   workerType: string;
   hasBankDetails: boolean;
+  hasSalarySplit: boolean;
 };
 
 type Filters = { departments: string[]; statuses: string[]; workerTypes: string[] };
@@ -262,6 +263,14 @@ function EmployeePicker({
                     No bank
                   </span>
                 )}
+                {e.hasSalarySplit && (
+                  <span
+                    title="This employee's pay is split across other recipients — see the Salary Split column, not just their own bank details."
+                    className="px-2 py-0.5 text-[11px] font-medium rounded-full bg-brand-50 text-brand-700"
+                  >
+                    Split
+                  </span>
+                )}
                 {e.status !== 'active' && (
                   <span className="px-2 py-0.5 text-[11px] font-medium rounded-full bg-gray-100 text-gray-500">
                     {titleCase(e.status)}
@@ -463,6 +472,14 @@ export default function ExportDataTab() {
     if (!wantsBank) return 0;
     return employees.filter((e) => selectedIds.has(e.id) && !e.hasBankDetails).length;
   }, [effectiveFields, employees, selectedIds]);
+  // Someone building a manual transfer sheet from bank columns alone would pay
+  // a split employee's full net to their own account unless they also pull in
+  // the Salary Split column — flag it the same way missingBank does.
+  const splitNotIncluded = useMemo(() => {
+    const wantsBank = [...effectiveFields].some((k) => k.startsWith('bank') || k === 'iban');
+    if (!wantsBank || effectiveFields.has('salarySplit')) return 0;
+    return employees.filter((e) => selectedIds.has(e.id) && e.hasSalarySplit).length;
+  }, [effectiveFields, employees, selectedIds]);
 
   return (
     <div className="space-y-6">
@@ -598,6 +615,15 @@ export default function ExportDataTab() {
             <span>
               {missingBank} of the selected employees have no bank details on file — their bank
               columns will come out blank.
+            </span>
+          </p>
+        )}
+        {splitNotIncluded > 0 && (
+          <p className="flex items-start gap-2 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-px text-amber-500" />
+            <span>
+              {splitNotIncluded} of the selected employees have their salary split across other
+              recipients — add the Salary Split column or you&apos;ll only see their own account.
             </span>
           </p>
         )}

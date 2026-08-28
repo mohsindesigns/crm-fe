@@ -252,45 +252,47 @@ export default function InvoicePaymentPanel({
                 </span>
               </p>
             )}
-            <div>
-              <label htmlFor={`pay-amount-${invoice.id}`} className="block text-xs font-semibold text-gray-500 mb-1.5">
-                Amount to pay now
-              </label>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm text-gray-400">{invoice.currency}</span>
-                <input
-                  id={`pay-amount-${invoice.id}`}
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  max={outstanding}
-                  value={partAmount}
-                  onChange={(e) => setPartAmount(e.target.value)}
-                  placeholder={outstanding.toFixed(2)}
-                  className="w-40 px-3 py-2 text-sm bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-                {partAmount !== '' && (
-                  <button
-                    type="button"
-                    onClick={() => setPartAmount('')}
-                    className="text-xs text-gray-500 hover:text-gray-800 underline"
-                  >
-                    Pay the full balance
-                  </button>
+            {invoice.allowPartialPayment && (
+              <div>
+                <label htmlFor={`pay-amount-${invoice.id}`} className="block text-xs font-semibold text-gray-500 mb-1.5">
+                  Amount to pay now
+                </label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-gray-400">{invoice.currency}</span>
+                  <input
+                    id={`pay-amount-${invoice.id}`}
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    max={outstanding}
+                    value={partAmount}
+                    onChange={(e) => setPartAmount(e.target.value)}
+                    placeholder={outstanding.toFixed(2)}
+                    className="w-40 px-3 py-2 text-sm bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  {partAmount !== '' && (
+                    <button
+                      type="button"
+                      onClick={() => setPartAmount('')}
+                      className="text-xs text-gray-500 hover:text-gray-800 underline"
+                    >
+                      Pay the full balance
+                    </button>
+                  )}
+                </div>
+                {partAmountInvalid ? (
+                  <p className="text-xs text-red-600 mt-1.5">
+                    Enter an amount between {invoice.currency} 0.01 and {formatCurrency(outstanding, invoice.currency)}.
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-400 mt-1.5">
+                    {chargeAmount < outstanding
+                      ? `Part payment — ${formatCurrency(outstanding - chargeAmount, invoice.currency)} will stay outstanding on this invoice, payable any time.`
+                      : 'Leave blank to pay the full outstanding balance.'}
+                  </p>
                 )}
               </div>
-              {partAmountInvalid ? (
-                <p className="text-xs text-red-600 mt-1.5">
-                  Enter an amount between {invoice.currency} 0.01 and {formatCurrency(outstanding, invoice.currency)}.
-                </p>
-              ) : (
-                <p className="text-xs text-gray-400 mt-1.5">
-                  {chargeAmount < outstanding
-                    ? `Part payment — ${formatCurrency(outstanding - chargeAmount, invoice.currency)} will stay outstanding on this invoice, payable any time.`
-                    : 'Leave blank to pay the full outstanding balance.'}
-                </p>
-              )}
-            </div>
+            )}
             <button
               onClick={() => startCardPayment.mutate()}
               disabled={startCardPayment.isPending || partAmountInvalid || outstanding <= 0}

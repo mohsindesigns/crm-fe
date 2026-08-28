@@ -112,6 +112,10 @@ export default function PublicInvoicePage() {
   const accent = branding?.primaryColor || '#1e293b';
   const isPaid = inv.status === 'paid';
   const hasPartPaid = Number(inv.amountPaid) > 0 && !isPaid;
+  // No invoice type is excluded — a retainer or installment balance is as
+  // part-payable as any other. The flag the admin set on the invoice decides,
+  // and the server enforces the same rule on /pay.
+  const canPayPartial = inv.allowPartialPayment === true || inv.canPayPartial === true;
 
   return (
     <div className="min-h-screen bg-gray-50 py-6 px-4 sm:py-10">
@@ -264,14 +268,13 @@ export default function PublicInvoicePage() {
               <div>
                 <h2 className="text-sm font-semibold text-gray-900">Pay by card</h2>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {inv.isRetainer ? 'Retainer invoices are paid in full.' : 'Pay the full balance, or part of it now and the rest later.'}
+                  {canPayPartial
+                    ? 'Pay the full balance, or choose a custom partial amount now.'
+                    : 'Pay the outstanding invoice balance securely by card.'}
                 </p>
               </div>
 
-              {/* Retainer invoices bill a fixed recurring cycle amount — partial
-                  payment doesn't apply, so the picker only shows for one-off
-                  invoices (see PublicInvoiceService.getByToken#isRetainer). */}
-              {!inv.isRetainer && (
+              {canPayPartial && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -298,7 +301,7 @@ export default function PublicInvoicePage() {
                 </div>
               )}
 
-              {!inv.isRetainer && payMode === 'part' && (
+              {canPayPartial && payMode === 'part' && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1.5">
                     Amount to pay now <span className="text-gray-400 font-normal">(max {money(inv.currency, inv.amountDue)})</span>

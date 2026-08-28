@@ -278,6 +278,10 @@ export default function TaskDetailPage() {
       await api.post('/media/upload-multi', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success(list.length > 1 ? `${list.length} files uploaded.` : 'File uploaded.');
       qc.invalidateQueries({ queryKey: ['task-artifacts', taskId] });
+      // A deliverable on a blog task is mirrored onto the project's Blogs tab as
+      // soon as it lands (services/BlogSheetSync.js) — refetch so the File column
+      // there isn't stale if the user switches straight over.
+      qc.invalidateQueries({ queryKey: ['blog-sheet', projectId] });
     } catch (err: any) {
       toast.error(uploadErrorMessage(err));
     } finally { setUploading(false); }

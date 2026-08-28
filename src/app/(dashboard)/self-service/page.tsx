@@ -305,6 +305,7 @@ function payrollLineLabel(key: string) {
   const labels: Record<string, string> = {
     overtime: 'Overtime',
     attendancePay: 'Attendance pay',
+    medical: 'Medical Allowance',
     absenceCut: 'Absence deduction',
     bonus: 'Bonus',
     allowance: 'Allowance',
@@ -316,7 +317,7 @@ function payrollLineLabel(key: string) {
 
 const PAYROLL_META_KEYS = new Set([
   'payableDays', 'workingDays', 'perDayRate', 'monthlySalary',
-  'halfDayCredit', 'holidayDays', 'formula',
+  'halfDayCredit', 'holidayDays', 'formula', 'daysInMonth', 'nonTaxableComponents',
 ]);
 
 function PayrollBreakdown({
@@ -333,10 +334,13 @@ function PayrollBreakdown({
   const additionEntries = Object.entries(additions)
     .filter(([k, v]) => !PAYROLL_META_KEYS.has(k) && Number(v) !== 0);
   const deductionEntries = Object.entries(deductions).filter(([, v]) => Number(v) !== 0);
+  const nonTaxableNames = new Set(
+    Array.isArray(additions.nonTaxableComponents) ? additions.nonTaxableComponents : [],
+  );
   const muted = tone === 'amber' ? 'text-amber-700' : 'text-gray-500';
   const border = tone === 'amber' ? 'border-amber-200/80 bg-white/70' : 'border-gray-100 bg-gray-50';
   const monthlySalary = Number(additions.monthlySalary != null ? additions.monthlySalary : item.base || 0);
-  const workingDays = Number(additions.workingDays || 0);
+  const daysInMonth = Number(additions.daysInMonth || 0);
   const payableDays = Number(additions.payableDays != null ? additions.payableDays : NaN);
   const formula = additions.formula as string | undefined;
 
@@ -355,17 +359,17 @@ function PayrollBreakdown({
           </div>
         ))}
       </div>
-      {(workingDays > 0 || Number.isFinite(payableDays)) && (
+      {(daysInMonth > 0 || Number.isFinite(payableDays)) && (
         <div className={cn('rounded-lg border px-3 py-2 text-xs space-y-1', tone === 'amber' ? 'border-amber-200 bg-amber-50/80' : 'border-gray-200 bg-white')}>
           <p className="font-semibold text-gray-800">How net is calculated</p>
           <p className={muted}>
-            (Monthly salary ÷ working days) × payable days
+            (Monthly salary ÷ calendar days in month) × payable days
             {formula ? <> — <span className="font-medium text-gray-800">{formula}</span></> : null}
           </p>
           <p className={muted}>
-            Payable days = Present + Leave + Holidays + Half-day credit − Unpaid late days
+            Payable days = calendar days employed this month − unpaid absence
             {Number.isFinite(payableDays) ? <> (= <span className="font-semibold text-gray-800">{payableDays}</span>)</> : null}
-            {workingDays > 0 ? <> · Working days: <span className="font-semibold text-gray-800">{workingDays}</span></> : null}
+            {daysInMonth > 0 ? <> · Days in month: <span className="font-semibold text-gray-800">{daysInMonth}</span></> : null}
             {monthlySalary > 0 ? <> · Salary: <span className="font-semibold text-gray-800">{money(monthlySalary, currency)}</span></> : null}
           </p>
         </div>
@@ -396,7 +400,10 @@ function PayrollBreakdown({
         </div>
         {additionEntries.map(([key, value]) => (
           <div key={`add-${key}`} className="flex flex-wrap items-center justify-between text-sm gap-2">
-            <span className="text-gray-600">{payrollLineLabel(key)}</span>
+            <span className="text-gray-600">
+              {payrollLineLabel(key)}
+              {nonTaxableNames.has(key) && <span className="ml-1 text-[10px] text-gray-400">(non-taxable)</span>}
+            </span>
             <span className="font-medium text-brand-800 tabular-nums">+ {money(value as number, currency)}</span>
           </div>
         ))}
@@ -520,6 +527,13 @@ export default function SelfServicePage() {
   const { data: slips = [] } = useQuery({
     queryKey: ['hr-me-slips'],
     queryFn: () => api.get('/hr/me/slips').then((r) => r.data),
+    enabled: !!worker,
+  });
+
+  // Read-only — HR configures this, see the worker's own Salary tab in HR → Workers.
+  const { data: salarySplit = [] } = useQuery({
+    queryKey: ['hr-me-salary-split'],
+    queryFn: () => api.get('/hr/me/salary-split').then((r) => r.data),
     enabled: !!worker,
   });
 
@@ -1656,6 +1670,36 @@ export default function SelfServicePage() {
                 ))}
               </div>
             </div>
+
+            {/* Salary split — read-only; HR configures this from HR → Workers → Salary tab */}
+            {salarySplit.length > 0 && (
+              <div className="bg-white rounded-xl border border-gray-200">
+                <div className="px-5 py-4 border-b border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900">Salary split</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Part of your net pay is sent to these recipients each payroll cycle; the rest goes to your
+                    own account above. Set up by HR — contact them to change it.
+                  </p>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {salarySplit.map((b: any) => (
+                    <div key={b.id} className="flex flex-wrap items-center justify-between px-5 py-3 gap-2">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{b.name}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {[b.relation, b.bankName, b.bankAccountNumber || b.iban].filter(Boolean).join(' · ')}
+                        </p>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {b.splitType === 'fixed'
+                          ? `${worker.currency || 'PKR'} ${Number(b.splitValue || 0).toLocaleString()}`
+                          : `${Number(b.splitValue || 0)}%`}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

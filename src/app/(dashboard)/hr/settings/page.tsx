@@ -209,6 +209,7 @@ export default function HrSettingsPage() {
         payDayOfMonth: settings.payDayOfMonth ?? 30,
         otMultiplier: settings.otMultiplier ?? 1.5,
         halfDayDeductionFactor: settings.halfDayDeductionFactor ?? 0.5,
+        medicalExemptionCapPercent: settings.medicalExemptionCapPercent ?? 10,
         currency: settings.currency ?? 'PKR',
         emailSlipToEmployee: settings.emailSlipToEmployee ?? true,
         requireEmployeeConfirmation: settings.requireEmployeeConfirmation ?? true,
@@ -593,7 +594,7 @@ export default function HrSettingsPage() {
                 onChange={(e) => setForm({ ...form, workingDaysPerMonth: parseInt(e.target.value) })}
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
               />
-              <p className="text-xs text-gray-400 mt-1">Default for new payroll runs. With Sat+Sun off, ~22 is typical. Each run can override this.</p>
+              <p className="text-xs text-gray-400 mt-1">Recorded per payroll run for reference only — salaried pay is prorated by calendar days in the month, not this figure.</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1.5">Working Hours per Day</label>
@@ -628,6 +629,22 @@ export default function HrSettingsPage() {
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
               />
               <p className="text-xs text-gray-400 mt-1">0.5 = 50% of daily rate deducted per half-day</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Medical Exemption Cap (%)</label>
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                max="100"
+                value={form.medicalExemptionCapPercent ?? ''}
+                onChange={(e) => setForm({ ...form, medicalExemptionCapPercent: parseFloat(e.target.value) })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Medical allowance is tax-exempt up to this % of Basic (FBR rule, standard is 10%). Any medical
+                allowance configured above the cap has the excess treated as taxable.
+              </p>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1.5">Default Currency</label>

@@ -98,8 +98,12 @@ export default function InvoicesPage() {
   const [hideVoid,  setHideVoid]  = useState(true);
   const [page,      setPage]      = useState(1);
   const [showForm,  setShowForm]  = useState(false);
-  const [form, setForm] = useState({ clientId: '', currency: 'USD', issuedAt: '', dueAt: '', notes: '' });
+  const [form, setForm] = useState({ clientId: '', currency: 'USD', issuedAt: '', dueAt: '', notes: '', allowPartialPayment: false });
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
+  // Whether the admin has touched the part-payment box on this form. Until they
+  // do, it tracks the org default (which loads a tick after mount); once they
+  // have, their choice stands even if the default arrives late.
+  const [partialTouched, setPartialTouched] = useState(false);
   // The master view switch: a flat list of invoices, or the same invoices rolled
   // up per client so you can see who owes what in one pass.
   const [viewMode, setViewMode] = useState<'invoice' | 'client'>('invoice');
@@ -176,6 +180,23 @@ export default function InvoicesPage() {
     enabled: true,
   });
 
+  // The org's part-payment default, so the box below starts where the admin set
+  // it rather than always unticked. The backend applies the same default to
+  // invoices raised without an explicit value (retainer renewals, installments),
+  // so what this form shows matches what a generated invoice would get.
+  const { data: billingDefaults } = useQuery({
+    queryKey: ['invoice-billing-defaults'],
+    queryFn: () => api.get('/invoices/billing-defaults').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const partialDefault = !!billingDefaults?.allowPartialPaymentDefault;
+
+  // Derived, not synced into `form` by an effect: the org default arrives a tick
+  // after mount (and the form may already be open via /invoices?new=1), so a
+  // state-sync would need an effect and cascade a render. Until the admin
+  // touches the box it simply reads the default; after that, their choice wins.
+  const allowPartial = partialTouched ? form.allowPartialPayment : partialDefault;
+
   const invoices: any[]    = data?.data       || [];
   const total: number      = data?.total      || 0;
   const totalPages: number = data?.totalPages || 1;
@@ -234,7 +255,8 @@ export default function InvoicesPage() {
     onSuccess: async (inv) => {
       await invalidateMany(qc, afterInvoiceChange(inv?.id, inv?.clientId));
       setShowForm(false);
-      setForm({ clientId: '', currency: 'USD', issuedAt: '', dueAt: '', notes: '' });
+      setForm({ clientId: '', currency: 'USD', issuedAt: '', dueAt: '', notes: '', allowPartialPayment: false });
+      setPartialTouched(false);
       setLines([emptyLine()]);
       toast.success('Invoice created.');
       router.push(`/invoices/${inv.id}`);
@@ -266,6 +288,7 @@ export default function InvoicesPage() {
   function handleSubmit() {
     createInvoice.mutate({
       ...form,
+      allowPartialPayment: allowPartial,
       lines: lines
         .filter((l) => l.description && l.unitPrice)
         .map((l) => ({ description: l.description, qty: parseFloat(l.qty) || 1, unitPrice: parseFloat(l.unitPrice) })),
@@ -462,6 +485,27 @@ export default function InvoicesPage() {
               <label className="block text-xs font-medium text-gray-700 mb-1.5">Notes</label>
               <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2}
                 className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 resize-none" />
+            </div>
+
+            <div className="pt-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-medium text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={allowPartial}
+                  onChange={(e) => {
+                    setPartialTouched(true);
+                    setForm({ ...form, allowPartialPayment: e.target.checked });
+                  }}
+                  className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
+                />
+                <span>Allow partial payments on this invoice</span>
+              </label>
+              {partialDefault && !partialTouched && (
+                <p className="text-[11px] text-gray-500 mt-1 ml-6">
+                  On by default for this organisation — including retainer renewals and
+                  installments. Untick to require this invoice be paid in full.
+                </p>
+              )}
             </div>
 
             <div className="flex gap-2">

@@ -72,6 +72,7 @@ export default function InvoiceDetailPage() {
   const [payForm, setPayForm] = useState({ provider: 'manual', amount: '', paidAt: '', providerRef: '' });
   const [paymentMethodId, setPaymentMethodId] = useState('');
   const [paymentLinkUrl, setPaymentLinkUrl] = useState('');
+  const [allowPartialPayment, setAllowPartialPayment] = useState<boolean | null>(null);
 
   const { data: invoice, isLoading } = useQuery({
     queryKey: ['invoice', id],
@@ -156,6 +157,7 @@ export default function InvoiceDetailPage() {
     mutationFn: () => api.patch(`/invoices/${id}/payment-config`, {
       paymentMethodId: paymentMethodId || invoice?.preferredPaymentMethodId || null,
       paymentLinkUrl: toAbsoluteHttpUrl(paymentLinkUrl || invoice?.paymentLinkUrl || '') || null,
+      allowPartialPayment: allowPartialPayment !== null ? allowPartialPayment : !!invoice?.allowPartialPayment,
     }).then((r) => r.data),
     onSuccess: async () => {
       await invalidateMany(qc, afterInvoiceChange(id, invoice?.clientId));
@@ -187,13 +189,14 @@ export default function InvoiceDetailPage() {
   const amountDue = Math.max(0, Math.round(((Number(invoice.total) || 0) - amountPaid) * 100) / 100);
   const currentPaymentMethodId = paymentMethodId || invoice.preferredPaymentMethodId || '';
   const currentPaymentLinkUrl = paymentLinkUrl || invoice.paymentLinkUrl || '';
+  const currentAllowPartialPayment = allowPartialPayment !== null ? allowPartialPayment : !!invoice.allowPartialPayment;
 
   return (
     <div className="flex flex-col h-full">
       <Header title={invoice.number} />
       <div className="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
         {/* Back + status */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button onClick={() => router.back()} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 transition-colors">
             <ArrowLeft className="w-4 h-4" />
             Back
@@ -204,6 +207,11 @@ export default function InvoiceDetailPage() {
           <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-violet-50 text-violet-700">
             {billingPeriodOf(invoice)}
           </span>
+          {invoice.allowPartialPayment && (
+            <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+              Partial payments allowed
+            </span>
+          )}
         </div>
 
         {/* Same stage-progress pill row shown on the client's Timeline tab
@@ -413,6 +421,18 @@ export default function InvoiceDetailPage() {
                     Open current link
                   </a>
                 )}
+                <label className="flex items-start gap-2.5 pt-1.5 pb-1 px-1 cursor-pointer select-none rounded-lg hover:bg-gray-50 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={currentAllowPartialPayment}
+                    onChange={(e) => setAllowPartialPayment(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
+                  />
+                  <div className="text-xs">
+                    <span className="font-semibold text-gray-800">Allow partial payments</span>
+                    <p className="text-[11px] text-gray-500 mt-0.5">Client can pay custom partial amounts instead of full total</p>
+                  </div>
+                </label>
                 <button
                   onClick={() => savePaymentConfig.mutate()}
                   disabled={savePaymentConfig.isPending}

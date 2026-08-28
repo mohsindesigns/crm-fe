@@ -64,6 +64,7 @@ type StripeStatus = {
   hasCredentials: boolean;
   hasWebhookSecret: boolean;
   invoiceDueDays: number;
+  allowPartialPaymentDefault: boolean;
   mode: 'sandbox' | 'live';
   feePayer: string;
   fees: FeeRule[];
@@ -93,6 +94,9 @@ export default function PaymentMethodsTab() {
   const [form, setForm] = useState({ ...EMPTY });
   const [confirmOff, setConfirmOff] = useState<Method | null>(null);
   const [feeDraft, setFeeDraft] = useState<any | null>(null);
+  // Which way the pending "apply to every open invoice" catch-up would go, or
+  // null when the dialog is closed.
+  const [confirmApplyAll, setConfirmApplyAll] = useState<boolean | null>(null);
 
   const { data: methods = [], isLoading } = useQuery<Method[]>({
     queryKey: ['admin-payment-methods'],
@@ -157,6 +161,27 @@ export default function PaymentMethodsTab() {
     mutationFn: (patch: any) => api.put('/admin/payment-settings', patch).then((r) => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-stripe-status'] }),
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Could not save the setting.'),
+  });
+
+  const applyPartialToOpen = useMutation({
+    mutationFn: (allowPartialPayment: boolean) => api
+      .post('/admin/payment-settings/apply-partial-payment', { allowPartialPayment })
+      .then((r) => r.data),
+    onSuccess: (d: any) => {
+      setConfirmApplyAll(null);
+      const n = d?.updated ?? 0;
+      if (!n) {
+        toast.success('Every open invoice already matched — nothing to change.');
+        return;
+      }
+      toast.success(d?.allowPartialPayment
+        ? `Partial payments switched on for ${n} open invoice${n === 1 ? '' : 's'}.`
+        : `Partial payments switched off for ${n} open invoice${n === 1 ? '' : 's'}.`);
+    },
+    onError: (e: any) => {
+      setConfirmApplyAll(null);
+      toast.error(e?.response?.data?.message || 'Could not update the open invoices.');
+    },
   });
 
   const saveFee = useMutation({
@@ -278,6 +303,52 @@ export default function PaymentMethodsTab() {
               <span className="text-xs text-gray-500">days after it&apos;s sent</span>
             </div>
           </div>
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <label className="flex items-start gap-2.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={!!stripe?.allowPartialPaymentDefault}
+              onChange={(e) => saveSettings.mutate({ allowPartialPaymentDefault: e.target.checked })}
+              className="w-4 h-4 mt-0.5 rounded border-gray-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
+            />
+            <span className="min-w-0">
+              <span className="block text-xs font-semibold text-gray-700">
+                Allow partial payments by default
+              </span>
+              <span className="block text-xs text-gray-500 mt-0.5">
+                Applies to every new invoice, including the ones nobody raises by hand —
+                retainer renewals, package installments and quotation conversions. Clients
+                can then pay any amount up to the balance and the rest stays outstanding.
+                Individual invoices can still be switched either way from the invoice page.
+              </span>
+            </span>
+          </label>
+
+          {/* The setting above only reaches invoices raised from now on. This is
+              how the invoices already sitting unpaid in a client's inbox catch
+              up — a separate click, because it rewrites live invoices. */}
+          <div className="mt-3 ml-6 flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setConfirmApplyAll(true)}
+              disabled={applyPartialToOpen.isPending}
+              className={btnGhost}
+            >
+              Allow on all open invoices
+            </button>
+            <button
+              onClick={() => setConfirmApplyAll(false)}
+              disabled={applyPartialToOpen.isPending}
+              className={btnGhost}
+            >
+              Require full payment on all open invoices
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1.5 ml-6">
+            Covers drafts, sent, overdue and under-review invoices. Paid and void invoices
+            are left alone.
+          </p>
         </div>
       </div>
 
@@ -603,6 +674,20 @@ export default function PaymentMethodsTab() {
             </label>
           )}
       </AdminModal>
+
+      <ConfirmDialog
+        open={confirmApplyAll !== null}
+        title={confirmApplyAll
+          ? 'Allow partial payments on all open invoices?'
+          : 'Require full payment on all open invoices?'}
+        message={confirmApplyAll
+          ? 'Every unpaid invoice — drafts, sent, overdue and under review, retainers and installments included — will let the client pay any amount up to the balance. Paid and void invoices are not touched.'
+          : 'Every unpaid invoice will go back to requiring the full balance in one payment. Part payments already received stay recorded and still count against the balance. Paid and void invoices are not touched.'}
+        confirmLabel={confirmApplyAll ? 'Allow on all' : 'Require full payment'}
+        danger={!confirmApplyAll}
+        onConfirm={() => confirmApplyAll !== null && applyPartialToOpen.mutate(confirmApplyAll)}
+        onCancel={() => setConfirmApplyAll(null)}
+      />
 
       <ConfirmDialog
         open={!!confirmOff}

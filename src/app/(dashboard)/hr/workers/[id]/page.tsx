@@ -40,7 +40,7 @@ async function generateAndSaveDoc(workerId: string, type: string) {
   }
 }
 
-type Tab = 'profile' | 'onboarding' | 'attendance' | 'payroll' | 'documents' | 'appraisals';
+type Tab = 'profile' | 'salary' | 'onboarding' | 'attendance' | 'payroll' | 'documents' | 'appraisals';
 
 function workerToEditForm(worker: any) {
   return {
@@ -48,7 +48,10 @@ function workerToEditForm(worker: any) {
     designation: worker.designation || '',
     department: worker.department || '',
     salaryBase: worker.salaryBase ?? '',
+    medicalAllowance: worker.medicalAllowance ?? '',
+    salaryComponents: Array.isArray(worker.salaryComponents) ? worker.salaryComponents : [],
     joiningDate: worker.joiningDate ? String(worker.joiningDate).slice(0, 10) : '',
+    leavingDate: worker.leavingDate ? String(worker.leavingDate).slice(0, 10) : '',
     dateOfBirth: worker.dateOfBirth ? String(worker.dateOfBirth).slice(0, 10) : '',
     probationEndDate: worker.probationEndDate ? String(worker.probationEndDate).slice(0, 10) : '',
     payModel: worker.payModel || 'salary',
@@ -89,6 +92,7 @@ const WORKER_FIELD_LABELS: Record<string, string> = {
   name: 'Full Name',
   email: 'Email',
   joiningDate: 'Joining Date',
+  leavingDate: 'Leaving Date',
   dateOfBirth: 'Date of Birth',
   profilePictureUrl: 'Profile Photo',
   cnic: 'CNIC / National ID',
@@ -105,6 +109,7 @@ const WORKER_FIELD_LABELS: Record<string, string> = {
   department: 'Department',
   probationEndDate: 'Probation End',
   salaryBase: 'Base Salary',
+  medicalAllowance: 'Medical Allowance',
   currency: 'Currency',
   payModel: 'Pay Model',
   workerType: 'Worker Type',
@@ -152,6 +157,154 @@ const BLANK_ONBOARD = {
 };
 
 const BLANK_DOC = { type: 'appointment_letter', label: '', fileUrl: '' };
+
+// Editable list of who this worker's net pay is disbursed to besides
+// themselves (e.g. wife/parents) — see HrService#setSalaryBeneficiaries and
+// utils/payrollCalc.js#computeDisbursementSplit on the backend. No beneficiaries
+// configured means 100% still goes to the worker's own bank account above, so
+// this card is opt-in and doesn't affect anyone who never touches it.
+function SalarySplitCard({
+  beneficiaries, setBeneficiaries, onSave, saving,
+}: {
+  beneficiaries: any[];
+  setBeneficiaries: (next: any[]) => void;
+  onSave: () => void;
+  saving: boolean;
+}) {
+  const addBeneficiary = () => setBeneficiaries([
+    ...beneficiaries,
+    {
+      id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: '', relation: '', splitType: 'percentage', splitValue: '',
+      bankName: '', bankAccountTitle: '', bankAccountNumber: '', iban: '',
+    },
+  ]);
+  const updateBeneficiary = (id: string, patch: Record<string, any>) => setBeneficiaries(
+    beneficiaries.map((b) => (b.id === id ? { ...b, ...patch } : b)),
+  );
+  const removeBeneficiary = (id: string) => setBeneficiaries(beneficiaries.filter((b) => b.id !== id));
+
+  const percentTotal = beneficiaries
+    .filter((b) => b.splitType === 'percentage')
+    .reduce((s, b) => s + (Number(b.splitValue) || 0), 0);
+  const fixedTotal = beneficiaries
+    .filter((b) => b.splitType === 'fixed')
+    .reduce((s, b) => s + (Number(b.splitValue) || 0), 0);
+  const overAllocated = percentTotal > 100;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-sm font-semibold text-gray-900">Salary Split</h3>
+        <button
+          type="button"
+          onClick={addBeneficiary}
+          className="text-xs font-medium text-brand-700 hover:text-brand-800"
+        >
+          + Add recipient
+        </button>
+      </div>
+      <p className="text-xs text-gray-500 mb-3">
+        Pay part of this worker&apos;s net salary to other people or accounts (e.g. spouse, parents) every time
+        payroll is disbursed. Fixed amounts are set aside first, then percentages apply to what&apos;s left.
+        Anything not allocated here still goes to the worker&apos;s own bank account above.
+      </p>
+
+      {beneficiaries.length === 0 ? (
+        <p className="text-xs text-gray-400 italic mb-3">No split configured — full salary goes to the worker.</p>
+      ) : (
+        <div className="space-y-3 mb-3">
+          {beneficiaries.map((b) => (
+            <div key={b.id} className="border border-gray-200 rounded-lg p-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  value={b.name || ''}
+                  onChange={(e) => updateBeneficiary(b.id, { name: e.target.value })}
+                  placeholder="Recipient name"
+                  className="flex-1 min-w-40 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                />
+                <input
+                  value={b.relation || ''}
+                  onChange={(e) => updateBeneficiary(b.id, { relation: e.target.value })}
+                  placeholder="Relation (e.g. Wife)"
+                  className="w-40 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                />
+                <select
+                  value={b.splitType || 'percentage'}
+                  onChange={(e) => updateBeneficiary(b.id, { splitType: e.target.value })}
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                >
+                  <option value="percentage">Percentage</option>
+                  <option value="fixed">Fixed amount</option>
+                </select>
+                <input
+                  type="number"
+                  value={b.splitValue ?? ''}
+                  onChange={(e) => updateBeneficiary(b.id, { splitValue: e.target.value })}
+                  placeholder={b.splitType === 'fixed' ? 'Amount' : '%'}
+                  className="w-28 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeBeneficiary(b.id)}
+                  className="text-xs text-red-500 hover:text-red-700 px-1"
+                  title="Remove"
+                >
+                  Remove
+                </button>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <input
+                  value={b.bankName || ''}
+                  onChange={(e) => updateBeneficiary(b.id, { bankName: e.target.value })}
+                  placeholder="Bank"
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                />
+                <input
+                  value={b.bankAccountTitle || ''}
+                  onChange={(e) => updateBeneficiary(b.id, { bankAccountTitle: e.target.value })}
+                  placeholder="Account Title"
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                />
+                <input
+                  value={b.bankAccountNumber || ''}
+                  onChange={(e) => updateBeneficiary(b.id, { bankAccountNumber: e.target.value })}
+                  placeholder="Account Number"
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                />
+                <input
+                  value={b.iban || ''}
+                  onChange={(e) => updateBeneficiary(b.id, { iban: e.target.value })}
+                  placeholder="IBAN"
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {beneficiaries.length > 0 && (
+        <p className={cn('text-xs mb-3', overAllocated ? 'text-red-600 font-medium' : 'text-gray-500')}>
+          {fixedTotal > 0 && `${fixedTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} fixed`}
+          {fixedTotal > 0 && percentTotal > 0 && ' + '}
+          {percentTotal > 0 && `${percentTotal}% of the remainder`}
+          {' '}allocated to other recipients; the rest goes to the worker&apos;s own account.
+          {overAllocated && ' Percentages exceed 100% — this will be rejected on save.'}
+        </p>
+      )}
+
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={saving || overAllocated}
+        className="bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+      >
+        {saving ? 'Saving…' : 'Save Salary Split'}
+      </button>
+    </div>
+  );
+}
 
 export default function WorkerDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -283,6 +436,13 @@ export default function WorkerDetailPage() {
     queryFn: () => api.get('/hr/shift-schedules').then((r) => r.data),
   });
 
+  // Medical exemption cap — same query key as HR → Settings, so the two
+  // screens share a cache instead of fetching it twice.
+  const { data: payrollSettings } = useQuery({
+    queryKey: ['hr-payroll-settings'],
+    queryFn: () => api.get('/hr/payroll-settings').then((r) => r.data),
+  });
+
   const updateWorker = useMutation({
     mutationFn: (data: any) => api.patch(`/hr/workers/${id}`, data).then((r) => r.data),
     onSuccess: (updated) => {
@@ -298,6 +458,29 @@ export default function WorkerDetailPage() {
       }
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to save changes.'),
+  });
+
+  // Salary split — who this worker's net pay is disbursed to besides themselves
+  // (e.g. wife/parents). Its own resource, not part of the Worker PATCH payload,
+  // since it's a list of beneficiary rows with its own validation.
+  const { data: beneficiariesData } = useQuery({
+    queryKey: ['hr-worker-salary-beneficiaries', id],
+    queryFn: () => api.get(`/hr/workers/${id}/salary-beneficiaries`).then((r) => r.data),
+    enabled: tab === 'salary',
+  });
+  const [beneficiaries, setBeneficiaries] = useState<any[]>([]);
+  useEffect(() => {
+    if (beneficiariesData) setBeneficiaries(beneficiariesData);
+  }, [beneficiariesData]);
+
+  const saveBeneficiaries = useMutation({
+    mutationFn: (list: any[]) => api.put(`/hr/workers/${id}/salary-beneficiaries`, { beneficiaries: list }).then((r) => r.data),
+    onSuccess: (saved) => {
+      setBeneficiaries(saved);
+      qc.invalidateQueries({ queryKey: ['hr-worker-salary-beneficiaries', id] });
+      toast.success('Salary split saved.');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to save salary split.'),
   });
 
   // Role lives on the User record (assigned at invite time via the Team module),
@@ -323,9 +506,15 @@ export default function WorkerDetailPage() {
 
   function buildWorkerPatchPayload() {
     const payload: Record<string, any> = {};
-    const dateFields = new Set(['joiningDate', 'dateOfBirth', 'probationEndDate']);
-    const numericFields = new Set(['salaryBase']);
+    const dateFields = new Set(['joiningDate', 'leavingDate', 'dateOfBirth', 'probationEndDate']);
+    const numericFields = new Set(['salaryBase', 'medicalAllowance']);
     for (const key of Object.keys(editForm || {})) {
+      if (key === 'salaryComponents') {
+        const current = Array.isArray(editForm[key]) ? editForm[key] : [];
+        const initial = Array.isArray(initialEditForm[key]) ? initialEditForm[key] : [];
+        if (JSON.stringify(current) !== JSON.stringify(initial)) payload[key] = current;
+        continue;
+      }
       const current = editForm[key] ?? '';
       const initial = initialEditForm[key] ?? '';
       if (String(current) === String(initial)) continue;
@@ -338,6 +527,35 @@ export default function WorkerDetailPage() {
       }
     }
     return payload;
+  }
+
+  // Shared by the Profile and Salary tabs' Save buttons — both edit the same
+  // `editForm` state and PATCH through the same endpoint, so any change made
+  // on either tab is included no matter which Save button is clicked.
+  function handleSaveWorker() {
+    const payload = buildWorkerPatchPayload();
+    // Backend treats any Profile-tab save while under_review /
+    // profile_amended as approval (HrService#updateWorker). Don't
+    // block with "No changes" when HR is trying to clear review.
+    const wasReview = worker.status === 'profile_amended' || worker.status === 'under_review';
+    if (Object.keys(payload).length === 0 && !wasReview) {
+      toast.info('No changes to save.');
+      return;
+    }
+    // Explicit status so an empty body still activates on review.
+    if (wasReview && payload.status !== 'inactive') {
+      payload.status = 'active';
+    }
+    updateWorker.mutate(payload, {
+      onSuccess: () => {
+        if (wasReview) {
+          setTab('profile');
+          toast.success('Changes saved — profile approved and activated.');
+        } else {
+          toast.success('Changes saved.');
+        }
+      },
+    });
   }
 
   const onboardMutation = useMutation({
@@ -497,6 +715,7 @@ export default function WorkerDetailPage() {
 
   const TABS: { key: Tab; label: string }[] = [
     { key: 'profile', label: 'Profile' },
+    { key: 'salary', label: 'Salary' },
     ...(worker.status === 'under_review' ? [{ key: 'onboarding' as Tab, label: 'Onboarding Review' }] : []),
     ...(worker.status === 'profile_amended' ? [{ key: 'onboarding' as Tab, label: 'Amendment Review' }] : []),
     { key: 'attendance', label: 'Attendance' },
@@ -729,8 +948,8 @@ export default function WorkerDetailPage() {
                 </div>
                 {[
                   { key: 'joiningDate', label: 'Joining Date', type: 'date' },
+                  { key: 'leavingDate', label: 'Leaving Date', type: 'date' },
                   { key: 'probationEndDate', label: 'Probation End', type: 'date' },
-                  { key: 'salaryBase', label: 'Base Salary', type: 'number' },
                   { key: 'currency', label: 'Currency' },
                 ].map((f) => (
                   <div key={f.key}>
@@ -885,31 +1104,7 @@ export default function WorkerDetailPage() {
 
             <div className="flex gap-3">
               <button
-                onClick={() => {
-                  const payload = buildWorkerPatchPayload();
-                  // Backend treats any Profile-tab save while under_review /
-                  // profile_amended as approval (HrService#updateWorker). Don't
-                  // block with "No changes" when HR is trying to clear review.
-                  const wasReview = worker.status === 'profile_amended' || worker.status === 'under_review';
-                  if (Object.keys(payload).length === 0 && !wasReview) {
-                    toast.info('No changes to save.');
-                    return;
-                  }
-                  // Explicit status so an empty body still activates on review.
-                  if (wasReview && payload.status !== 'inactive') {
-                    payload.status = 'active';
-                  }
-                  updateWorker.mutate(payload, {
-                    onSuccess: () => {
-                      if (wasReview) {
-                        setTab('profile');
-                        toast.success('Changes saved — profile approved and activated.');
-                      } else {
-                        toast.success('Changes saved.');
-                      }
-                    },
-                  });
-                }}
+                onClick={handleSaveWorker}
                 disabled={updateWorker.isPending}
                 className="bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
               >
@@ -925,6 +1120,199 @@ export default function WorkerDetailPage() {
             </div>
           </div>
         )}
+
+        {/* Salary tab — Basic + Medical Allowance, with a live computed breakdown
+            (Basic / Medical / Gross) so HR can see the effect of an edit before
+            saving. Tax withholding itself is computed per payroll run, not here —
+            see the Payroll tab for a worker's actual monthly figures. */}
+        {tab === 'salary' && (() => {
+          const basic = Number(editForm.salaryBase) || 0;
+          const capPercent = Number(payrollSettings?.medicalExemptionCapPercent ?? 10);
+          const medicalCap = Math.round(basic * (capPercent / 100) * 100) / 100;
+          const medicalRaw = editForm.medicalAllowance !== '' && editForm.medicalAllowance != null
+            ? Number(editForm.medicalAllowance)
+            : medicalCap;
+          const medical = Number.isFinite(medicalRaw) ? medicalRaw : 0;
+          const exemptMedical = Math.min(medical, medicalCap);
+          const taxableExcess = Math.max(0, medical - medicalCap);
+          const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+          const components: any[] = Array.isArray(editForm.salaryComponents) ? editForm.salaryComponents : [];
+          const setComponents = (next: any[]) => setEditForm({ ...editForm, salaryComponents: next });
+          const addComponent = () => setComponents([
+            ...components,
+            { id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: '', amount: '', taxable: true },
+          ]);
+          const updateComponent = (id: string, patch: Record<string, any>) => setComponents(
+            components.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+          );
+          const removeComponent = (id: string) => setComponents(components.filter((c) => c.id !== id));
+
+          const validComponents = components.filter((c) => String(c.name || '').trim() && Number(c.amount) > 0);
+          const taxableComponentsTotal = validComponents
+            .filter((c) => c.taxable)
+            .reduce((s, c) => s + Number(c.amount), 0);
+          const nonTaxableComponentsTotal = validComponents
+            .filter((c) => !c.taxable)
+            .reduce((s, c) => s + Number(c.amount), 0);
+          const gross = basic + medical + taxableComponentsTotal + nonTaxableComponentsTotal;
+          const taxableSalary = basic + taxableExcess + taxableComponentsTotal;
+
+          return (
+            <div className="space-y-5">
+              <div className="bg-white rounded-xl border border-gray-200 p-5">
+                <h3 className="text-sm font-semibold text-gray-900 mb-1">Salary Structure</h3>
+                <p className="text-xs text-gray-500 mb-4">
+                  Basic is taxable; Medical is tax-exempt up to {capPercent}% of Basic (org default, set in HR → Settings).
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Base Salary (Basic)</label>
+                    <input
+                      type="number"
+                      value={editForm.salaryBase ?? ''}
+                      onChange={(e) => setEditForm({ ...editForm, salaryBase: e.target.value })}
+                      placeholder="e.g. 90000"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Medical Allowance</label>
+                    <input
+                      type="number"
+                      value={editForm.medicalAllowance ?? ''}
+                      onChange={(e) => setEditForm({ ...editForm, medicalAllowance: e.target.value })}
+                      placeholder={`Default: ${capPercent}% of Basic (${fmt(medicalCap)})`}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    />
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      Leave blank to use the default. Anything entered above the cap has the excess treated as taxable.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl border border-gray-200 p-5">
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-sm font-semibold text-gray-900">Additional Components</h3>
+                  <button
+                    type="button"
+                    onClick={addComponent}
+                    className="text-xs font-medium text-brand-700 hover:text-brand-800"
+                  >
+                    + Add component
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mb-3">
+                  House Rent Allowance, Conveyance, Special Allowance, Bonus — anything else. Each is paid every
+                  month; check Taxable only for allowances that should count toward income tax.
+                </p>
+                {components.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic">No additional components.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {components.map((c) => (
+                      <div key={c.id} className="flex flex-wrap items-center gap-2">
+                        <input
+                          value={c.name || ''}
+                          onChange={(e) => updateComponent(c.id, { name: e.target.value })}
+                          placeholder="e.g. House Rent Allowance"
+                          className="flex-1 min-w-40 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                        />
+                        <input
+                          type="number"
+                          value={c.amount ?? ''}
+                          onChange={(e) => updateComponent(c.id, { amount: e.target.value })}
+                          placeholder="Amount"
+                          className="w-32 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                        />
+                        <label className="flex items-center gap-1.5 text-xs text-gray-600 whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            checked={c.taxable !== false}
+                            onChange={(e) => updateComponent(c.id, { taxable: e.target.checked })}
+                            className="rounded border-gray-300 text-brand-600 focus:ring-brand-600"
+                          />
+                          Taxable
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => removeComponent(c.id)}
+                          className="text-xs text-red-500 hover:text-red-700 px-1"
+                          title="Remove"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="px-5 py-4 border-b border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900">Breakdown</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Full-month figures — an actual payroll run prorates these by attendance and calendar days.</p>
+                </div>
+                <table className="w-full">
+                  <tbody className="divide-y divide-gray-100">
+                    <tr>
+                      <td className="px-5 py-3 text-sm text-gray-600">Basic Salary</td>
+                      <td className="px-5 py-3 text-sm font-medium text-gray-900 text-right tabular-nums">{fmt(basic)}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-5 py-3 text-sm text-gray-600">
+                        Medical Allowance
+                        {taxableExcess > 0 && (
+                          <span className="block text-[11px] text-amber-600">
+                            {fmt(exemptMedical)} exempt + {fmt(taxableExcess)} taxable (exceeds {capPercent}% cap)
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-sm font-medium text-gray-900 text-right tabular-nums">{fmt(medical)}</td>
+                    </tr>
+                    {validComponents.map((c) => (
+                      <tr key={c.id}>
+                        <td className="px-5 py-3 text-sm text-gray-600">
+                          {c.name}
+                          <span className={cn('block text-[11px]', c.taxable ? 'text-gray-400' : 'text-brand-600')}>
+                            {c.taxable ? 'taxable' : 'non-taxable'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 text-sm font-medium text-gray-900 text-right tabular-nums">{fmt(Number(c.amount))}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-gray-50">
+                      <td className="px-5 py-3 text-sm font-semibold text-gray-900">Gross Salary</td>
+                      <td className="px-5 py-3 text-sm font-semibold text-gray-900 text-right tabular-nums">{fmt(gross)}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-5 py-3 text-sm text-gray-600">Taxable Salary (full month, before attendance proration)</td>
+                      <td className="px-5 py-3 text-sm font-medium text-gray-900 text-right tabular-nums">{fmt(taxableSalary)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleSaveWorker}
+                  disabled={updateWorker.isPending}
+                  className="bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                >
+                  {updateWorker.isPending ? 'Saving…' : 'Save Salary'}
+                </button>
+              </div>
+
+              <SalarySplitCard
+                beneficiaries={beneficiaries}
+                setBeneficiaries={setBeneficiaries}
+                onSave={() => saveBeneficiaries.mutate(beneficiaries)}
+                saving={saveBeneficiaries.isPending}
+              />
+            </div>
+          );
+        })()}
 
         {/* Amendment review tab — active employee edited their profile post-onboarding */}
         {tab === 'onboarding' && worker.status === 'profile_amended' && (

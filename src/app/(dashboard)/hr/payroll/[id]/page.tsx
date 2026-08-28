@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -45,17 +45,12 @@ export default function PayrollRunDetailPage() {
   const qc = useQueryClient();
   const [rectifyItemId, setRectifyItemId] = useState<string | null>(null);
   const [rectifyForm, setRectifyForm] = useState<Record<string, any>>({});
-  const [workingDays, setWorkingDays] = useState<number | ''>('');
   const [showRevertConfirm, setShowRevertConfirm] = useState(false);
 
   const { data: run, isLoading: runLoading } = useQuery({
     queryKey: ['hr-payroll-run', id],
     queryFn: () => api.get('/hr/payroll').then((r) => r.data.find((x: any) => x.id === id)),
   });
-
-  useEffect(() => {
-    if (run?.workingDaysPerMonth != null) setWorkingDays(run.workingDaysPerMonth);
-  }, [run?.workingDaysPerMonth]);
 
   const { data: items = [], isLoading: itemsLoading } = useQuery({
     queryKey: ['hr-payroll-items', id],
@@ -72,8 +67,7 @@ export default function PayrollRunDetailPage() {
   });
 
   const calculateMutation = useMutation({
-    mutationFn: (workingDaysPerMonth: number) =>
-      api.post(`/hr/payroll/${id}/calculate`, { workingDaysPerMonth }).then((r) => r.data),
+    mutationFn: () => api.post(`/hr/payroll/${id}/calculate`).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hr-payroll-items', id] });
       qc.invalidateQueries({ queryKey: ['hr-payroll-run', id] });
@@ -158,7 +152,6 @@ export default function PayrollRunDetailPage() {
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Payroll Run — {formatPeriod(run.period)}</h2>
             <p className="text-sm text-gray-500 mt-1">
-              {run.workingDaysPerMonth ?? '—'} working days ·
               {items.length} employee{items.length !== 1 ? 's' : ''} ·
               {confirmedItems.length} confirmed ·
               {concernItems.length > 0 && ` ${concernItems.length} concern${concernItems.length !== 1 ? 's' : ''} ·`}
@@ -175,37 +168,14 @@ export default function PayrollRunDetailPage() {
         {/* Action bar */}
         <div className="flex items-center gap-3 flex-wrap">
           {(run.status === 'draft' || run.status === 'open_for_review') && (
-            <>
-              <div className="flex items-center gap-1.5">
-                <label className="text-xs text-gray-500 whitespace-nowrap" htmlFor="run-working-days">
-                  Working days
-                </label>
-                <input
-                  id="run-working-days"
-                  type="number"
-                  min={1}
-                  max={31}
-                  value={workingDays}
-                  onChange={(e) => setWorkingDays(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
-                  className="w-20 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-                />
-              </div>
-              <button
-                onClick={() => {
-                  const days = typeof workingDays === 'number' ? workingDays : parseInt(String(workingDays), 10);
-                  if (!Number.isFinite(days) || days < 1 || days > 31) {
-                    toast.error('Working days must be between 1 and 31.');
-                    return;
-                  }
-                  calculateMutation.mutate(days);
-                }}
-                disabled={calculateMutation.isPending}
-                className="flex items-center gap-1.5 border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-60 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-              >
-                <Calculator className="w-4 h-4" />
-                {calculateMutation.isPending ? 'Calculating…' : 'Recalculate from Attendance'}
-              </button>
-            </>
+            <button
+              onClick={() => calculateMutation.mutate()}
+              disabled={calculateMutation.isPending}
+              className="flex items-center gap-1.5 border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-60 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            >
+              <Calculator className="w-4 h-4" />
+              {calculateMutation.isPending ? 'Calculating…' : 'Recalculate from Attendance'}
+            </button>
           )}
 
           {NEXT_STATUS[run.status] && (
@@ -430,7 +400,7 @@ export default function PayrollRunDetailPage() {
                         <td colSpan={9} className="px-5 py-4 bg-amber-50 border-t border-amber-200">
                           <div className="space-y-3">
                             <p className="text-xs font-semibold text-amber-800">Rectify Payroll Item — {item.worker?.user?.name}</p>
-                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1">Base Salary</label>
                                 <input
@@ -448,6 +418,18 @@ export default function PayrollRunDetailPage() {
                                   onChange={(e) => setRectifyForm({
                                     ...rectifyForm,
                                     additions: { ...rectifyForm.additions, attendancePay: parseFloat(e.target.value) || 0 }
+                                  })}
+                                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Medical Allowance</label>
+                                <input
+                                  type="number"
+                                  value={rectifyForm.additions?.medical ?? ''}
+                                  onChange={(e) => setRectifyForm({
+                                    ...rectifyForm,
+                                    additions: { ...rectifyForm.additions, medical: parseFloat(e.target.value) || 0 }
                                   })}
                                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
                                 />
@@ -546,30 +528,53 @@ export default function PayrollRunDetailPage() {
               <thead>
                 <tr className="border-b border-gray-100">
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Employee</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Recipient</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Bank</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Account</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Net</th>
+                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Amount</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {lockedItems.map((item: any) => (
-                  <tr key={`disb-${item.id}`} className="hover:bg-gray-50">
-                    <td className="px-5 py-3 text-sm font-medium text-gray-900">
-                      {item.worker?.user?.name}
-                      {item.worker?.designation && <span className="text-gray-400 text-xs ml-1">· {item.worker.designation}</span>}
-                    </td>
-                    <td className="px-5 py-3 text-sm text-gray-600">{item.worker?.bankName || '—'}</td>
-                    <td className="px-5 py-3 text-sm text-gray-600 font-mono text-xs">
-                      {item.worker?.bankAccountTitle && <span className="block text-gray-900">{item.worker.bankAccountTitle}</span>}
-                      {item.worker?.bankAccountNumber || item.worker?.iban || '—'}
-                    </td>
-                    <td className="px-5 py-3 text-sm font-semibold text-gray-900 text-right">
-                      {item.worker?.currency || 'PKR'} {Number(item.computedNet || 0).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
+                {lockedItems.map((item: any) => {
+                  const split = Array.isArray(item.disbursementSplit) ? item.disbursementSplit : [];
+                  // No split configured for this worker — same single row as before this feature.
+                  const rows = split.length ? split : [{
+                    beneficiaryId: null,
+                    name: item.worker?.user?.name,
+                    relation: 'Self',
+                    bankName: item.worker?.bankName,
+                    bankAccountTitle: item.worker?.bankAccountTitle,
+                    bankAccountNumber: item.worker?.bankAccountNumber,
+                    iban: item.worker?.iban,
+                    amount: item.computedNet,
+                  }];
+                  return rows.map((line: any, idx: number) => (
+                    <tr key={`disb-${item.id}-${idx}`} className="hover:bg-gray-50">
+                      <td className="px-5 py-3 text-sm font-medium text-gray-900">
+                        {idx === 0 && (
+                          <>
+                            {item.worker?.user?.name}
+                            {item.worker?.designation && <span className="text-gray-400 text-xs ml-1">· {item.worker.designation}</span>}
+                          </>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-sm text-gray-600">
+                        {line.name}
+                        {line.relation && <span className="text-gray-400 text-xs ml-1">· {line.relation}</span>}
+                      </td>
+                      <td className="px-5 py-3 text-sm text-gray-600">{line.bankName || '—'}</td>
+                      <td className="px-5 py-3 text-sm text-gray-600 font-mono text-xs">
+                        {line.bankAccountTitle && <span className="block text-gray-900">{line.bankAccountTitle}</span>}
+                        {line.bankAccountNumber || line.iban || '—'}
+                      </td>
+                      <td className="px-5 py-3 text-sm font-semibold text-gray-900 text-right">
+                        {item.worker?.currency || 'PKR'} {Number(line.amount || 0).toLocaleString()}
+                      </td>
+                    </tr>
+                  ));
+                })}
                 <tr className="bg-gray-50 border-t-2 border-gray-200">
-                  <td colSpan={3} className="px-5 py-3 text-sm font-semibold text-gray-700 text-right">Total</td>
+                  <td colSpan={4} className="px-5 py-3 text-sm font-semibold text-gray-700 text-right">Total</td>
                   <td className="px-5 py-3 text-sm font-bold text-gray-900 text-right">
                     {totalNet.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </td>
