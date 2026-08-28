@@ -65,20 +65,25 @@ export default function BacklinkReportsPage() {
   const [linkBuilderId, setLinkBuilderId] = useState('');
   const [clientId, setClientId] = useState('');
   const [projectId, setProjectId] = useState('');
-  const [date, setDate] = useState('');
+  // A range, not a single day — "how many links went up last month" is the
+  // question this report is actually asked, and a one-day picker could only
+  // answer it 30 times. Either end may be left blank for an open-ended range.
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [page, setPage] = useState(1);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState<'pdf' | 'csv' | null>(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['reports-backlink-summary', { linkBuilderId, clientId, projectId, date, page }],
+    queryKey: ['reports-backlink-summary', { linkBuilderId, clientId, projectId, from, to, page }],
     queryFn: () => api.get('/reports/backlink-summary', {
       params: {
         page, limit: LIMIT,
         linkBuilderId: linkBuilderId || undefined,
         clientId: clientId || undefined,
         projectId: projectId || undefined,
-        date: date || undefined,
+        from: from || undefined,
+        to: to || undefined,
       },
     }).then((r) => r.data),
     placeholderData: (prev) => prev,
@@ -144,7 +149,8 @@ export default function BacklinkReportsPage() {
       linkBuilderId: linkBuilderId || undefined,
       clientId: clientId || undefined,
       projectId: projectId || undefined,
-      date: date || undefined,
+      from: from || undefined,
+      to: to || undefined,
     };
     try {
       const res = await api.post('/reports/backlink-summary/export', {
@@ -178,10 +184,11 @@ export default function BacklinkReportsPage() {
   const allChecked = pageKeys.length > 0 && pageKeys.every((k) => selectedKeys.has(k));
   const someChecked = pageKeys.some((k) => selectedKeys.has(k)) && !allChecked;
 
-  const hasFilters = linkBuilderId || clientId || projectId || date !== '';
+  const dateScoped = from !== '' || to !== '';
+  const hasFilters = linkBuilderId || clientId || projectId || dateScoped;
 
   function clearFilters() {
-    setLinkBuilderId(''); setClientId(''); setProjectId(''); setDate('');
+    setLinkBuilderId(''); setClientId(''); setProjectId(''); setFrom(''); setTo('');
     setPage(1);
   }
 
@@ -228,6 +235,10 @@ export default function BacklinkReportsPage() {
             >
               <option value="">All link builders</option>
               {linkBuilders.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              {/* Links with no builder on them are grouped server-side under this
+                  sentinel id (ReportsService's UNASSIGNED_BUILDER_ID) — offering it
+                  here turns "who never got credited" into a one-click view. */}
+              <option value="unassigned">Unassigned</option>
             </select>
 
             <select
@@ -250,12 +261,25 @@ export default function BacklinkReportsPage() {
           </div>
 
           <div className="flex items-center gap-2 sm:ml-auto">
+            <span className="text-xs font-medium text-gray-500 shrink-0">Publish date</span>
             <input
               type="date"
-              value={date}
+              value={from}
+              max={to || todayStr()}
+              aria-label="Publish date from"
+              title={from ? undefined : 'From — leave blank for no lower bound'}
+              onChange={(e) => { setFrom(e.target.value); setPage(1); }}
+              className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600"
+            />
+            <span className="text-xs text-gray-400">→</span>
+            <input
+              type="date"
+              value={to}
+              min={from || undefined}
               max={todayStr()}
-              title={date ? undefined : 'All dates — pick one to narrow "Links Made" down to that day'}
-              onChange={(e) => { setDate(e.target.value); setPage(1); }}
+              aria-label="Publish date to"
+              title={to ? undefined : 'To — leave blank for no upper bound'}
+              onChange={(e) => { setTo(e.target.value); setPage(1); }}
               className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600"
             />
           </div>
@@ -286,7 +310,7 @@ export default function BacklinkReportsPage() {
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project</th>
                   <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project Start Date</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">{date ? 'Links Made' : 'Links Made (All Time)'}</th>
+                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">{dateScoped ? 'Links Made' : 'Links Made (All Time)'}</th>
                   <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project Total Backlinks</th>
                   <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Total Indexed</th>
                   <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Total Non-Indexed</th>
@@ -297,7 +321,7 @@ export default function BacklinkReportsPage() {
                 {isLoading ? (
                   <SkeletonRows cols={10} />
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={10} className="px-5 py-12 text-center text-sm text-gray-400">{date ? 'No link-building activity for this day.' : 'No link-building activity yet.'}</td></tr>
+                  <tr><td colSpan={10} className="px-5 py-12 text-center text-sm text-gray-400">{dateScoped ? 'No link-building activity in this date range.' : 'No link-building activity yet.'}</td></tr>
                 ) : (
                   rows.map((r) => {
                     const key = rowKey(r);

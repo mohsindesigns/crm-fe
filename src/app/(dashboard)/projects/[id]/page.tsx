@@ -190,6 +190,7 @@ export default function ProjectDetailPage() {
   const [newKwExtra, setNewKwExtra] = useState({ secondaryKeywords: '', kd: '', volume: '', targetUrl: '', targetLocation: '', pageName: '', assignedWriterId: '' });
   const [newBacklink, setNewBacklink] = useState({
     sourceUrl: '', targetUrl: '', anchorText: '', da: '', linkType: 'other', date: '', domain: '', spamScore: '',
+    assignedWriterId: '',
   });
   const [newComment, setNewComment] = useState('');
   const [contentKeywordIds, setContentKeywordIds] = useState<string[]>([]);
@@ -251,6 +252,16 @@ export default function ProjectDetailPage() {
     queryKey: ['users-assignable', 'content_writer'],
     queryFn: () => api.get('/users/assignable', { params: { role: 'content_writer' } }).then((r) => r.data || []),
     enabled: !!project && tab === 'keywords' && project.serviceTypeKey === 'seo',
+  });
+
+  // Who a backlink can be credited to. Same two role pools the sheet importer
+  // resolves its "Writer" column against (SeoService's buildWriterLookup) — link
+  // builders and content writers both place links in practice — so a name that
+  // works in an import also appears in this picker.
+  const { data: assignableLinkBuilders = [] } = useQuery({
+    queryKey: ['users-assignable', 'link_builder,content_writer'],
+    queryFn: () => api.get('/users/assignable', { params: { role: 'link_builder,content_writer' } }).then((r) => r.data || []),
+    enabled: !!project && tab === 'backlinks',
   });
 
   const { data: assignableBlogWriters = [] } = useQuery({
@@ -576,10 +587,14 @@ export default function ProjectDetailPage() {
         spamScore: bl.spamScore ? Number(bl.spamScore) : null,
         date: bl.date || null,
         domain: bl.domain || null,
+        assignedWriterId: bl.assignedWriterId || null,
       }).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['seo-backlinks', id] });
-      setNewBacklink({ sourceUrl: '', targetUrl: '', anchorText: '', da: '', linkType: 'other', date: '', domain: '', spamScore: '' });
+      setNewBacklink({
+        sourceUrl: '', targetUrl: '', anchorText: '', da: '', linkType: 'other', date: '', domain: '', spamScore: '',
+        assignedWriterId: '',
+      });
       toast.success('Backlink added');
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to add backlink.'),
@@ -2964,6 +2979,17 @@ export default function ProjectDetailPage() {
                     <option value="nofollow">Nofollow</option>
                     <option value="other">Other</option>
                   </select>
+                  {/* Credit for the link. Without it the row is invisible to the
+                      Backlink Report's per-builder breakdown, which is the only
+                      place a link builder's output is actually counted. */}
+                  <select value={newBacklink.assignedWriterId} onChange={(e) => setNewBacklink((x) => ({ ...x, assignedWriterId: e.target.value }))}
+                    title="Link builder"
+                    className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 bg-white">
+                    <option value="">Link builder — unassigned</option>
+                    {(assignableLinkBuilders as any[]).map((u: any) => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <button
                   onClick={() => { if (newBacklink.sourceUrl.trim()) addBacklink.mutate(newBacklink); }}
@@ -2975,7 +3001,7 @@ export default function ProjectDetailPage() {
               </div>
               )}
               <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-                <table className="w-full min-w-[1420px]">
+                <table className="w-full min-w-[1580px]">
                   <thead>
                     <tr className="border-b border-gray-100">
                       {canActOnProject && (
@@ -2993,6 +3019,7 @@ export default function ProjectDetailPage() {
                       )}
                       <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Published URL</th>
                       <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Domain</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Link builder</th>
                       <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Publish date</th>
                       <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">DA</th>
                       <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">S.S</th>
@@ -3029,6 +3056,33 @@ export default function ProjectDetailPage() {
                             {isDuplicate(bl) && <span className="ml-1.5 text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full align-middle">Duplicate</span>}
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-600">{bl.domain || '—'}</td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            {canActOnProject ? (() => {
+                              // A link imported from a sheet can be credited to
+                              // someone who has since changed role and dropped out
+                              // of the assignable pool — keep them in the list so
+                              // opening the picker can't silently blank the credit.
+                              const options = [...(assignableLinkBuilders as any[])];
+                              if (bl.assignedWriterId && bl.assignedWriter && !options.some((u: any) => u.id === bl.assignedWriterId)) {
+                                options.unshift({ id: bl.assignedWriterId, name: bl.assignedWriter.name });
+                              }
+                              return (
+                                <select
+                                  value={bl.assignedWriterId || ''}
+                                  onChange={(e) => editBacklink.mutate({ blId: bl.id, updates: { assignedWriterId: e.target.value || null } })}
+                                  title={options.length ? 'Link builder credited with this link' : 'No users have the Link Builder or Content Writer role yet'}
+                                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-600 bg-white max-w-[150px]"
+                                >
+                                  <option value="">Unassigned</option>
+                                  {options.map((u: any) => (
+                                    <option key={u.id} value={u.id}>{u.name}</option>
+                                  ))}
+                                </select>
+                              );
+                            })() : (
+                              <span className="text-sm text-gray-600">{bl.assignedWriter?.name || '—'}</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                             {canActOnProject ? (
                               <input

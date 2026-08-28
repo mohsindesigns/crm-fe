@@ -39,6 +39,20 @@ export function formatFileSize(bytes?: number | null): string {
 
 export function formatDate(date: string | Date, format = 'MMM d, yyyy') {
   const { format: dateFnsFormat } = require('date-fns');
+  // Calendar-only values (Sequelize DATEONLY columns — a backlink's publish
+  // date, a project's start date, a joining date) arrive as a bare "YYYY-MM-DD".
+  // `new Date("2026-08-28")` parses *that* form as UTC midnight per the spec,
+  // which then renders as Aug 27 for any viewer behind UTC. These dates have no
+  // time and no timezone, so they're built from their parts as local midnight
+  // and display as the same day everywhere. Strings that carry a time (full ISO
+  // timestamps) are left alone — those really are instants.
+  if (typeof date === 'string') {
+    const dateOnly = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnly) {
+      const [, y, m, d] = dateOnly;
+      return dateFnsFormat(new Date(Number(y), Number(m) - 1, Number(d)), format);
+    }
+  }
   return dateFnsFormat(new Date(date), format);
 }
 
