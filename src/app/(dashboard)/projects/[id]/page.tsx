@@ -2,7 +2,7 @@
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, XCircle, ChevronRight, ChevronDown, Clock, Plus, Upload, Users, Link, Paperclip, ToggleLeft, ToggleRight, Download, Repeat, AlertTriangle, Eye, Pencil, Save, X, Calendar, Bell, Flag, RotateCcw, Trash2, ArrowLeft } from 'lucide-react';
+import { CheckCircle, XCircle, ChevronRight, ChevronDown, Clock, Plus, Upload, Users, Link, Paperclip, ToggleLeft, Download, Repeat, AlertTriangle, Eye, Pencil, Save, X, Calendar, Bell, Flag, RotateCcw, Trash2, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
@@ -546,7 +546,9 @@ export default function ProjectDetailPage() {
     onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ['seo-keywords', id] });
       qc.invalidateQueries({ queryKey: ['project-tasks', id] });
-      toast.success(`Imported ${data?.imported ?? 0} keywords successfully`);
+      toast.success(
+        `${data?.imported ?? 0} keyword${(data?.imported ?? 0) === 1 ? '' : 's'} uploaded — pending approval before they go live.`,
+      );
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Import failed.'),
   });
@@ -2565,19 +2567,24 @@ export default function ProjectDetailPage() {
                 </div>
               </div>
 
-              {/* Stats — remaining/used count only active (focus) keywords */}
+              {/* Stats — remaining/used count only live (approved), active (focus) keywords.
+                  Rows still awaiting upload approval are on the sheet but sit in their own
+                  Pending bucket until an approver decides the batch. */}
               {(() => {
                 const total = keywords.length;
-                const active = (keywords as any[]).filter((kw: any) => (kw.status || 'active') === 'active');
+                const pending = (keywords as any[]).filter((kw: any) => (kw.approvalStatus || 'approved') === 'pending');
+                const live = (keywords as any[]).filter((kw: any) => (kw.approvalStatus || 'approved') !== 'pending');
+                const active = live.filter((kw: any) => (kw.status || 'active') === 'active');
                 const used = active.filter((kw: any) => approvedKeywordIds.has(kw.id)).length;
                 const remaining = active.length - used;
-                const inactive = total - active.length;
+                const inactive = live.length - active.length;
                 const wordsGenerated = liveContent
                   .filter((cs: any) => cs.status === 'approved')
                   .reduce((sum: number, cs: any) => sum + (cs.wordCount || 0), 0);
                 const statCards = isSeoProject
                   ? [
                       { label: 'Total Keywords', value: total },
+                      ...(pending.length ? [{ label: 'Pending Review', value: pending.length }] : []),
                       { label: 'Active', value: active.length },
                       { label: 'Inactive', value: inactive },
                       { label: 'Used in Content', value: used },
@@ -2586,6 +2593,7 @@ export default function ProjectDetailPage() {
                     ]
                   : [
                       { label: 'Total Keywords', value: total },
+                      ...(pending.length ? [{ label: 'Pending Review', value: pending.length }] : []),
                       { label: 'Active', value: active.length },
                       { label: 'Inactive', value: inactive },
                     ];
@@ -2635,84 +2643,101 @@ export default function ProjectDetailPage() {
                     </>
                   )}
                 </div>
-                <div className="flex gap-2 flex-wrap">
-                  {canActOnProject && (
-                    <>
-                      <button
-                        onClick={() => {
-                          if (!newKeyword.trim()) return;
-                          addKeyword.mutate({
-                            primaryKeyword: newKeyword.trim(),
-                            secondaryKeywords: newKwExtra.secondaryKeywords || undefined,
-                            kd: newKwExtra.kd ? Number(newKwExtra.kd) : null,
-                            volume: newKwExtra.volume ? Number(newKwExtra.volume) : null,
-                            targetUrl: newKwExtra.targetUrl || undefined,
-                            targetLocation: newKwExtra.targetLocation || undefined,
-                            pageName: isSeoProject ? (newKwExtra.pageName || undefined) : undefined,
-                            assignedWriterId: isSeoProject ? (newKwExtra.assignedWriterId || undefined) : undefined,
-                          });
-                        }}
-                        disabled={addKeyword.isPending || !newKeyword.trim()}
-                        className="flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-3.5 py-2 rounded-lg"
-                      >
-                        <Plus className="w-4 h-4" /> Add Row
-                      </button>
-                      <button onClick={() => fileRef.current?.click()}
-                        className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3.5 py-2 rounded-lg">
-                        <Upload className="w-4 h-4" /> Import Excel
-                      </button>
-                      <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
-                        onChange={(e) => { if (e.target.files?.[0]) importKeywords.mutate(e.target.files[0]); e.target.value = ''; }} />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {canActOnProject && (
+                      <>
+                        <button
+                          onClick={() => {
+                            if (!newKeyword.trim()) return;
+                            addKeyword.mutate({
+                              primaryKeyword: newKeyword.trim(),
+                              secondaryKeywords: newKwExtra.secondaryKeywords || undefined,
+                              kd: newKwExtra.kd ? Number(newKwExtra.kd) : null,
+                              volume: newKwExtra.volume ? Number(newKwExtra.volume) : null,
+                              targetUrl: newKwExtra.targetUrl || undefined,
+                              targetLocation: newKwExtra.targetLocation || undefined,
+                              pageName: isSeoProject ? (newKwExtra.pageName || undefined) : undefined,
+                              assignedWriterId: isSeoProject ? (newKwExtra.assignedWriterId || undefined) : undefined,
+                            });
+                          }}
+                          disabled={addKeyword.isPending || !newKeyword.trim()}
+                          className="flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-3.5 py-2 rounded-lg"
+                        >
+                          <Plus className="w-4 h-4" /> Add Row
+                        </button>
+                        <button onClick={() => fileRef.current?.click()}
+                          className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3.5 py-2 rounded-lg">
+                          <Upload className="w-4 h-4" /> Import Excel
+                        </button>
+                        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+                          onChange={(e) => { if (e.target.files?.[0]) importKeywords.mutate(e.target.files[0]); e.target.value = ''; }} />
+                      </>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {isAdminUser && (
                       <button
                         type="button"
                         disabled={deletableKeywordIds.length === 0}
-                        title={deletableKeywordIds.length === 0 ? 'No keywords are eligible — every keyword is either assigned to a writer or has approved content.' : undefined}
+                        title={deletableKeywordIds.length === 0 ? 'No keywords are eligible — every keyword is either assigned to a writer or has approved content.' : 'Deactivate every eligible keyword on the sheet at once'}
                         onClick={() => setConfirmSeoDelete({ kind: 'keywords-sheet' })}
-                        className="flex items-center gap-1.5 border border-amber-200 hover:bg-amber-50 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed text-amber-700 text-sm font-medium px-3.5 py-2 rounded-lg"
+                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-white disabled:cursor-not-allowed whitespace-nowrap"
                       >
-                        <ToggleLeft className="w-4 h-4" /> Set sheet Inactive
+                        <ToggleLeft className="w-3.5 h-3.5" /> Deactivate all
                       </button>
-                      <button
-                        type="button"
-                        disabled={selectedKeywordIds.size === 0 || bulkActivateKeywords.isPending}
-                        title={selectedKeywordIds.size === 0 ? 'Check one or more keywords below first.' : undefined}
-                        onClick={() => bulkActivateKeywords.mutate([...selectedKeywordIds])}
-                        className="flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-3.5 py-2 rounded-lg"
-                      >
-                        <ToggleRight className="w-4 h-4" /> Set Active {selectedKeywordIds.size > 0 ? `(${selectedKeywordIds.size})` : ''}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={selectedKeywordIds.size === 0}
-                        title={selectedKeywordIds.size === 0 ? 'Check one or more keywords below first.' : undefined}
-                        onClick={() => setConfirmSeoDelete({
-                          kind: 'keywords-selected',
-                          count: selectedKeywordIds.size,
-                        })}
-                        className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-3.5 py-2 rounded-lg"
-                      >
-                        <ToggleLeft className="w-4 h-4" /> Set Inactive {selectedKeywordIds.size > 0 ? `(${selectedKeywordIds.size})` : ''}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={selectedKeywordIds.size === 0}
-                        title={selectedKeywordIds.size === 0 ? 'Check one or more keywords below first.' : 'Permanently deletes — this cannot be undone.'}
-                        onClick={() => setConfirmSeoDelete({
-                          kind: 'keywords-delete-selected',
-                          count: selectedKeywordIds.size,
-                        })}
-                        className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium px-3.5 py-2 rounded-lg"
-                      >
-                        <Trash2 className="w-4 h-4" /> Delete {selectedKeywordIds.size > 0 ? `(${selectedKeywordIds.size})` : ''}
-                      </button>
-                    </>
-                  )}
-                  <ShowInactiveToggle {...inactive.toggleProps} count={inactiveKeywordCount} />
+                    )}
+                    <ShowInactiveToggle {...inactive.toggleProps} count={inactiveKeywordCount} />
+                  </div>
                 </div>
+
+                {/* Bulk row actions — active/inactive/delete are admin-only (same
+                    boundary as the per-row controls below); only takes up space
+                    once something's actually checked. */}
+                {isAdminUser && selectedKeywordIds.size > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-brand-50 border border-brand-100 rounded-lg">
+                    <span className="text-xs font-semibold text-brand-800 mr-1">{selectedKeywordIds.size} selected</span>
+                    {/* One control instead of two separate Active/Inactive buttons —
+                        same select-to-act pattern as the per-row status dropdown. */}
+                    <select
+                      defaultValue=""
+                      disabled={bulkActivateKeywords.isPending}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'active') bulkActivateKeywords.mutate([...selectedKeywordIds]);
+                        if (val === 'inactive') setConfirmSeoDelete({ kind: 'keywords-selected', count: selectedKeywordIds.size });
+                        e.currentTarget.value = '';
+                      }}
+                      className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-600 disabled:opacity-60"
+                    >
+                      <option value="" disabled>Set status…</option>
+                      <option value="active">Set Active</option>
+                      <option value="inactive">Set Inactive</option>
+                    </select>
+                    <button
+                      type="button"
+                      title="Permanently deletes — this cannot be undone."
+                      onClick={() => setConfirmSeoDelete({
+                        kind: 'keywords-delete-selected',
+                        count: selectedKeywordIds.size,
+                      })}
+                      className="flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedKeywordIds(new Set())}
+                      className="text-xs text-gray-500 hover:text-gray-700 ml-auto px-2 py-1.5"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
               </div>
               {/* Compact keyword list — no horizontal scroll; secondary keywords truncated */}
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                {canActOnProject && keywords.length > 0 && (
+                {isAdminUser && keywords.length > 0 && (
                   <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 bg-gray-50/80">
                     <input
                       type="checkbox"
@@ -2751,7 +2776,7 @@ export default function ProjectDetailPage() {
                             isInactive ? inactiveRow(false) : 'hover:bg-gray-50/60',
                           )}
                         >
-                          {canActOnProject && (
+                          {isAdminUser && (
                             <input
                               type="checkbox"
                               checked={selectedKeywordIds.has(kw.id)}
@@ -2779,6 +2804,22 @@ export default function ProjectDetailPage() {
                                   {approvedKeywordIds.has(kw.id) ? 'Approved' : 'Assigned'}
                                 </span>
                               )}
+                              {kw.approvalStatus === 'pending' && (
+                                <span
+                                  className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                                  title="This upload is waiting on a teammate's approval before it's live"
+                                >
+                                  Pending upload review
+                                </span>
+                              )}
+                              {kw.approvalStatus === 'rejected' && (
+                                <span
+                                  className="text-[10px] font-medium text-red-700 bg-red-50 px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                                  title={kw.batch?.rejectionReason || 'This upload was rejected'}
+                                >
+                                  Upload rejected
+                                </span>
+                              )}
                             </div>
                             {secondary ? (
                               <SupportingKeywordsCell raw={kw.secondaryKeywords} previewCount={4} className="max-w-xl" />
@@ -2801,7 +2842,7 @@ export default function ProjectDetailPage() {
                             </div>
                           </div>
                           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
-                            {canActOnProject ? (
+                            {isAdminUser ? (
                               <select
                                 value={isInactive ? 'inactive' : 'active'}
                                 onChange={(e) => updateKeywordStatus.mutate({
@@ -2825,9 +2866,10 @@ export default function ProjectDetailPage() {
                             {isSeoProject && (canActOnProject ? (
                               <select
                                 value={kw.assignedWriterId || ''}
+                                disabled={kw.approvalStatus === 'pending'}
                                 onChange={(e) => assignKeywordWriter.mutate({ keywordId: kw.id, writerId: e.target.value })}
-                                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-600 bg-white max-w-[140px]"
-                                title={writers.length ? undefined : 'No users have the Content Writer role yet'}
+                                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-600 bg-white max-w-[140px] disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={kw.approvalStatus === 'pending' ? 'Waiting on upload approval before a writer can be assigned' : (writers.length ? undefined : 'No users have the Content Writer role yet')}
                               >
                                 <option value="">Unassigned</option>
                                 {writers.map((u: any) => (
@@ -2837,11 +2879,9 @@ export default function ProjectDetailPage() {
                             ) : (
                               <span className="text-xs text-gray-600 self-center">{kw.assignedWriter?.name || '—'}</span>
                             ))}
-                            {/* Backend allows the keyword's own submitter to delete it too
-                                (not just an admin) while it's still unassigned/unapproved —
-                                match that here so the button isn't shown to someone whose
-                                click would just 403. */}
-                            {!locked && canActOnProject && (isAdminUser || kw.createdBy === user?.id) && (
+                            {/* Delete is admin-only — same boundary as the status dropdown
+                                above and the bulk actions bar (SeoService.deleteKeyword). */}
+                            {!locked && isAdminUser && (
                               <button
                                 type="button"
                                 title="Delete"
@@ -3238,7 +3278,8 @@ export default function ProjectDetailPage() {
                   // would misattribute the work and pull it out of that person's queue.
                   // Admins/PMs keep full visibility since they may submit on anyone's
                   // behalf or need to see everything.
-                  const activeKeywords = (keywords as any[]).filter((kw: any) => (kw.status || 'active') === 'active');
+                  const activeKeywords = (keywords as any[]).filter((kw: any) =>
+                    (kw.status || 'active') === 'active' && (kw.approvalStatus || 'approved') === 'approved');
                   const assignedKeywords = canManageTeam
                     ? activeKeywords
                     : activeKeywords.filter((kw: any) => kw.assignedWriterId === user?.id);

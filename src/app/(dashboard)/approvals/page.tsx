@@ -18,7 +18,8 @@ import { cn, formatDate, toAbsoluteHttpUrl } from '@/lib/utils';
 // One inbox for every kind of approval in the app — task technical audits, task
 // reviews, the client requirement *emails* that don't leave the building until
 // an admin releases them, leave, contractor invoices, SEO content and blog
-// deliverables, quotes/agreements out with a client, and employee profiles.
+// deliverables, bulk keyword-sheet uploads, quotes/agreements out with a
+// client, and employee profiles.
 //
 // The page owns no approval rules of its own: `/api/approvals` fans out across
 // those sources and tells us, per row, whether this user may decide it
@@ -73,6 +74,7 @@ const TYPE_STYLE: Record<string, string> = {
   contractor_invoice: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   content_submission: 'bg-indigo-50 text-indigo-700 border-indigo-200',
   blog_task: 'bg-sky-50 text-sky-700 border-sky-200',
+  keyword_batch: 'bg-lime-50 text-lime-700 border-lime-200',
   customer_document: 'bg-rose-50 text-rose-700 border-rose-200',
   worker_profile: 'bg-orange-50 text-orange-700 border-orange-200',
 };

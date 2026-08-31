@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, CreditCard, CheckCircle, Send, Ban, Eye, Download, ExternalLink } from 'lucide-react';
+import { ArrowLeft, CreditCard, CheckCircle, Send, Ban, Eye, Download, ExternalLink, Pencil, Trash2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
@@ -44,9 +44,11 @@ const PAYMENT_METHODS = [
   { value: 'bank', label: 'Bank Transfer' },
   { value: 'wise', label: 'Wise' },
   { value: 'payoneer', label: 'Payoneer' },
-  { value: 'stripe', label: 'Stripe' },
   { value: 'payfast', label: 'PayFast' },
 ];
+
+type LineItem = { description: string; qty: string; unitPrice: string };
+const emptyLine = (): LineItem => ({ description: '', qty: '1', unitPrice: '' });
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = Object.fromEntries(
   PAYMENT_METHODS.map((m) => [m.value, m.label])
@@ -62,6 +64,11 @@ export default function PersonalInvoiceDetailPage() {
   const [paymentLinkUrl, setPaymentLinkUrl] = useState('');
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [allowPartialPayment, setAllowPartialPayment] = useState<boolean | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    contactId: '', companyId: '', currency: 'USD', issuedAt: '', dueAt: '', notes: '',
+  });
+  const [editLines, setEditLines] = useState<LineItem[]>([emptyLine()]);
 
   const { data: invoice, isLoading } = useQuery({
     queryKey: ['personal-invoice', id],
@@ -77,6 +84,11 @@ export default function PersonalInvoiceDetailPage() {
     queryKey: ['personal-invoice-companies'],
     queryFn: () => api.get('/personal-invoices/companies').then((r) => r.data),
     staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: contacts = [] } = useQuery<any[]>({
+    queryKey: ['personal-contacts'],
+    queryFn: () => api.get('/personal-contacts').then((r) => r.data || []),
   });
 
   const methodOptions = useMemo(() => {
@@ -100,14 +112,14 @@ export default function PersonalInvoiceDetailPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update status.'),
   });
 
-  const syncStripe = useMutation({
-    mutationFn: () => api.post(`/personal-invoices/${id}/sync-stripe`).then((r) => r.data),
-    onSuccess: async (d: any) => {
+  const updateInvoice = useMutation({
+    mutationFn: (data: any) => api.patch(`/personal-invoices/${id}`, data).then((r) => r.data),
+    onSuccess: async () => {
       await invalidateMany(qc, afterPersonalInvoiceChange(id, invoice?.contactId));
-      if (d?.status === 'paid') toast.success(d.message);
-      else toast.message(d?.message || 'No payment has cleared yet.');
+      setEditing(false);
+      toast.success('Invoice updated.');
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Could not check with Stripe.'),
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update invoice.'),
   });
 
   const recordPayment = useMutation({
@@ -161,6 +173,33 @@ export default function PersonalInvoiceDetailPage() {
   const currentPaymentLinkUrl = paymentLinkUrl || invoice.paymentLinkUrl || '';
   const currentCompanyId = companyId !== null ? companyId : (invoice.companyId || '');
   const currentAllowPartialPayment = allowPartialPayment !== null ? allowPartialPayment : !!invoice.allowPartialPayment;
+  const editLineTotal = editLines.reduce((s, l) => s + (parseFloat(l.qty) || 0) * (parseFloat(l.unitPrice) || 0), 0);
+
+  function startEdit() {
+    setEditForm({
+      contactId: invoice.contactId || '',
+      companyId: invoice.companyId || '',
+      currency: invoice.currency || 'USD',
+      issuedAt: invoice.issuedAt ? invoice.issuedAt.slice(0, 10) : '',
+      dueAt: invoice.dueAt ? invoice.dueAt.slice(0, 10) : '',
+      notes: invoice.notes || '',
+    });
+    setEditLines(
+      lines.length
+        ? lines.map((l: any) => ({ description: l.description, qty: String(l.qty), unitPrice: String(l.unitPrice) }))
+        : [emptyLine()],
+    );
+    setEditing(true);
+  }
+
+  function submitEdit() {
+    updateInvoice.mutate({
+      ...editForm,
+      lines: editLines
+        .filter((l) => l.description && l.unitPrice)
+        .map((l) => ({ description: l.description, qty: parseFloat(l.qty) || 1, unitPrice: parseFloat(l.unitPrice) })),
+    });
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -183,8 +222,117 @@ export default function PersonalInvoiceDetailPage() {
               Partial payments allowed
             </span>
           )}
+          {invoice.status === 'draft' && !editing && (
+            <button
+              onClick={startEdit}
+              className="ml-auto flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-200"
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit invoice
+            </button>
+          )}
         </div>
 
+        {editing && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+            <h3 className="text-sm font-semibold text-gray-900">Edit Invoice</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">Contact</label>
+                <select value={editForm.contactId} onChange={(e) => setEditForm({ ...editForm, contactId: e.target.value })}
+                  className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600">
+                  <option value="">Select contact…</option>
+                  {contacts.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">Letterhead / company</label>
+                <select value={editForm.companyId} onChange={(e) => setEditForm({ ...editForm, companyId: e.target.value })}
+                  className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600">
+                  <option value="">No company branding</option>
+                  {companies.map((c: any) => <option key={c.id} value={c.id}>{c.legalName}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">Currency</label>
+                <select value={editForm.currency} onChange={(e) => setEditForm({ ...editForm, currency: e.target.value })}
+                  className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600">
+                  <option>USD</option><option>EUR</option><option>GBP</option><option>PKR</option><option>AED</option>
+                </select>
+              </div>
+              <div />
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">Issue Date</label>
+                <input type="date" value={editForm.issuedAt} onChange={(e) => setEditForm({ ...editForm, issuedAt: e.target.value })}
+                  className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">Due Date</label>
+                <input type="date" value={editForm.dueAt} onChange={(e) => setEditForm({ ...editForm, dueAt: e.target.value })}
+                  className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-2">Line Items</label>
+              <div className="space-y-2">
+                <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 px-1">
+                  <span className="col-span-6">Description</span>
+                  <span className="col-span-2">Qty</span>
+                  <span className="col-span-3">Unit Price</span>
+                  <span className="col-span-1" />
+                </div>
+                {editLines.map((line, i) => (
+                  <div key={i} className="grid grid-cols-12 gap-2">
+                    <input className="col-span-6 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                      placeholder="Service description" value={line.description}
+                      onChange={(e) => { const n = [...editLines]; n[i] = { ...n[i], description: e.target.value }; setEditLines(n); }} />
+                    <input className="col-span-2 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                      type="number" min="1" placeholder="1" value={line.qty}
+                      onChange={(e) => { const n = [...editLines]; n[i] = { ...n[i], qty: e.target.value }; setEditLines(n); }} />
+                    <input className="col-span-3 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                      type="number" min="0" step="0.01" placeholder="0.00" value={line.unitPrice}
+                      onChange={(e) => { const n = [...editLines]; n[i] = { ...n[i], unitPrice: e.target.value }; setEditLines(n); }} />
+                    <button onClick={() => setEditLines(editLines.filter((_, j) => j !== i))} disabled={editLines.length === 1}
+                      className="col-span-1 flex items-center justify-center text-gray-400 hover:text-red-500 disabled:opacity-30">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                <button onClick={() => setEditLines([...editLines, emptyLine()])}
+                  className="flex items-center gap-1 text-xs text-brand-700 hover:text-brand-800 font-medium mt-1">
+                  <Plus className="w-3.5 h-3.5" /> Add line
+                </button>
+              </div>
+              <div className="flex justify-end mt-3 text-sm font-semibold text-gray-900">
+                Total: {formatCurrency(editLineTotal, editForm.currency)}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Notes</label>
+              <textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} rows={2}
+                className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 resize-none" />
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={submitEdit}
+                disabled={!editForm.contactId || editLines.every((l) => !l.description) || updateInvoice.isPending}
+                className="bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg">
+                {updateInvoice.isPending ? 'Saving…' : 'Save changes'}
+              </button>
+              <button onClick={() => setEditing(false)}
+                className="text-gray-600 hover:text-gray-900 text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-100">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!editing && (
+        <>
         <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
           <TimelineSteps steps={invoiceTimelineSteps(invoice)} />
         </div>
@@ -415,17 +563,6 @@ export default function PersonalInvoiceDetailPage() {
                     </button>
                   ) : null}
 
-                  {!showPaymentForm && invoice.stripeInvoiceId && (
-                    <button
-                      onClick={() => syncStripe.mutate()}
-                      disabled={syncStripe.isPending}
-                      className="w-full flex items-center justify-center gap-2 text-sm font-medium text-gray-700 border border-gray-200 hover:bg-gray-50 disabled:opacity-60 py-2 rounded-lg transition-colors"
-                    >
-                      <CreditCard className="w-4 h-4" />
-                      {syncStripe.isPending ? 'Checking with Stripe…' : 'Check card payment status'}
-                    </button>
-                  )}
-
                   {showPaymentForm && (
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 gap-3">
@@ -505,6 +642,8 @@ export default function PersonalInvoiceDetailPage() {
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

@@ -41,7 +41,7 @@ export default function ShowInactiveToggle({
       )}
     >
       {checked ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-      Show inactive
+      {checked ? 'Hide inactive' : 'Show inactive'}
       {!checked && !!count && (
         <span className="ml-0.5 rounded-full bg-gray-200 px-1.5 py-0.5 text-[10px] font-semibold text-gray-600">
           {count}
