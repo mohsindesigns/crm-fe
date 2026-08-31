@@ -1392,6 +1392,14 @@ export default function ProjectDetailPage() {
   const currentStageIdx = stages.findIndex((s: any) => s.key === project.currentStageKey);
   const currentStage = stages[currentStageIdx] as any;
   const isApprovalStage = currentStage?.stageType === 'approval';
+  // Stages an admin hid from the timeline (Workflows tab → "In Timeline") are
+  // dropped from the pill row and the completion count, but everything else
+  // (Stage Actions panel, ownerRoleSlot gating) still reads the full `stages`
+  // list above — hiding a stage never changes who can act on it.
+  const visibleStages = stages.filter((s: any) => s.showInTimeline !== false);
+  const visibleCurrentIdx = currentStage
+    ? visibleStages.filter((s: any) => s.orderIndex <= currentStage.orderIndex).length - 1
+    : -1;
 
   // Unique role slots from the template stages, plus automation-only role slots
   // (Blog Writer) for recurring SEO projects — they don't own a workflow stage,
@@ -1736,12 +1744,19 @@ export default function ProjectDetailPage() {
               </div>
             </div>
             <div className="mt-5 flex items-start gap-1 overflow-x-auto pb-1">
-              {stages.map((stage: any, idx: number) => {
+              {visibleStages.map((stage: any, idx: number) => {
+                // Compared by orderIndex, not array position — visibleStages
+                // can skip entries that stages (the full list) doesn't, so
+                // indices between the two no longer line up.
                 // Once the project is completed, its final stage is done, not "in
                 // progress" — without this, the last pill kept the dark active/clock
                 // styling forever even though there's nothing left to work on.
-                const done = idx < currentStageIdx || (idx === currentStageIdx && project.status === 'completed');
-                const current = idx === currentStageIdx && project.status !== 'completed';
+                const done = stage.orderIndex < currentStage?.orderIndex
+                  || (stage.orderIndex === currentStage?.orderIndex && project.status === 'completed');
+                // No pill lights up as "current" while the project sits on a hidden
+                // stage (auto-advancing, or a hidden approval stage awaiting a
+                // manual decision) — expected, not a bug.
+                const current = stage.orderIndex === currentStage?.orderIndex && project.status !== 'completed';
                 // Timestamp this project entered this stage — the most recent event
                 // whose toStageKey matches (handles rewinds re-entering a stage).
                 const enteredAt = [...events].reverse().find((ev: any) => ev.toStageKey === stage.key)?.createdAt;
@@ -1764,7 +1779,7 @@ export default function ProjectDetailPage() {
                         <span className="text-[10px] text-gray-400 whitespace-nowrap">{formatDate(enteredAt, 'MMM d, h:mm a')}</span>
                       )}
                     </div>
-                    {idx < stages.length - 1 && <ChevronRight className="w-3.5 h-3.5 text-gray-300 shrink-0 mt-1.5" />}
+                    {idx < visibleStages.length - 1 && <ChevronRight className="w-3.5 h-3.5 text-gray-300 shrink-0 mt-1.5" />}
                   </div>
                 );
               })}
@@ -4589,8 +4604,8 @@ export default function ProjectDetailPage() {
         </div>
         <ProjectStatusPanel
           project={project}
-          stages={stages}
-          currentStageIdx={currentStageIdx}
+          stages={visibleStages}
+          currentStageIdx={visibleCurrentIdx}
           setTab={setTab}
         />
         </div>

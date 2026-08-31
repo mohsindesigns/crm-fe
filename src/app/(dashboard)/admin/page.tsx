@@ -571,6 +571,7 @@ function ServicesTab() {
 type StageRow = {
   key: string; name: string; ownerRoleSlot: string;
   stageType: string; advanceRule: string; isTerminal: boolean; requiresArtifact: boolean;
+  showInTimeline: boolean;
 };
 
 type TransitionRow = { fromStageKey: string; action: string; toStageKey: string; reasonCategory: string };
@@ -646,6 +647,7 @@ function WorkflowsTab() {
       key: s.key, name: s.name, ownerRoleSlot: s.ownerRoleSlot || '',
       stageType: s.stageType || 'work', advanceRule: s.advanceRule || 'single_action',
       isTerminal: s.isTerminal || false, requiresArtifact: s.requiresArtifact || false,
+      showInTimeline: s.showInTimeline !== false,
     })));
     setTransEditor((tmpl.transitions || []).map((tr: any) => ({
       fromStageKey: tr.fromStageKey, action: tr.action,
@@ -655,7 +657,7 @@ function WorkflowsTab() {
   }
 
   function addStage() {
-    setStageEditor([...stageEditor, { key: '', name: '', ownerRoleSlot: '', stageType: 'work', advanceRule: 'single_action', isTerminal: false, requiresArtifact: false }]);
+    setStageEditor([...stageEditor, { key: '', name: '', ownerRoleSlot: '', stageType: 'work', advanceRule: 'single_action', isTerminal: false, requiresArtifact: false, showInTimeline: true }]);
   }
 
   function removeStage(i: number) {
@@ -854,7 +856,7 @@ function WorkflowsTab() {
                         className={`${inp} col-span-2`}>
                         {ADVANCE_RULES.map((r) => <option key={r} value={r}>{titleCase(r)}</option>)}
                       </select>
-                      <div className="col-span-2 flex items-center gap-3">
+                      <div className="col-span-2 flex items-center gap-3 flex-wrap">
                         <label className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer">
                           <input type="checkbox" checked={s.isTerminal}
                             onChange={(e) => updateStage(i, 'isTerminal', e.target.checked)}
@@ -866,6 +868,19 @@ function WorkflowsTab() {
                             onChange={(e) => updateStage(i, 'requiresArtifact', e.target.checked)}
                             className="w-3.5 h-3.5 rounded accent-brand-700" />
                           Artifact
+                        </label>
+                        <label
+                          className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer"
+                          title={
+                            s.stageType === 'approval'
+                              ? 'Hides this stage\'s pill from the project timeline. It still needs a manual Approve/Reject — that decision is never automated.'
+                              : 'Hides this stage\'s pill from the project timeline and auto-advances the project past it as soon as its work is done, instead of waiting for a manual Mark Complete click. The work still happens through its own tab.'
+                          }
+                        >
+                          <input type="checkbox" checked={s.showInTimeline}
+                            onChange={(e) => updateStage(i, 'showInTimeline', e.target.checked)}
+                            className="w-3.5 h-3.5 rounded accent-brand-700" />
+                          In Timeline
                         </label>
                       </div>
                       <div className="col-span-1 flex items-center gap-1">
