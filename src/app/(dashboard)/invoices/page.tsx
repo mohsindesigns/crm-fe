@@ -3,24 +3,17 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, Search, Plus, Trash2, Filter, Ban, ChevronRight } from 'lucide-react';
+import { Search, Plus, Filter, Ban } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
-import Pagination from '@/components/Pagination';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import { cn, formatDate, formatCurrency } from '@/lib/utils';
+import InvoiceTable from '@/components/invoices/InvoiceTable';
+import InvoiceGroupedView from '@/components/invoices/InvoiceGroupedView';
+import LineItemsEditor from '@/components/invoices/LineItemsEditor';
+import { STATUS_OPTS, VOIDABLE, emptyLine, type LineItem } from '@/components/invoices/invoiceShared';
+import { cn, formatCurrency } from '@/lib/utils';
 import { invalidateMany, afterInvoiceChange } from '@/lib/queryInvalidation';
-
-const STATUS_OPTS = [
-  { label: 'All statuses',    value: ''                },
-  { label: 'Draft',           value: 'draft'           },
-  { label: 'Sent',            value: 'sent'            },
-  { label: 'Paid',            value: 'paid'            },
-  { label: 'Overdue',         value: 'overdue'         },
-  { label: 'Payment Review',  value: 'payment_review'  },
-  { label: 'Void',            value: 'void'            },
-];
 
 /**
  * Payment rail — which of the two number series the invoice was issued on.
@@ -38,50 +31,7 @@ const RAIL_OPTS = [
   { label: 'Manual (non-Stripe)', value: 'manual' },
 ];
 
-const STATUS_COLORS: Record<string, string> = {
-  draft:          'bg-gray-100  text-gray-600',
-  sent:           'bg-blue-100  text-blue-700',
-  paid:           'bg-brand-100 text-brand-800',
-  overdue:        'bg-red-100   text-red-700',
-  payment_review: 'bg-amber-100 text-amber-700',
-  void:           'bg-gray-100  text-gray-400',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  payment_review: 'Payment Review',
-};
-
-const VOIDABLE = new Set(['draft', 'sent', 'overdue', 'payment_review']);
-
-type LineItem = { description: string; qty: string; unitPrice: string };
-const emptyLine = (): LineItem => ({ description: '', qty: '1', unitPrice: '' });
-
 const LIMIT = 25;
-
-function SkeletonRows() {
-  return (
-    <>
-      {[...Array(8)].map((_, i) => (
-        <tr key={i} className="animate-pulse border-b border-gray-50">
-          <td className="px-5 py-3.5">
-            <div className="w-4 h-4 bg-gray-100 rounded" />
-          </td>
-          <td className="px-5 py-3.5">
-            <div className="flex items-center gap-3">
-              <div className="w-4 h-4 bg-gray-100 rounded shrink-0" />
-              <div className="h-4 bg-gray-100 rounded w-24 font-mono" />
-            </div>
-          </td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-32" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16 ml-auto" /></td>
-          <td className="px-5 py-3.5"><div className="h-5 bg-gray-100 rounded-full w-14" /></td>
-        </tr>
-      ))}
-    </>
-  );
-}
 
 export default function InvoicesPage() {
   const router = useRouter();
@@ -283,8 +233,6 @@ export default function InvoicesPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to void invoices.'),
   });
 
-  const lineTotal = lines.reduce((s, l) => s + (parseFloat(l.qty) || 0) * (parseFloat(l.unitPrice) || 0), 0);
-
   function handleSubmit() {
     createInvoice.mutate({
       ...form,
@@ -445,41 +393,7 @@ export default function InvoicesPage() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-2">Line Items</label>
-              <div className="space-y-2">
-                <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 px-1">
-                  <span className="col-span-6">Description</span>
-                  <span className="col-span-2">Qty</span>
-                  <span className="col-span-3">Unit Price</span>
-                  <span className="col-span-1" />
-                </div>
-                {lines.map((line, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-2">
-                    <input className="col-span-6 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-                      placeholder="Service description" value={line.description}
-                      onChange={(e) => { const n = [...lines]; n[i] = { ...n[i], description: e.target.value }; setLines(n); }} />
-                    <input className="col-span-2 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-                      type="number" min="1" placeholder="1" value={line.qty}
-                      onChange={(e) => { const n = [...lines]; n[i] = { ...n[i], qty: e.target.value }; setLines(n); }} />
-                    <input className="col-span-3 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-                      type="number" min="0" step="0.01" placeholder="0.00" value={line.unitPrice}
-                      onChange={(e) => { const n = [...lines]; n[i] = { ...n[i], unitPrice: e.target.value }; setLines(n); }} />
-                    <button onClick={() => setLines(lines.filter((_, j) => j !== i))} disabled={lines.length === 1}
-                      className="col-span-1 flex items-center justify-center text-gray-400 hover:text-red-500 disabled:opacity-30">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-                <button onClick={() => setLines([...lines, emptyLine()])}
-                  className="flex items-center gap-1 text-xs text-brand-700 hover:text-brand-800 font-medium mt-1">
-                  <Plus className="w-3.5 h-3.5" /> Add line
-                </button>
-              </div>
-              <div className="flex justify-end mt-3 text-sm font-semibold text-gray-900">
-                Total: {formatCurrency(lineTotal, form.currency)}
-              </div>
-            </div>
+            <LineItemsEditor lines={lines} setLines={setLines} currency={form.currency} />
 
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1.5">Notes</label>
@@ -543,175 +457,33 @@ export default function InvoicesPage() {
         </div>
 
         {viewMode === 'client' ? (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            {groupedLoading ? (
-              <p className="px-5 py-12 text-center text-sm text-gray-400">Loading…</p>
-            ) : clientGroups.length === 0 ? (
-              <p className="px-5 py-12 text-center text-sm text-gray-400">No invoices found.</p>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {clientGroups.map((g) => {
-                  const open = expandedClients.has(g.id);
-                  return (
-                    <div key={g.id}>
-                      <button
-                        type="button"
-                        onClick={() => setExpandedClients((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(g.id)) next.delete(g.id); else next.add(g.id);
-                          return next;
-                        })}
-                        className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-gray-50/80 transition-colors"
-                      >
-                        <ChevronRight className={cn('w-4 h-4 text-gray-400 shrink-0 transition-transform', open && 'rotate-90')} />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold text-gray-900 truncate">{g.name}</p>
-                          <p className="text-xs text-gray-400">
-                            {g.invoices.length} {g.invoices.length === 1 ? 'invoice' : 'invoices'}
-                          </p>
-                        </div>
-                        <div className="hidden sm:flex items-center gap-6 shrink-0 text-right">
-                          <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Billed</p>
-                            <p className="text-sm font-medium text-gray-900 tabular-nums">
-                              {formatCurrency(g.total, g.currency)}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Outstanding</p>
-                            <p className={cn(
-                              'text-sm font-semibold tabular-nums',
-                              g.outstanding > 0 ? 'text-red-700' : 'text-gray-400',
-                            )}>
-                              {formatCurrency(g.outstanding, g.currency)}
-                            </p>
-                          </div>
-                        </div>
-                        {g.overdue > 0 && (
-                          <span className="shrink-0 text-[11px] font-semibold text-red-700 bg-red-50 border border-red-100 rounded px-2 py-0.5">
-                            {formatCurrency(g.overdue, g.currency)} overdue
-                          </span>
-                        )}
-                      </button>
-
-                      {open && (
-                        <div className="bg-gray-50/60 border-t border-gray-100 divide-y divide-gray-100">
-                          {g.invoices.map((inv: any) => (
-                            <button
-                              key={inv.id}
-                              type="button"
-                              onClick={() => router.push(`/invoices/${inv.id}`)}
-                              className="w-full flex items-center gap-4 pl-12 pr-5 py-2.5 text-left hover:bg-white transition-colors"
-                            >
-                              <span className="font-mono text-xs text-gray-700 w-28 shrink-0 truncate">{inv.number}</span>
-                              <span className="text-xs text-gray-500 w-24 shrink-0">
-                                {inv.issuedAt ? formatDate(inv.issuedAt) : '—'}
-                              </span>
-                              <span className="text-xs text-gray-500 w-24 shrink-0 hidden sm:block">
-                                {inv.dueAt ? formatDate(inv.dueAt) : '—'}
-                              </span>
-                              <span className="flex-1 text-right text-sm font-medium text-gray-900 tabular-nums">
-                                {formatCurrency(inv.total, inv.currency)}
-                              </span>
-                              <span className={cn(
-                                'shrink-0 px-2 py-0.5 text-[11px] font-medium rounded-full w-24 text-center',
-                                STATUS_COLORS[inv.status] || 'bg-gray-100 text-gray-600',
-                              )}>
-                                {STATUS_LABELS[inv.status] || inv.status}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <InvoiceGroupedView
+            groups={clientGroups}
+            loading={groupedLoading}
+            expandedIds={expandedClients}
+            onToggleExpand={(id) => setExpandedClients((prev) => {
+              const next = new Set(prev);
+              if (next.has(id)) next.delete(id); else next.add(id);
+              return next;
+            })}
+            onInvoiceClick={(inv) => router.push(`/invoices/${inv.id}`)}
+          />
         ) : (
-        <>
-        {/* ── Table ── */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-160">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/50">
-                <th className="w-10 px-5 py-3.5">
-                  <input
-                    type="checkbox"
-                    checked={allVoidableSelected}
-                    disabled={!voidableIds.length}
-                    onChange={toggleSelectAll}
-                    aria-label="Select all voidable invoices on this page"
-                    className="w-3.5 h-3.5 rounded accent-brand-700 disabled:opacity-40"
-                  />
-                </th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Invoice</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Issued</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Due</th>
-                <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {isLoading ? (
-                <SkeletonRows />
-              ) : invoices.length === 0 ? (
-                <tr><td colSpan={7} className="px-5 py-12 text-center text-sm text-gray-400">No invoices found.</td></tr>
-              ) : (
-                invoices.map((inv: any) => {
-                  const voidable = VOIDABLE.has(inv.status);
-                  const selected = selectedIds.has(inv.id);
-                  return (
-                    <tr
-                      key={inv.id}
-                      className={cn(
-                        'hover:bg-gray-50 cursor-pointer transition-colors',
-                        selected && 'bg-brand-50/60 hover:bg-brand-50',
-                      )}
-                      onClick={() => router.push(`/invoices/${inv.id}`)}
-                    >
-                      <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          disabled={!voidable}
-                          onChange={() => toggleSelect(inv.id, voidable)}
-                          aria-label={`Select ${inv.number}`}
-                          title={voidable ? undefined : 'Paid or void invoices cannot be selected'}
-                          className="w-3.5 h-3.5 rounded accent-brand-700 disabled:opacity-30"
-                        />
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-3">
-                          <FileText className="w-4 h-4 text-gray-400 shrink-0" />
-                          <span className="text-sm font-medium text-gray-900 font-mono">{inv.number}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{inv.client?.name || '—'}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{inv.issuedAt ? formatDate(inv.issuedAt) : '—'}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{inv.dueAt ? formatDate(inv.dueAt) : '—'}</td>
-                      <td className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
-                        {formatCurrency(inv.total, inv.currency)}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', STATUS_COLORS[inv.status] || 'bg-gray-100 text-gray-600')}>
-                          {STATUS_LABELS[inv.status] || inv.status}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-          </div>
-
-          <Pagination page={page} totalPages={totalPages} total={total} limit={LIMIT} onPageChange={setPage} />
-        </div>
-        </>
+          <InvoiceTable
+            invoices={invoices}
+            isLoading={isLoading}
+            entityLabel="Client"
+            getEntityName={(inv) => inv.client?.name || '—'}
+            onRowClick={(inv) => router.push(`/invoices/${inv.id}`)}
+            selectedIds={selectedIds}
+            toggleSelect={toggleSelect}
+            toggleSelectAll={toggleSelectAll}
+            page={page}
+            totalPages={totalPages}
+            total={total}
+            limit={LIMIT}
+            onPageChange={setPage}
+          />
         )}
 
       </div>

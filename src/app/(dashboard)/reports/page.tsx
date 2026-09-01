@@ -8,6 +8,8 @@ import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import Avatar from '@/components/Avatar';
 import { cn } from '@/lib/utils';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import BarChartCard from '@/components/charts/BarChartCard';
 
 function todayStr() {
   const d = new Date();
@@ -42,8 +44,8 @@ function SkeletonRows() {
   return (
     <>
       {[...Array(6)].map((_, i) => (
-        <tr key={i} className="animate-pulse border-b border-gray-50">
-          <td className="px-5 py-3.5">
+        <TableRow key={i} className="animate-pulse border-b border-gray-50">
+          <TableCell className="px-5 py-3.5">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-gray-100 shrink-0" />
               <div className="space-y-1.5">
@@ -51,10 +53,10 @@ function SkeletonRows() {
                 <div className="h-3 bg-gray-100 rounded w-24" />
               </div>
             </div>
-          </td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-40" /></td>
-        </tr>
+          </TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-40" /></TableCell>
+        </TableRow>
       ))}
     </>
   );
@@ -88,6 +90,11 @@ export default function ReportsMembersPage() {
   const roles = (rolesRaw || []).filter((r: any) => r.key !== 'client');
 
   const members: any[] = data?.members || [];
+
+  const tasksCompletedChartData = members
+    .map((m) => ({ label: m.name, value: m.tasksCompleted }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 10);
 
   return (
     <div className="flex flex-col h-full">
@@ -159,65 +166,68 @@ export default function ReportsMembersPage() {
           })}
         </div>
 
+        {/* ── Tasks completed chart ── */}
+        {!isLoading && (
+          <BarChartCard title="Tasks Completed — Top Members" data={tasksCompletedChartData} />
+        )}
+
         {/* ── Table ── */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-180">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/50">
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Member</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Role</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Activity in range</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Open tasks</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {isLoading ? (
-                  <SkeletonRows />
-                ) : members.length === 0 ? (
-                  <tr><td colSpan={4} className="px-5 py-12 text-center text-sm text-gray-400">No members found.</td></tr>
-                ) : (
-                  members.map((m: any) => (
-                    <tr
-                      key={m.id}
-                      className="hover:bg-gray-50 transition-colors cursor-pointer"
-                      onClick={() => router.push(`/reports/${m.id}?from=${from}&to=${to}`)}
-                    >
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-3">
-                          <Avatar src={m.avatarUrl} name={m.name} size="sm" />
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{m.name}</p>
-                            <p className="text-xs text-gray-400">{m.email}</p>
-                          </div>
+          <Table className="w-full min-w-180">
+            <TableHeader>
+              <TableRow className="border-b border-gray-200 bg-gray-100">
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Member</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Role</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Activity in range</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Open tasks</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-50">
+              {isLoading ? (
+                <SkeletonRows />
+              ) : members.length === 0 ? (
+                <TableRow><TableCell colSpan={4} className="px-5 py-12 text-center text-sm text-gray-400">No members found.</TableCell></TableRow>
+              ) : (
+                members.map((m: any) => (
+                  <TableRow
+                    key={m.id}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => router.push(`/reports/${m.id}?from=${from}&to=${to}`)}
+                  >
+                    <TableCell className="px-5 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <Avatar src={m.avatarUrl} name={m.name} size="sm" />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{m.name}</p>
+                          <p className="text-xs text-gray-400">{m.email}</p>
                         </div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.role?.color || '#94a3b8' }} />
-                          <span className="text-sm text-gray-600">{m.role?.name || '—'}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-4 flex-wrap">
-                          <StatPill icon={CheckCircle2} value={m.tasksCompleted} label="Tasks completed" />
-                          <StatPill icon={FileText} value={m.contentSubmitted} label="Content submitted" />
-                          <StatPill icon={Link2} value={m.backlinksAdded} label="Backlinks added" />
-                          <StatPill icon={KeyRound} value={m.keywordsAssigned} label="Keywords assigned" />
-                        </div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-1.5 text-sm text-gray-600">
-                          <ListTodo className="w-3.5 h-3.5 text-gray-400" />
-                          {m.tasksOpen}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.role?.color || '#94a3b8' }} />
+                        <span className="text-sm text-gray-600">{m.role?.name || '—'}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5">
+                      <div className="flex items-center gap-4 flex-wrap">
+                        <StatPill icon={CheckCircle2} value={m.tasksCompleted} label="Tasks completed" />
+                        <StatPill icon={FileText} value={m.contentSubmitted} label="Content submitted" />
+                        <StatPill icon={Link2} value={m.backlinksAdded} label="Backlinks added" />
+                        <StatPill icon={KeyRound} value={m.keywordsAssigned} label="Keywords assigned" />
+                      </div>
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5">
+                      <div className="flex items-center gap-1.5 text-sm text-gray-600">
+                        <ListTodo className="w-3.5 h-3.5 text-gray-400" />
+                        {m.tasksOpen}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
 
       </div>

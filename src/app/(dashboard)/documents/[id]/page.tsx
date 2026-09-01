@@ -13,6 +13,7 @@ import { invalidateMany, afterDocumentChange } from '@/lib/queryInvalidation';
 import { DOC_STATUS_COLORS } from '../page';
 import RichTextEditor from '@/components/RichTextEditor';
 import { TimelineSteps, documentTimelineSteps } from '@/components/TimelineSteps';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 const EDITABLE_STATUSES = ['draft', 'rejected', 'expired'];
 // Quick-insert wording for the "Terms & Scope of Work" field on agreements/proposals —
@@ -1128,28 +1129,26 @@ export default function DocumentDetailPage() {
                 <div className="px-5 py-3.5 border-b border-gray-100">
                   <h3 className="text-sm font-semibold text-gray-900">Line Items</h3>
                 </div>
-                <div className="overflow-x-auto">
-                <table className="w-full min-w-140">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Description</th>
-                      <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Qty</th>
-                      <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Unit Price</th>
-                      <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
+                <Table className="w-full min-w-140">
+                  <TableHeader>
+                    <TableRow className="border-b border-gray-100">
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Description</TableHead>
+                      <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Qty</TableHead>
+                      <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Unit Price</TableHead>
+                      <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-gray-100">
                     {doc.lineItems.map((l: any, i: number) => (
-                      <tr key={i} className="hover:bg-gray-50">
-                        <td className="px-5 py-3 text-sm text-gray-900">{l.description}</td>
-                        <td className="px-5 py-3 text-sm text-gray-600 text-right">{l.qty}</td>
-                        <td className="px-5 py-3 text-sm text-gray-600 text-right font-mono">{formatCurrency(l.unitPrice, doc.currency)}</td>
-                        <td className="px-5 py-3 text-sm font-medium text-gray-900 text-right font-mono">{formatCurrency(l.qty * l.unitPrice, doc.currency)}</td>
-                      </tr>
+                      <TableRow key={i} className="hover:bg-gray-50">
+                        <TableCell className="px-5 py-3 text-sm text-gray-900">{l.description}</TableCell>
+                        <TableCell className="px-5 py-3 text-sm text-gray-600 text-right">{l.qty}</TableCell>
+                        <TableCell className="px-5 py-3 text-sm text-gray-600 text-right font-mono">{formatCurrency(l.unitPrice, doc.currency)}</TableCell>
+                        <TableCell className="px-5 py-3 text-sm font-medium text-gray-900 text-right font-mono">{formatCurrency(l.qty * l.unitPrice, doc.currency)}</TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
-                </div>
+                  </TableBody>
+                </Table>
               </div>
             )}
 

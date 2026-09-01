@@ -19,6 +19,8 @@ import ShowInactiveToggle, { useShowInactive } from '@/components/ShowInactiveTo
 import { cn, formatDate, formatPeriod, generatePassword, downloadFile, uploadErrorMessage, titleCase, inactiveRow } from '@/lib/utils';
 import AttendanceStatusBadges from '@/components/AttendanceStatusBadges';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 const GENERATABLE_DOCS = [
   { type: 'appointment_letter', label: 'Appointment Letter' },
@@ -735,12 +737,9 @@ export default function WorkerDetailPage() {
         onCancel={() => setDeleteDocId(null)}
       />
       {declineDocTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-            onClick={() => { setDeclineDocTarget(null); setDeclineDocReason(''); }}
-          />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+        <Dialog open onOpenChange={(open) => { if (!open) { setDeclineDocTarget(null); setDeclineDocReason(''); } }}>
+          <DialogContent className="max-w-md sm:max-w-md rounded-2xl">
+            <DialogTitle className="sr-only">Decline document request</DialogTitle>
             <div>
               <h3 className="text-sm font-semibold text-gray-900">Decline document request</h3>
               <p className="text-xs text-gray-500 mt-1">
@@ -778,8 +777,8 @@ export default function WorkerDetailPage() {
                 {rejectDocRequest.isPending ? 'Declining…' : 'Decline request'}
               </button>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
       {cropSrc && (
         <ProfilePhotoCropper
@@ -1254,44 +1253,44 @@ export default function WorkerDetailPage() {
                   <h3 className="text-sm font-semibold text-gray-900">Breakdown</h3>
                   <p className="text-xs text-gray-500 mt-0.5">Full-month figures — an actual payroll run prorates these by attendance and calendar days.</p>
                 </div>
-                <table className="w-full">
-                  <tbody className="divide-y divide-gray-100">
-                    <tr>
-                      <td className="px-5 py-3 text-sm text-gray-600">Basic Salary</td>
-                      <td className="px-5 py-3 text-sm font-medium text-gray-900 text-right tabular-nums">{fmt(basic)}</td>
-                    </tr>
-                    <tr>
-                      <td className="px-5 py-3 text-sm text-gray-600">
+                <Table className="w-full">
+                  <TableBody className="divide-y divide-gray-100">
+                    <TableRow>
+                      <TableCell className="px-5 py-3 text-sm text-gray-600">Basic Salary</TableCell>
+                      <TableCell className="px-5 py-3 text-sm font-medium text-gray-900 text-right tabular-nums">{fmt(basic)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="px-5 py-3 text-sm text-gray-600">
                         Medical Allowance
                         {taxableExcess > 0 && (
                           <span className="block text-[11px] text-amber-600">
                             {fmt(exemptMedical)} exempt + {fmt(taxableExcess)} taxable (exceeds {capPercent}% cap)
                           </span>
                         )}
-                      </td>
-                      <td className="px-5 py-3 text-sm font-medium text-gray-900 text-right tabular-nums">{fmt(medical)}</td>
-                    </tr>
+                      </TableCell>
+                      <TableCell className="px-5 py-3 text-sm font-medium text-gray-900 text-right tabular-nums">{fmt(medical)}</TableCell>
+                    </TableRow>
                     {validComponents.map((c) => (
-                      <tr key={c.id}>
-                        <td className="px-5 py-3 text-sm text-gray-600">
+                      <TableRow key={c.id}>
+                        <TableCell className="px-5 py-3 text-sm text-gray-600">
                           {c.name}
                           <span className={cn('block text-[11px]', c.taxable ? 'text-gray-400' : 'text-brand-600')}>
                             {c.taxable ? 'taxable' : 'non-taxable'}
                           </span>
-                        </td>
-                        <td className="px-5 py-3 text-sm font-medium text-gray-900 text-right tabular-nums">{fmt(Number(c.amount))}</td>
-                      </tr>
+                        </TableCell>
+                        <TableCell className="px-5 py-3 text-sm font-medium text-gray-900 text-right tabular-nums">{fmt(Number(c.amount))}</TableCell>
+                      </TableRow>
                     ))}
-                    <tr className="bg-gray-50">
-                      <td className="px-5 py-3 text-sm font-semibold text-gray-900">Gross Salary</td>
-                      <td className="px-5 py-3 text-sm font-semibold text-gray-900 text-right tabular-nums">{fmt(gross)}</td>
-                    </tr>
-                    <tr>
-                      <td className="px-5 py-3 text-sm text-gray-600">Taxable Salary (full month, before attendance proration)</td>
-                      <td className="px-5 py-3 text-sm font-medium text-gray-900 text-right tabular-nums">{fmt(taxableSalary)}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                    <TableRow className="bg-gray-50">
+                      <TableCell className="px-5 py-3 text-sm font-semibold text-gray-900">Gross Salary</TableCell>
+                      <TableCell className="px-5 py-3 text-sm font-semibold text-gray-900 text-right tabular-nums">{fmt(gross)}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="px-5 py-3 text-sm text-gray-600">Taxable Salary (full month, before attendance proration)</TableCell>
+                      <TableCell className="px-5 py-3 text-sm font-medium text-gray-900 text-right tabular-nums">{fmt(taxableSalary)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
               </div>
 
               <div className="flex gap-3">
@@ -1331,24 +1330,24 @@ export default function WorkerDetailPage() {
               }
               return (
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-xs text-gray-400 bg-gray-50 border-b border-gray-200">
-                        <th className="px-4 py-2 font-medium">Field</th>
-                        <th className="px-4 py-2 font-medium">Previous</th>
-                        <th className="px-4 py-2 font-medium">New</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
+                  <Table className="w-full text-sm">
+                    <TableHeader>
+                      <TableRow className="text-left text-xs text-gray-400 bg-gray-100 border-b border-gray-200">
+                        <TableHead className="px-4 py-2 font-medium">Field</TableHead>
+                        <TableHead className="px-4 py-2 font-medium">Previous</TableHead>
+                        <TableHead className="px-4 py-2 font-medium">New</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="divide-y divide-gray-100">
                       {entries.map(([field, change]) => (
-                        <tr key={field}>
-                          <td className="px-4 py-2 font-medium text-gray-700">{formatAmendmentFieldLabel(field)}</td>
-                          <td className="px-4 py-2 text-gray-400">{formatAmendmentValue(field, change.old)}</td>
-                          <td className="px-4 py-2 text-gray-900">{formatAmendmentValue(field, change.new)}</td>
-                        </tr>
+                        <TableRow key={field}>
+                          <TableCell className="px-4 py-2 font-medium text-gray-700">{formatAmendmentFieldLabel(field)}</TableCell>
+                          <TableCell className="px-4 py-2 text-gray-400">{formatAmendmentValue(field, change.old)}</TableCell>
+                          <TableCell className="px-4 py-2 text-gray-900">{formatAmendmentValue(field, change.new)}</TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               );
             })()}
@@ -1593,36 +1592,35 @@ export default function WorkerDetailPage() {
               {attendance.length === 0 ? (
                 <p className="px-5 py-8 text-sm text-gray-400 text-center">No attendance records for this month.</p>
               ) : (
-                <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px]">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Date</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check In</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check Out</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Hours</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Source</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
+                <Table className="w-full min-w-[720px]">
+                  <TableHeader>
+                    <TableRow className="border-b border-gray-200 bg-gray-100">
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Date</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check In</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check Out</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Hours</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Source</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-gray-100">
                     {[...attendance].sort((a: any, b: any) => (a.date < b.date ? 1 : -1)).map((a: any) => {
                       const mapLink = (lat: any, lng: any) =>
                         lat != null && lng != null ? `https://www.google.com/maps?q=${lat},${lng}` : null;
                       const checkInMap = mapLink(a.checkInLat, a.checkInLng);
                       const checkOutMap = mapLink(a.checkOutLat, a.checkOutLng);
                       return (
-                        <tr key={a.id} className="hover:bg-gray-50">
-                          <td className="px-5 py-3.5 text-sm font-medium text-gray-900 whitespace-nowrap">{formatDate(a.date)}</td>
-                          <td className="px-5 py-3.5">
+                        <TableRow key={a.id} className="hover:bg-gray-50">
+                          <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900 whitespace-nowrap">{formatDate(a.date)}</TableCell>
+                          <TableCell className="px-5 py-3.5">
                             <span className="flex items-center gap-1.5">
                               <AttendanceStatusBadges record={a} />
                               {a.note && (
                                 <span title={a.note}><Info className="w-3.5 h-3.5 text-gray-300" /></span>
                               )}
                             </span>
-                          </td>
-                          <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
                             {a.checkIn ? (
                               <div className="flex items-center gap-1.5">
                                 <span>{a.checkIn.slice(0, 5)}</span>
@@ -1644,8 +1642,8 @@ export default function WorkerDetailPage() {
                                 )}
                               </div>
                             ) : '—'}
-                          </td>
-                          <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
                             {a.checkOut ? (
                               <div className="flex items-center gap-1.5">
                                 <span>{a.checkOut.slice(0, 5)}</span>
@@ -1659,20 +1657,19 @@ export default function WorkerDetailPage() {
                                 )}
                               </div>
                             ) : '—'}
-                          </td>
-                          <td className="px-5 py-3.5 text-sm text-gray-600">{a.hours ?? '—'}</td>
-                          <td className="px-5 py-3.5">
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5 text-sm text-gray-600">{a.hours ?? '—'}</TableCell>
+                          <TableCell className="px-5 py-3.5">
                             <span className={cn('px-2 py-0.5 text-[10px] font-medium rounded-full uppercase tracking-wide',
                               a.source === 'self' ? 'bg-violet-50 text-violet-600' : 'bg-gray-100 text-gray-500')}>
                               {a.source === 'self' ? 'Self (GPS)' : 'Manual'}
                             </span>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       );
                     })}
-                  </tbody>
-                </table>
-                </div>
+                  </TableBody>
+                </Table>
               )}
               <Pagination
                 page={attendanceResp?.page || 1}
@@ -1691,20 +1688,19 @@ export default function WorkerDetailPage() {
             <div className="px-5 py-4 border-b border-gray-100">
               <h3 className="text-sm font-semibold text-gray-900">Payroll History</h3>
             </div>
-            <div className="overflow-x-auto">
-            <table className="w-full min-w-140">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Period</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Base</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Net</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+            <Table className="w-full min-w-140">
+              <TableHeader>
+                <TableRow className="border-b border-gray-200 bg-gray-100">
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Period</TableHead>
+                  <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Base</TableHead>
+                  <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Net</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-100">
                 {payrollItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-5 py-10 text-center">
+                  <TableRow>
+                    <TableCell colSpan={4} className="px-5 py-10 text-center">
                       <p className="text-sm font-medium text-gray-700">No payroll records yet</p>
                       <p className="text-xs text-gray-500 mt-1.5 max-w-md mx-auto leading-relaxed">
                         Attendance and salary alone do not create payroll. An admin must create a monthly
@@ -1718,16 +1714,16 @@ export default function WorkerDetailPage() {
                       >
                         Go to Payroll runs →
                       </a>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ) : (
                   payrollItems.map((item: any) => (
                     <Fragment key={item.id}>
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-5 py-3.5 text-sm font-medium text-gray-900">{formatPeriod(item.run?.period)}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600 text-right">{Number(item.base || 0).toLocaleString()}</td>
-                        <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 text-right">{Number(item.computedNet || 0).toLocaleString()}</td>
-                        <td className="px-5 py-3.5">
+                      <TableRow className="hover:bg-gray-50">
+                        <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900">{formatPeriod(item.run?.period)}</TableCell>
+                        <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right">{Number(item.base || 0).toLocaleString()}</TableCell>
+                        <TableCell className="px-5 py-3.5 text-sm font-semibold text-gray-900 text-right">{Number(item.computedNet || 0).toLocaleString()}</TableCell>
+                        <TableCell className="px-5 py-3.5">
                           <div className="flex flex-col gap-1.5">
                             <span className={cn('w-fit px-2.5 py-0.5 text-xs font-medium rounded-full', ITEM_STATUS_COLORS[item.employeeStatus] || 'bg-gray-100 text-gray-500')}>
                               {titleCase(item.employeeStatus)}
@@ -1741,23 +1737,22 @@ export default function WorkerDetailPage() {
                               </a>
                             )}
                           </div>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                       {item.employeeStatus === 'concern_raised' && item.concernNote && (
-                        <tr className="bg-red-50">
-                          <td colSpan={4} className="px-5 py-2.5">
+                        <TableRow className="bg-red-50">
+                          <TableCell colSpan={4} className="px-5 py-2.5">
                             <p className="text-xs text-red-800">
                               <strong>Employee concern:</strong> {item.concernNote}
                             </p>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       )}
                     </Fragment>
                   ))
                 )}
-              </tbody>
-            </table>
-            </div>
+              </TableBody>
+            </Table>
           </div>
         )}
 

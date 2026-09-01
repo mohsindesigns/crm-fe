@@ -10,6 +10,7 @@ import Pagination from '@/components/Pagination';
 import { InactiveBadge } from '@/components/ActiveToggle';
 import ShowInactiveToggle, { useShowInactive } from '@/components/ShowInactiveToggle';
 import { cn, formatDate, formatCurrency, titleCase, inactiveRow } from '@/lib/utils';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 const STATUS_OPTS = [
   { label: 'All statuses', value: '' },
@@ -43,19 +44,19 @@ function SkeletonRows() {
   return (
     <>
       {[...Array(8)].map((_, i) => (
-        <tr key={i} className="animate-pulse border-b border-gray-50">
-          <td className="px-5 py-3.5">
+        <TableRow key={i} className="animate-pulse border-b border-gray-50">
+          <TableCell className="px-5 py-3.5">
             <div className="flex items-center gap-3">
               <div className="w-4 h-4 bg-gray-100 rounded shrink-0" />
               <div className="h-4 bg-gray-100 rounded w-24 font-mono" />
             </div>
-          </td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-32" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16 ml-auto" /></td>
-          <td className="px-5 py-3.5"><div className="h-5 bg-gray-100 rounded-full w-14" /></td>
-        </tr>
+          </TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-32" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16 ml-auto" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-5 bg-gray-100 rounded-full w-14" /></TableCell>
+        </TableRow>
       ))}
     </>
   );
@@ -147,57 +148,55 @@ export default function DocumentsPage() {
 
         {/* ── Table ── */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-180">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/50">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Number</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Prospect</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Type</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Service</th>
-                <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Sent</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+          <Table className="w-full min-w-180">
+            <TableHeader>
+              <TableRow className="border-b border-gray-200 bg-gray-100">
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Number</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Prospect</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Type</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Service</TableHead>
+                <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Sent</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-50">
               {isLoading ? (
                 <SkeletonRows />
               ) : documents.length === 0 ? (
-                <tr><td colSpan={7} className="px-5 py-12 text-center text-sm text-gray-400">No documents found.</td></tr>
+                <TableRow><TableCell colSpan={7} className="px-5 py-12 text-center text-sm text-gray-400">No documents found.</TableCell></TableRow>
               ) : (
                 documents.map((doc: any) => (
-                  <tr key={doc.id} className={cn('hover:bg-gray-50 cursor-pointer transition-colors', inactiveRow(doc.isActive))} onClick={() => router.push(`/documents/${doc.id}`)}>
+                  <TableRow key={doc.id} className={cn('hover:bg-gray-50 cursor-pointer transition-colors', inactiveRow(doc.isActive))} onClick={() => router.push(`/documents/${doc.id}`)}>
                     {/* nowrap: without it the column squeezed to ~60px and broke
                         "MDL-QT-26-0001" across four lines, one fragment each. */}
-                    <td className="px-5 py-3.5 whitespace-nowrap">
+                    <TableCell className="px-5 py-3.5 whitespace-nowrap">
                       <div className="flex items-center gap-3">
                         <FileSignature className="w-4 h-4 text-gray-400 shrink-0" />
                         <span className="text-sm font-medium text-gray-900 font-mono">{doc.number}</span>
                         {doc.isActive === false && <InactiveBadge />}
                       </div>
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600">
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5 text-sm text-gray-600">
                       <p className="text-gray-900">{doc.prospectName}</p>
                       {doc.businessName && <p className="text-xs text-gray-400">{doc.businessName}</p>}
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600">{titleCase(doc.type)}</td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600">{serviceLabel(doc.serviceTypeKey)}</td>
-                    <td className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5 text-sm text-gray-600">{titleCase(doc.type)}</TableCell>
+                    <TableCell className="px-5 py-3.5 text-sm text-gray-600">{serviceLabel(doc.serviceTypeKey)}</TableCell>
+                    <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
                       {formatCurrency(doc.amount, doc.currency)}
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600">{doc.sentAt ? formatDate(doc.sentAt) : '—'}</td>
-                    <td className="px-5 py-3.5">
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5 text-sm text-gray-600">{doc.sentAt ? formatDate(doc.sentAt) : '—'}</TableCell>
+                    <TableCell className="px-5 py-3.5">
                       <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', DOC_STATUS_COLORS[doc.status] || 'bg-gray-100 text-gray-600')}>
                         {doc.status}
                       </span>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
-          </div>
+            </TableBody>
+          </Table>
 
           <Pagination page={page} totalPages={totalPages} total={total} limit={LIMIT} onPageChange={setPage} />
         </div>

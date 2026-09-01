@@ -11,6 +11,7 @@ import Header from '@/components/layout/Header';
 import { cn, formatDate, formatCurrency, downloadAuthedFile, viewAuthedFile, toAbsoluteHttpUrl } from '@/lib/utils';
 import { invalidateMany, afterInvoiceChange } from '@/lib/queryInvalidation';
 import { TimelineSteps, invoiceTimelineSteps } from '@/components/TimelineSteps';
+import { Table, TableHeader, TableBody, TableFooter, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-600',
@@ -271,48 +272,46 @@ export default function InvoiceDetailPage() {
               <div className="px-5 py-3.5 border-b border-gray-100">
                 <h3 className="text-sm font-semibold text-gray-900">Line Items</h3>
               </div>
-              <div className="overflow-x-auto">
-              <table className="w-full min-w-140">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Description</th>
-                    <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Qty</th>
-                    <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Unit Price</th>
-                    <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
+              <Table className="w-full min-w-140">
+                <TableHeader>
+                  <TableRow className="border-b border-gray-200 bg-gray-100">
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Description</TableHead>
+                    <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Qty</TableHead>
+                    <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Unit Price</TableHead>
+                    <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Amount</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-gray-100">
                   {lines.map((line: any) => (
-                    <tr key={line.id} className="hover:bg-gray-50">
-                      <td className="px-5 py-3 text-sm text-gray-900">{line.description}</td>
-                      <td className="px-5 py-3 text-sm text-gray-600 text-right">{line.qty}</td>
-                      <td className="px-5 py-3 text-sm text-gray-600 text-right font-mono">{formatCurrency(line.unitPrice, invoice.currency)}</td>
-                      <td className="px-5 py-3 text-sm font-medium text-gray-900 text-right font-mono">{formatCurrency(line.amount, invoice.currency)}</td>
-                    </tr>
+                    <TableRow key={line.id} className="hover:bg-gray-50">
+                      <TableCell className="px-5 py-3 text-sm text-gray-900">{line.description}</TableCell>
+                      <TableCell className="px-5 py-3 text-sm text-gray-600 text-right">{line.qty}</TableCell>
+                      <TableCell className="px-5 py-3 text-sm text-gray-600 text-right font-mono">{formatCurrency(line.unitPrice, invoice.currency)}</TableCell>
+                      <TableCell className="px-5 py-3 text-sm font-medium text-gray-900 text-right font-mono">{formatCurrency(line.amount, invoice.currency)}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t border-gray-200">
-                    <td colSpan={3} className="px-5 py-3.5 text-sm font-semibold text-gray-700 text-right">Total</td>
-                    <td className="px-5 py-3.5 text-sm font-bold text-gray-900 text-right font-mono">{formatCurrency(invoice.total, invoice.currency)}</td>
-                  </tr>
+                </TableBody>
+                <TableFooter>
+                  <TableRow className="border-t border-gray-200">
+                    <TableCell colSpan={3} className="px-5 py-3.5 text-sm font-semibold text-gray-700 text-right">Total</TableCell>
+                    <TableCell className="px-5 py-3.5 text-sm font-bold text-gray-900 text-right font-mono">{formatCurrency(invoice.total, invoice.currency)}</TableCell>
+                  </TableRow>
                   {amountPaid > 0 && (
                     <>
-                      <tr>
-                        <td colSpan={3} className="px-5 py-2 text-sm text-gray-500 text-right">Paid</td>
-                        <td className="px-5 py-2 text-sm text-brand-700 text-right font-mono">− {formatCurrency(amountPaid, invoice.currency)}</td>
-                      </tr>
-                      <tr className="border-t border-gray-100">
-                        <td colSpan={3} className="px-5 py-2.5 text-sm font-semibold text-gray-700 text-right">Balance due</td>
-                        <td className={cn('px-5 py-2.5 text-sm font-bold text-right font-mono', amountDue > 0 ? 'text-amber-700' : 'text-brand-700')}>
+                      <TableRow>
+                        <TableCell colSpan={3} className="px-5 py-2 text-sm text-gray-500 text-right">Paid</TableCell>
+                        <TableCell className="px-5 py-2 text-sm text-brand-700 text-right font-mono">− {formatCurrency(amountPaid, invoice.currency)}</TableCell>
+                      </TableRow>
+                      <TableRow className="border-t border-gray-100">
+                        <TableCell colSpan={3} className="px-5 py-2.5 text-sm font-semibold text-gray-700 text-right">Balance due</TableCell>
+                        <TableCell className={cn('px-5 py-2.5 text-sm font-bold text-right font-mono', amountDue > 0 ? 'text-amber-700' : 'text-brand-700')}>
                           {formatCurrency(amountDue, invoice.currency)}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     </>
                   )}
-                </tfoot>
-              </table>
-              </div>
+                </TableFooter>
+              </Table>
             </div>
 
             {/* Payment history */}

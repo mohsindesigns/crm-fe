@@ -9,8 +9,8 @@
  * result of the click impossible to miss regardless of list length.
  */
 
-import { useEffect } from 'react';
 import { X } from 'lucide-react';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 export default function AdminModal({
   open, title, onClose, children, footer,
@@ -21,35 +21,12 @@ export default function AdminModal({
   children: React.ReactNode;
   footer?: React.ReactNode;
 }) {
-  // Escape closes, and the page behind must not scroll while the modal owns the
-  // viewport — otherwise the list drifts under the overlay as you scroll a long
-  // form.
-  useEffect(() => {
-    if (!open) return undefined;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', onKey);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = previous;
-    };
-  }, [open, onClose]);
-
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="relative bg-white rounded-2xl shadow-xl w-full max-w-2xl my-auto flex flex-col max-h-[calc(100vh-2rem)]"
-      >
+    <Dialog open onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent showCloseButton={false} className="max-w-2xl sm:max-w-2xl w-full max-h-[calc(100vh-2rem)] p-0 gap-0 overflow-hidden flex flex-col rounded-2xl">
+        <DialogTitle className="sr-only">{title}</DialogTitle>
         <div className="flex flex-wrap items-center justify-between px-5 sm:px-6 py-4 border-b border-gray-100 shrink-0 gap-2">
           <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
           <button
@@ -73,7 +50,7 @@ export default function AdminModal({
             {footer}
           </div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -8,6 +8,8 @@ import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import Pagination from '@/components/Pagination';
 import { cn } from '@/lib/utils';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import BarChartCard from '@/components/charts/BarChartCard';
 
 const LIMIT = 25;
 
@@ -87,11 +89,11 @@ function SkeletonRows({ cols = 10 }: { cols?: number }) {
   return (
     <>
       {[...Array(8)].map((_, i) => (
-        <tr key={i} className="animate-pulse border-b border-gray-50">
+        <TableRow key={i} className="animate-pulse border-b border-gray-50">
           {[...Array(cols)].map((__, j) => (
-            <td key={j} className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
+            <TableCell key={j} className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></TableCell>
           ))}
-        </tr>
+        </TableRow>
       ))}
     </>
   );
@@ -124,12 +126,12 @@ function SortHeader({
 }) {
   const active = activeSort === col;
   return (
-    <th className={cn('text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5', align === 'right' ? 'text-right' : 'text-left')}>
+    <TableHead className={cn('text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5', align === 'right' ? 'text-right' : 'text-left')}>
       <button type="button" onClick={() => onToggle(col)} className={cn('inline-flex items-center gap-1 hover:text-gray-700', align === 'right' && 'flex-row-reverse', active && 'text-gray-900')}>
         {label}
         {active ? (sortDir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}
       </button>
-    </th>
+    </TableHead>
   );
 }
 
@@ -158,58 +160,68 @@ function SummaryTab({
   const allChecked = allIds.length > 0 && allIds.every(id => selectedIds.has(id));
   const someChecked = allIds.some(id => selectedIds.has(id)) && !allChecked;
 
+  const chartData = useMemo(
+    () => rows
+      .map(r => ({ label: r.clientName, value: r.totalKeywords }))
+      .sort((a, b) => b.value - a.value),
+    [rows]
+  );
+
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-100 bg-gray-50/50">
-              <th className="px-5 py-3.5 w-10">
-                <input
-                  type="checkbox"
-                  checked={allChecked}
-                  ref={el => { if (el) el.indeterminate = someChecked; }}
-                  onChange={e => onToggleAll(allIds, e.target.checked)}
-                  className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                />
-              </th>
-              <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</th>
-              <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Package</th>
-              <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Strategist</th>
-              <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Total Keywords</th>
-              <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Avg Volume</th>
-              <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Avg KD</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {isLoading ? (
-              <SkeletonRows cols={7} />
-            ) : rows.length === 0 ? (
-              <tr><td colSpan={7} className="px-5 py-12 text-center text-sm text-gray-400">No summary found.</td></tr>
-            ) : (
-              rows.map((r) => (
-                <tr key={r.projectId} className={cn('hover:bg-gray-50 transition-colors', selectedIds.has(r.projectId) && 'bg-brand-50/40')}>
-                  <td className="px-5 py-3.5" onClick={e => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(r.projectId)}
-                      onChange={() => onToggleRow(r.projectId)}
-                      className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                    />
-                  </td>
-                  <td className="px-5 py-3.5 text-sm font-medium text-gray-900 cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=keywords`)}>{r.clientName}</td>
-                  <td className="px-5 py-3.5 text-sm text-gray-600 cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=keywords`)}>{r.packageName}</td>
-                  <td className="px-5 py-3.5 text-sm text-gray-600 cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=keywords`)}>{r.strategist?.name || '—'}</td>
-                  <td className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=keywords`)}>{r.totalKeywords}</td>
-                  <td className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=keywords`)}>{r.avgVolume ?? '—'}</td>
-                  <td className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=keywords`)}>{r.avgKd ?? '—'}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+    <div className="space-y-4">
+      {!isLoading && (
+        <BarChartCard title="Total Keywords by Client" data={chartData} categorical={false} />
+      )}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <Table className="w-full">
+        <TableHeader>
+          <TableRow className="border-b border-gray-200 bg-gray-100">
+            <TableHead className="px-5 py-3.5 w-10">
+              <input
+                type="checkbox"
+                checked={allChecked}
+                ref={el => { if (el) el.indeterminate = someChecked; }}
+                onChange={e => onToggleAll(allIds, e.target.checked)}
+                className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+              />
+            </TableHead>
+            <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</TableHead>
+            <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Package</TableHead>
+            <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Strategist</TableHead>
+            <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Total Keywords</TableHead>
+            <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Avg Volume</TableHead>
+            <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Avg KD</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody className="divide-y divide-gray-50">
+          {isLoading ? (
+            <SkeletonRows cols={7} />
+          ) : rows.length === 0 ? (
+            <TableRow><TableCell colSpan={7} className="px-5 py-12 text-center text-sm text-gray-400">No summary found.</TableCell></TableRow>
+          ) : (
+            rows.map((r) => (
+              <TableRow key={r.projectId} className={cn('hover:bg-gray-50 transition-colors', selectedIds.has(r.projectId) && 'bg-brand-50/40')}>
+                <TableCell className="px-5 py-3.5" onClick={e => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(r.projectId)}
+                    onChange={() => onToggleRow(r.projectId)}
+                    className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                  />
+                </TableCell>
+                <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900 cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=keywords`)}>{r.clientName}</TableCell>
+                <TableCell className="px-5 py-3.5 text-sm text-gray-600 cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=keywords`)}>{r.packageName}</TableCell>
+                <TableCell className="px-5 py-3.5 text-sm text-gray-600 cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=keywords`)}>{r.strategist?.name || '—'}</TableCell>
+                <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=keywords`)}>{r.totalKeywords}</TableCell>
+                <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=keywords`)}>{r.avgVolume ?? '—'}</TableCell>
+                <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=keywords`)}>{r.avgKd ?? '—'}</TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
       <Pagination page={page} totalPages={totalPages} total={total} limit={limit} onPageChange={onPageChange} />
+      </div>
     </div>
   );
 }
@@ -500,72 +512,70 @@ export default function KeywordReportsPage() {
         {/* ── Table / Summary ── */}
         {activeTab === 'keywords' ? (
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-260">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50/50">
-                    <th className="px-5 py-3.5 w-10">
-                      <input
-                        type="checkbox"
-                        checked={allChecked}
-                        ref={el => { if (el) el.indeterminate = someChecked; }}
-                        onChange={e => toggleAll(pageIds, e.target.checked)}
-                        className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                      />
-                    </th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Package</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Strategist</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Main Keyword</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Supporting Keywords</th>
-                    <SortHeader label="Volume" col="volume" activeSort={sortBy} sortDir={sortDir} onToggle={toggleSort} />
-                    <SortHeader label="Difficulty" col="difficulty" activeSort={sortBy} sortDir={sortDir} onToggle={toggleSort} />
-                    <SortHeader label="Rank" col="rank" activeSort={sortBy} sortDir={sortDir} onToggle={toggleSort} />
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Location</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Page</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {isLoading ? (
-                    <SkeletonRows cols={11} />
-                  ) : rows.length === 0 ? (
-                    <tr><td colSpan={11} className="px-5 py-12 text-center text-sm text-gray-400">No keywords found.</td></tr>
-                  ) : (
-                    rows.map((kw) => (
-                      <tr key={kw.id} className={cn('hover:bg-gray-50 transition-colors', selectedIds.has(kw.id) && 'bg-brand-50/40')}>
-                        <td className="px-5 py-3.5" onClick={e => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.has(kw.id)}
-                            onChange={() => toggleRow(kw.id)}
-                            className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                          />
-                        </td>
-                        <td className="px-5 py-3.5 text-sm font-medium text-gray-900 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/projects/${kw.projectId}?tab=keywords`)}>{kw.clientName}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/projects/${kw.projectId}?tab=keywords`)}>{kw.packageName}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/projects/${kw.projectId}?tab=keywords`)}>{kw.strategist?.name || '—'}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-900 cursor-pointer" onClick={() => router.push(`/projects/${kw.projectId}?tab=keywords`)}>
-                          <div className="flex items-center gap-2">
-                            <span>{kw.primaryKeyword}</span>
-                            {kw.status === 'inactive' && (
-                              <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Inactive</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-5 py-3.5"><SupportingKeywordsCell raw={kw.secondaryKeywords} /></td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums">{kw.volume ?? '—'}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums">{kw.kd ?? '—'}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums">{kw.currentRank ?? '—'}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">{kw.targetLocation || '—'}</td>
-                        <td className={cn('px-5 py-3.5 text-sm text-gray-600 max-w-[200px] truncate', !kw.pageName && 'text-gray-400')} title={kw.pageName || undefined}>
-                          {kw.pageName || '—'}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <Table className="w-full min-w-260">
+              <TableHeader>
+                <TableRow className="border-b border-gray-200 bg-gray-100">
+                  <TableHead className="px-5 py-3.5 w-10">
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      ref={el => { if (el) el.indeterminate = someChecked; }}
+                      onChange={e => toggleAll(pageIds, e.target.checked)}
+                      className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                    />
+                  </TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Package</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Strategist</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Main Keyword</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Supporting Keywords</TableHead>
+                  <SortHeader label="Volume" col="volume" activeSort={sortBy} sortDir={sortDir} onToggle={toggleSort} />
+                  <SortHeader label="Difficulty" col="difficulty" activeSort={sortBy} sortDir={sortDir} onToggle={toggleSort} />
+                  <SortHeader label="Rank" col="rank" activeSort={sortBy} sortDir={sortDir} onToggle={toggleSort} />
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Location</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Page</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-50">
+                {isLoading ? (
+                  <SkeletonRows cols={11} />
+                ) : rows.length === 0 ? (
+                  <TableRow><TableCell colSpan={11} className="px-5 py-12 text-center text-sm text-gray-400">No keywords found.</TableCell></TableRow>
+                ) : (
+                  rows.map((kw) => (
+                    <TableRow key={kw.id} className={cn('hover:bg-gray-50 transition-colors', selectedIds.has(kw.id) && 'bg-brand-50/40')}>
+                      <TableCell className="px-5 py-3.5" onClick={e => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(kw.id)}
+                          onChange={() => toggleRow(kw.id)}
+                          className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                        />
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/projects/${kw.projectId}?tab=keywords`)}>{kw.clientName}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/projects/${kw.projectId}?tab=keywords`)}>{kw.packageName}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/projects/${kw.projectId}?tab=keywords`)}>{kw.strategist?.name || '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-900 cursor-pointer" onClick={() => router.push(`/projects/${kw.projectId}?tab=keywords`)}>
+                        <div className="flex items-center gap-2">
+                          <span>{kw.primaryKeyword}</span>
+                          {kw.status === 'inactive' && (
+                            <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">Inactive</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5"><SupportingKeywordsCell raw={kw.secondaryKeywords} /></TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums">{kw.volume ?? '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums">{kw.kd ?? '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums">{kw.currentRank ?? '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">{kw.targetLocation || '—'}</TableCell>
+                      <TableCell className={cn('px-5 py-3.5 text-sm text-gray-600 max-w-[200px] truncate', !kw.pageName && 'text-gray-400')} title={kw.pageName || undefined}>
+                        {kw.pageName || '—'}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
             <Pagination page={page} totalPages={totalPages} total={total} limit={LIMIT} onPageChange={setPage} />
           </div>
         ) : (

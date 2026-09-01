@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 @theme {
   /* Mohsin Designs — navy + gold (logo.jpeg) */
@@ -26,6 +27,83 @@
   button { cursor: pointer; }
   button:disabled { cursor: not-allowed; }
   [role="button"] { cursor: pointer; }
+}
+
+/* shadcn/ui component tokens (ported from the WowDash theme), remapped to
+ * Mohsin Designs' navy/gold instead of the theme's default blue — this is
+ * what makes ported button/badge/table/etc. components render on-brand.
+ * `--sidebar`/`--sidebar-*` match the exact `#0F172A` navy + inline
+ * `primaryColor` scheme Sidebar.tsx already paints at runtime via
+ * useBranding() — see Phase 1 of the UI migration plan for wiring that up
+ * per-org rather than hardcoding it here. */
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --radius: 0.625rem;
+
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+
+  /* brand-700 */
+  --primary: var(--color-brand-700);
+  --primary-foreground: #ffffff;
+  --secondary: #f4f5f7;
+  --secondary-foreground: var(--color-brand-700);
+  --muted: #f4f5f7;
+  --muted-foreground: #64748b;
+  --accent: var(--color-accent-100);
+  --accent-foreground: var(--color-brand-800);
+  --destructive: #dc2626;
+  --border: #e5e7eb;
+  --input: #e5e7eb;
+  --ring: var(--color-brand-400);
+
+  /* Matches Sidebar.tsx's existing `background: '#0F172A'` inline style. */
+  --sidebar: #0f172a;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: var(--color-brand-600);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(255, 255, 255, 0.1);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: var(--color-accent-500);
 }
 
 /* Hide scrollbar while keeping scroll functional */

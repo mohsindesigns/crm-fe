@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Camera, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 interface Props {
   open: boolean;
@@ -117,9 +118,9 @@ export default function ProfilePhotoCapture({ open, onCancel, onCapture }: Props
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={handleCancel} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+    <Dialog open onOpenChange={(next) => { if (!next) handleCancel(); }}>
+      <DialogContent showCloseButton={false} className="max-w-md sm:max-w-md w-full p-0 gap-0 overflow-hidden rounded-2xl">
+        <DialogTitle className="sr-only">Take profile photo</DialogTitle>
         <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className="text-sm font-semibold text-gray-900">Take profile photo</h3>
@@ -173,7 +174,7 @@ export default function ProfilePhotoCapture({ open, onCancel, onCapture }: Props
             {busy ? 'Capturing…' : 'Capture'}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

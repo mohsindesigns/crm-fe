@@ -21,6 +21,7 @@ import {
 import { toast } from 'sonner';
 import Avatar from '@/components/Avatar';
 import { cn, formatDate, todayDateInput } from '@/lib/utils';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 export type Requester = (method: 'get' | 'post' | 'delete' | 'patch' | 'put', url: string, body?: any) => Promise<any>;
 
@@ -986,9 +987,9 @@ export function TaskFromMessageModal({
   const field = 'w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600';
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 overflow-y-auto">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg my-auto p-6 space-y-4">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent showCloseButton={false} className="max-w-lg sm:max-w-lg rounded-2xl shadow-2xl">
+        <DialogTitle className="sr-only">Create task from message</DialogTitle>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-base font-semibold text-gray-900">Create task from message</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100" aria-label="Close">
@@ -1083,8 +1084,8 @@ export function TaskFromMessageModal({
             Create Task
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1117,9 +1118,9 @@ export function CommandPalette({
   const safeHighlight = Math.min(highlight, Math.max(0, matches.length - 1));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-lg sm:max-w-lg rounded-2xl shadow-2xl overflow-hidden p-0 gap-0">
+        <DialogTitle className="sr-only">Jump to a conversation</DialogTitle>
         <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
           <Search className="w-4 h-4 text-gray-400 shrink-0" />
           <input
@@ -1169,8 +1170,8 @@ export function CommandPalette({
             </button>
           ))}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1276,9 +1277,9 @@ export function BulkAddModal({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent showCloseButton={false} className="max-w-md sm:max-w-md rounded-2xl shadow-xl p-5">
+        <DialogTitle className="sr-only">Add a whole team</DialogTitle>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-gray-900">Add a whole team</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100" aria-label="Close">
@@ -1331,7 +1332,7 @@ export function BulkAddModal({
             Cancel
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

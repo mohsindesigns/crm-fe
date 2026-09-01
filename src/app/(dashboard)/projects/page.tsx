@@ -9,6 +9,7 @@ import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import Pagination from '@/components/Pagination';
 import { cn, formatDate, titleCase } from '@/lib/utils';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 const STATUS_OPTS = [
   { label: 'All statuses', value: '' },
@@ -38,22 +39,22 @@ function SkeletonRows() {
   return (
     <>
       {[...Array(8)].map((_, i) => (
-        <tr key={i} className="animate-pulse border-b border-gray-50">
-          <td className="px-5 py-3.5">
+        <TableRow key={i} className="animate-pulse border-b border-gray-50">
+          <TableCell className="px-5 py-3.5">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-gray-100 shrink-0" />
               <div className="h-4 bg-gray-100 rounded w-40" />
             </div>
-          </td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-24" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-24" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16" /></td>
-          <td className="px-5 py-3.5"><div className="h-5 bg-gray-100 rounded-full w-16" /></td>
-        </tr>
+          </TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-24" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-24" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-5 bg-gray-100 rounded-full w-16" /></TableCell>
+        </TableRow>
       ))}
     </>
   );
@@ -332,28 +333,27 @@ export default function ProjectsPage() {
 
         {/* ── Table ── */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px]">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/50">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Service</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Package</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Type</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Stage</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Strategist</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Start</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Due</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+          <Table className="w-full min-w-[900px]">
+            <TableHeader>
+              <TableRow className="border-b border-gray-200 bg-gray-100">
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Service</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Package</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Type</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Stage</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Strategist</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Start</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Due</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-50">
               {isLoading ? (
                 <SkeletonRows />
               ) : projects.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-5 py-12 text-center text-sm text-gray-400">No projects found.</td>
-                </tr>
+                <TableRow>
+                  <TableCell colSpan={9} className="px-5 py-12 text-center text-sm text-gray-400">No projects found.</TableCell>
+                </TableRow>
               ) : (
                 projects.map((project: any) => {
                   const isNavigating = navigatingId === project.id;
@@ -361,7 +361,7 @@ export default function ProjectsPage() {
                     && new Date(project.deliveryDate) < new Date(new Date().toDateString())
                     && !['completed', 'cancelled'].includes(project.status);
                   return (
-                    <tr
+                    <TableRow
                       key={project.id}
                       onClick={() => navigate(project.id)}
                       className={cn(
@@ -370,7 +370,7 @@ export default function ProjectsPage() {
                         !isNavigating && isOverdue && 'bg-red-50/40'
                       )}
                     >
-                      <td className="px-5 py-3.5">
+                      <TableCell className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
                           <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors', isNavigating ? 'bg-brand-100' : 'bg-brand-50')}>
                             {isNavigating
@@ -381,37 +381,36 @@ export default function ProjectsPage() {
                             {project.client?.name || '—'}
                           </span>
                         </div>
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600 capitalize">{project.serviceTypeKey}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{project.package?.name || '—'}</td>
-                      <td className="px-5 py-3.5">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 capitalize">{project.serviceTypeKey}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{project.package?.name || '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5">
                         <span className={cn('px-2 py-0.5 text-xs font-medium rounded-full', project.isRecurring ? 'bg-violet-100 text-violet-700' : 'bg-gray-100 text-gray-500')}>
                           {project.isRecurring ? 'Recurring' : 'One-time'}
                         </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600 capitalize">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 capitalize">
                         {titleCase(project.currentStageKey) || '—'}
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{projectStrategistOf(project)?.name || '—'}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">{project.startDate ? formatDate(project.startDate) : '—'}</td>
-                      <td className={cn('px-5 py-3.5 text-sm whitespace-nowrap', isOverdue ? 'text-red-600 font-medium' : 'text-gray-600')}>
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{projectStrategistOf(project)?.name || '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">{project.startDate ? formatDate(project.startDate) : '—'}</TableCell>
+                      <TableCell className={cn('px-5 py-3.5 text-sm whitespace-nowrap', isOverdue ? 'text-red-600 font-medium' : 'text-gray-600')}>
                         <div className="flex items-center gap-1.5">
                           {isOverdue && <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0" />}
                           {project.deliveryDate ? formatDate(project.deliveryDate) : '—'}
                         </div>
-                      </td>
-                      <td className="px-5 py-3.5">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5">
                         <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', STATUS_COLORS[project.status] || 'bg-gray-100 text-gray-600')}>
                           {project.status}
                         </span>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })
               )}
-            </tbody>
-          </table>
-          </div>
+            </TableBody>
+          </Table>
 
           <Pagination page={page} totalPages={totalPages} total={total} limit={LIMIT} onPageChange={setPage} />
         </div>

@@ -14,6 +14,7 @@ import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import Avatar from '@/components/Avatar';
 import { cn, formatDate, toAbsoluteHttpUrl } from '@/lib/utils';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 // One inbox for every kind of approval in the app — task technical audits, task
 // reviews, the client requirement *emails* that don't leave the building until
@@ -358,9 +359,9 @@ export default function ApprovalsPage() {
 
       {/* ── Rejection reason ── */}
       {rejecting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setRejecting(null)} />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+        <Dialog open onOpenChange={(open) => { if (!open) setRejecting(null); }}>
+          <DialogContent className="max-w-md sm:max-w-md rounded-2xl">
+            <DialogTitle className="sr-only">Rejection reason</DialogTitle>
             <div>
               <h3 className="text-base font-semibold text-gray-900">Reject this {rejecting.typeLabel.toLowerCase()}?</h3>
               <p className="text-xs text-gray-500 mt-1 break-words">{rejecting.title}</p>
@@ -396,8 +397,8 @@ export default function ApprovalsPage() {
                 {decide.isPending ? 'Rejecting…' : 'Reject'}
               </button>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

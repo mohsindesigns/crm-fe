@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { usePortalStore } from '@/store/portal';
 import { cn, formatDate } from '@/lib/utils';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
@@ -342,30 +343,28 @@ export default function PortalProjectPage() {
             <TrendingUp className="w-4 h-4 text-brand-600" />
             <h2 className="text-sm font-semibold text-gray-800">Keyword Targets</h2>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/50">
-                  <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-6 py-3">Keyword</th>
-                  <th className="text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-5 py-3">KD</th>
-                  <th className="text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-5 py-3">Volume</th>
-                  <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-5 py-3">Page</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {activeKeywords.map((kw: any) => (
-                  <tr key={kw.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-6 py-3.5 text-sm font-medium text-gray-900">{kw.primaryKeyword}</td>
-                    <td className="px-5 py-3.5 text-sm text-gray-500 text-right" style={{ fontVariantNumeric: 'tabular-nums' }}>{kw.kd ?? '—'}</td>
-                    <td className="px-5 py-3.5 text-sm text-gray-500 text-right" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {kw.volume ? kw.volume.toLocaleString() : '—'}
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-400">{kw.pageName || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table className="w-full">
+            <TableHeader>
+              <TableRow className="border-b border-gray-200 bg-gray-100">
+                <TableHead className="text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-6 py-3">Keyword</TableHead>
+                <TableHead className="text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-5 py-3">KD</TableHead>
+                <TableHead className="text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-5 py-3">Volume</TableHead>
+                <TableHead className="text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-5 py-3">Page</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-50">
+              {activeKeywords.map((kw: any) => (
+                <TableRow key={kw.id} className="hover:bg-gray-50/50 transition-colors">
+                  <TableCell className="px-6 py-3.5 text-sm font-medium text-gray-900">{kw.primaryKeyword}</TableCell>
+                  <TableCell className="px-5 py-3.5 text-sm text-gray-500 text-right" style={{ fontVariantNumeric: 'tabular-nums' }}>{kw.kd ?? '—'}</TableCell>
+                  <TableCell className="px-5 py-3.5 text-sm text-gray-500 text-right" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    {kw.volume ? kw.volume.toLocaleString() : '—'}
+                  </TableCell>
+                  <TableCell className="px-5 py-3.5 text-sm text-gray-400">{kw.pageName || '—'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
         );
       })()}

@@ -6,19 +6,24 @@ import {
   LayoutDashboard, FolderKanban, Users,
   FileText, Settings, ChevronDown, Bell,
   Briefcase, ClipboardList, BarChart2, UserCog, Receipt, DollarSign, RefreshCw,
-  Palette, Workflow, Shield, Package, X, FileSignature, ScrollText, Clock, MessagesSquare,
-  Building2, CreditCard, Target, ChevronLeft, ChevronRight, PieChart, History,
+  Palette, Workflow, Shield, Package, FileSignature, ScrollText, Clock, MessagesSquare,
+  Building2, CreditCard, Target, PieChart, History,
   ClipboardCheck, ShieldCheck, Download, KeyRound, Link2,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
 import { useBranding } from '@/hooks/useBranding';
-import { useSidebarStore } from '@/store/sidebar';
 import { requiredPermissionFor, marksAttendance } from '@/lib/routePermissions';
 import { BRAND } from '@/lib/brand';
 import { useQuery } from '@tanstack/react-query';
 import api from '@/lib/api';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import {
+  Sidebar, SidebarContent, SidebarHeader, SidebarGroup, SidebarMenu, SidebarMenuItem,
+  SidebarMenuButton, SidebarMenuBadge, SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton,
+  useSidebar,
+} from '@/components/ui/sidebar';
 
 // `permission` for each item is derived from routePermissions.ts (single
 // source of truth also enforced by DashboardLayout) rather than hardcoded
@@ -103,36 +108,117 @@ const ADMIN_SUB_ITEMS = [
   { label: 'Export Data', tab: 'export', icon: Download },
 ];
 
-export default function Sidebar() {
+type IconType = React.ElementType;
+
+// A group with an expandable submenu (Tasks / Policies / Invoices / Reports /
+// Admin). On the icon-collapsed rail there's no room for a submenu, so it
+// renders as a plain link straight to `railHref` instead of a toggle —
+// SidebarMenuButton's own `tooltip` prop covers the rail hover label, so no
+// bespoke tooltip component is needed here.
+function NavGroup({
+  icon: Icon, label, railHref, active, open, onOpenChange, activeBg, activeIconColor, children,
+}: {
+  icon: IconType; label: string; railHref: string; active: boolean;
+  open: boolean; onOpenChange: (open: boolean) => void;
+  activeBg: string; activeIconColor: string; children: React.ReactNode;
+}) {
+  const { state, isMobile } = useSidebar();
+  const collapsedRail = !isMobile && state === 'collapsed';
+
+  if (collapsedRail) {
+    return (
+      <SidebarMenuItem>
+        <SidebarMenuButton asChild isActive={active} tooltip={label}>
+          <Link href={railHref} style={active ? { backgroundColor: activeBg, color: '#fff' } : {}}>
+            <Icon className="w-4 h-4 shrink-0" style={active ? { color: activeIconColor } : {}} />
+            <span>{label}</span>
+          </Link>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
+  }
+
+  return (
+    <Collapsible open={open} onOpenChange={onOpenChange} asChild>
+      <SidebarMenuItem>
+        <CollapsibleTrigger asChild>
+          <SidebarMenuButton isActive={active} style={active ? { backgroundColor: activeBg, color: '#fff' } : {}}>
+            <Icon className="w-4 h-4 shrink-0" style={active ? { color: activeIconColor } : {}} />
+            <span>{label}</span>
+            <ChevronDown className={cn('ml-auto w-3.5 h-3.5 shrink-0 transition-transform duration-200', open && 'rotate-180')} />
+          </SidebarMenuButton>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <SidebarMenuSub>{children}</SidebarMenuSub>
+        </CollapsibleContent>
+      </SidebarMenuItem>
+    </Collapsible>
+  );
+}
+
+function NavSubLink({
+  href, label, icon: Icon, active, activeBg, activeIconColor,
+}: {
+  href: string; label: string; icon?: IconType; active: boolean; activeBg: string; activeIconColor: string;
+}) {
+  return (
+    <SidebarMenuSubItem>
+      <SidebarMenuSubButton asChild isActive={active}>
+        <Link href={href} style={active ? { backgroundColor: activeBg, color: '#fff' } : {}}>
+          {Icon && <Icon className="w-3.5 h-3.5 shrink-0" style={active ? { color: activeIconColor } : {}} />}
+          <span>{label}</span>
+        </Link>
+      </SidebarMenuSubButton>
+    </SidebarMenuSubItem>
+  );
+}
+
+function NavItem({
+  href, label, icon: Icon, active, activeBg, activeIconColor, badgeCount,
+}: {
+  href: string; label: string; icon: IconType; active: boolean;
+  activeBg: string; activeIconColor: string; badgeCount?: number;
+}) {
+  const { state, isMobile } = useSidebar();
+  const collapsedRail = !isMobile && state === 'collapsed';
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={active} tooltip={badgeCount ? `${label} (${badgeCount})` : label}>
+        <Link href={href} style={active ? { backgroundColor: activeBg, color: '#fff' } : {}}>
+          <span className="relative shrink-0 w-4 h-4">
+            <Icon className="w-4 h-4" style={active ? { color: activeIconColor } : {}} />
+            {collapsedRail && !!badgeCount && (
+              <span
+                className="absolute -top-1 -right-1 w-2 h-2 rounded-full ring-2 ring-[#0F172A]"
+                style={{ backgroundColor: activeIconColor }}
+              />
+            )}
+          </span>
+          <span>{label}</span>
+        </Link>
+      </SidebarMenuButton>
+      {!collapsedRail && !!badgeCount && (
+        <SidebarMenuBadge className="text-white" style={{ backgroundColor: activeIconColor, color: '#0F172A' }}>
+          {badgeCount > 99 ? '99+' : badgeCount}
+        </SidebarMenuBadge>
+      )}
+    </SidebarMenuItem>
+  );
+}
+
+export default function AppSidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
   const { hasPermission } = useAuthStore();
   const roleKey = useAuthStore((s) => s.user?.role?.key);
   const { brandName, primaryColor, logoUrl } = useBranding();
-  const { isOpen, close, collapsed, toggleCollapsed } = useSidebarStore();
+  const { state, isMobile } = useSidebar();
+  const collapsedRail = !isMobile && state === 'collapsed';
   // Gold accent contrasts on the dark navy sidebar; primary navy blends into #0F172A.
   const activeIconColor = BRAND.accent;
   const activeBg = `${primaryColor}55`;
-
-  // Collapsed-rail hover tooltip. Rendered as a `fixed` sibling of <aside>
-  // further down, not inline next to each icon — the aside scrolls
-  // (overflow-y-auto), and that CSS overflow-pairing rule computes overflow-x
-  // to `auto` too (see the edge-toggle-button comment below), which would
-  // clip any absolutely-positioned tooltip trying to poke out past the rail's
-  // right edge. Tracking {label, top} here and rendering one `fixed` element
-  // outside the aside sidesteps that the same way the edge toggle does.
-  const [railTooltip, setRailTooltip] = useState<{ label: string; top: number } | null>(null);
-  function showRailTooltip(label: string) {
-    return (e: React.MouseEvent<HTMLElement>) => {
-      if (!collapsed) return;
-      const r = e.currentTarget.getBoundingClientRect();
-      setRailTooltip({ label, top: r.top + r.height / 2 });
-    };
-  }
-  function hideRailTooltip() {
-    setRailTooltip(null);
-  }
 
   const isAdminPath = pathname.startsWith('/admin');
   const [adminOpen, setAdminOpen] = useState(isAdminPath);
@@ -150,26 +236,11 @@ export default function Sidebar() {
   const [invoicesOpen, setInvoicesOpen] = useState(isInvoicesPath);
 
   // Auto-expand when navigating to admin / tasks / policies / reports / invoices
-  useEffect(() => {
-    if (isAdminPath) setAdminOpen(true);
-  }, [isAdminPath]);
-  useEffect(() => {
-    if (isTasksPath) setTasksOpen(true);
-  }, [isTasksPath]);
-  useEffect(() => {
-    if (isPoliciesPath) setPoliciesOpen(true);
-  }, [isPoliciesPath]);
-  useEffect(() => {
-    if (isReportsPath) setReportsOpen(true);
-  }, [isReportsPath]);
-  useEffect(() => {
-    if (isInvoicesPath) setInvoicesOpen(true);
-  }, [isInvoicesPath]);
-
-  // Close drawer on navigation
-  useEffect(() => {
-    close();
-  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (isAdminPath) setAdminOpen(true); }, [isAdminPath]);
+  useEffect(() => { if (isTasksPath) setTasksOpen(true); }, [isTasksPath]);
+  useEffect(() => { if (isPoliciesPath) setPoliciesOpen(true); }, [isPoliciesPath]);
+  useEffect(() => { if (isReportsPath) setReportsOpen(true); }, [isReportsPath]);
+  useEffect(() => { if (isInvoicesPath) setInvoicesOpen(true); }, [isInvoicesPath]);
 
   const currentTab = searchParams.get('tab') || 'branding';
   const canSeeAttendance = marksAttendance(roleKey) || hasPermission('hr.read');
@@ -183,7 +254,7 @@ export default function Sidebar() {
     return (!i.permission || hasPermission(i.permission))
       && (!('attendanceOnly' in i && i.attendanceOnly) || canSeeAttendance);
   });
-  const showAdmin  = hasPermission('admin.access');
+  const showAdmin = hasPermission('admin.access');
 
   // Same permission the Tasks page itself gates "All Tasks" on, and the same
   // rule it uses to pick which view a bare /tasks (no ?view=) lands on.
@@ -220,57 +291,16 @@ export default function Sidebar() {
   });
   const pendingApprovals = approvalSummary?.totals?.pending || 0;
 
-  return (
-    <>
-      {/* Mobile backdrop */}
-      <div
-        className={cn(
-          'fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity duration-300',
-          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
-        )}
-        onClick={close}
-      />
+  const BADGE_COUNTS: Record<string, number> = {
+    '/messages': unreadMessages,
+    '/notifications': unreadNotifications,
+    '/approvals': pendingApprovals,
+  };
 
-      <aside
-        className={cn(
-          // The ASIDE is the scroll container, not an inner flex child. Relying on
-          // `flex-1 + overflow-y-auto` on the <nav> meant scrolling only worked if
-          // the flex chain resolved to a definite height — one wrong link in that
-          // chain and the list just clipped with no way to reach the rest.
-          // A fixed height plus overflow here cannot fail that way.
-          //
-          'w-55 overflow-y-auto overscroll-contain sidebar-scroll',
-          // Mobile: pinned top AND bottom rather than given a height. iOS Safari
-          // does not reliably recompute a `100dvh` height on a fixed element as
-          // the URL bar collapses, so the drawer could stay taller than the
-          // visible viewport — the content then fits its own box, nothing
-          // overflows, and the list simply refuses to scroll (Android recomputes
-          // it, which is why it only broke on iPhone). Deriving the height from
-          // top-0 + bottom-0 makes the browser use the visual viewport, which it
-          // always keeps correct.
-          'fixed top-0 bottom-0 left-0 z-50 transition-transform duration-300 ease-in-out',
-          isOpen ? 'translate-x-0' : '-translate-x-full',
-          // Desktop: sticky in document flow, visible by default — needs an
-          // explicit height since it is no longer stretched between two edges.
-          'md:sticky md:top-0 md:bottom-auto md:h-dvh md:shrink-0 md:translate-x-0 md:z-auto',
-          // Route-driven auto-collapse (e.g. project detail) — narrows to an
-          // icon-only rail rather than disappearing, so navigation stays one
-          // click away instead of forcing a trip back through an expanded menu.
-          collapsed && 'md:w-[76px]',
-        )}
-        style={{ background: '#0F172A' }}
-      >
-      {/* ── Brand ── */}
-      {/* Sticky, with its own background: the aside scrolls now, so without this
-          the logo would scroll away and the links would run underneath it. */}
-      <div
-        className="sticky top-0 z-10 px-5 pt-6 pb-5 border-b border-white/[0.07] flex items-start justify-between gap-2"
-        style={{ background: '#0F172A' }}
-      >
-        {/* The wordmark is a wide horizontal logo, so it stacks above the brand
-            name rather than sitting beside it — side by side, the two together
-            overflowed the sidebar's fixed width. */}
-        <div className="flex flex-col gap-2 min-w-0">
+  return (
+    <Sidebar collapsible="icon" className="border-white/[0.07]" style={{ '--sidebar': '#0F172A' } as React.CSSProperties}>
+      <SidebarHeader className={cn('pt-6 pb-5 border-b border-white/[0.07]', collapsedRail ? 'px-2' : 'px-5')}>
+        <div className={cn('flex flex-col gap-2 min-w-0', collapsedRail && 'items-center')}>
           {logoUrl ? (
             // The logo is a dark navy wordmark on transparency, which would all
             // but vanish against this sidebar's near-black background. Rather
@@ -279,10 +309,7 @@ export default function Sidebar() {
             <img
               src={logoUrl}
               alt={brandName}
-              className={cn(
-                'h-7 w-auto max-w-[150px] object-contain object-left brightness-0 invert',
-                collapsed && 'md:hidden',
-              )}
+              className={cn('h-7 w-auto max-w-[150px] object-contain object-left brightness-0 invert', collapsedRail && 'hidden')}
             />
           ) : (
             <span
@@ -292,427 +319,174 @@ export default function Sidebar() {
               {brandName.charAt(0)}
             </span>
           )}
-          {/* Collapsed-rail stand-in for the wordmark — the letter fallback above
-              already works fine at rail width on its own, this only covers the
-              case where a real logo is set and gets hidden above. */}
-          {logoUrl && (
+          {logoUrl && collapsedRail && (
             <span
-              className={cn(
-                'hidden items-center justify-center w-8 h-8 rounded-lg text-white text-sm font-bold shrink-0',
-                collapsed && 'md:flex',
-              )}
+              className="flex items-center justify-center w-8 h-8 rounded-lg text-white text-sm font-bold shrink-0"
               style={{ backgroundColor: primaryColor }}
             >
               {brandName.charAt(0)}
             </span>
           )}
-          <p className={cn('text-white text-xs font-semibold leading-snug', collapsed && 'md:hidden')}>{brandName}</p>
+          <p className={cn('text-white text-xs font-semibold leading-snug', collapsedRail && 'hidden')}>{brandName}</p>
         </div>
-        {/* Close button — mobile only */}
-        <button
-          onClick={close}
-          className="md:hidden p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
+      </SidebarHeader>
 
-      {/* ── Navigation ── */}
-      {/* Plain flow — the aside above is what scrolls. The bottom pad clears the
-          iPhone home indicator; without it the final link sits under the gesture
-          bar, reachable by scroll but not by tap. */}
-      <nav className="px-3 py-3 space-y-0.5 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-        {visibleNav.map((item) => {
-          const [hrefPath, hrefQuery] = item.href.split('?');
-          const hrefTab = new URLSearchParams(hrefQuery).get('tab');
-          // Items that carry a `?tab=` (e.g. Attendance -> /self-service?tab=attendance)
-          // must also match the current tab, otherwise "My Payroll" (no tab) and
-          // "Attendance" would both light up simultaneously on that page.
-          const active = (pathname === hrefPath || pathname.startsWith(hrefPath + '/'))
-            && (!hrefTab || searchParams.get('tab') === hrefTab)
-            && (hrefTab || !searchParams.get('tab'));
-          const showDot = collapsed
-            && ((item.href === '/messages' && unreadMessages > 0)
-              || (item.href === '/notifications' && unreadNotifications > 0)
-              || (item.href === '/approvals' && pendingApprovals > 0));
+      <SidebarContent className="sidebar-scroll">
+        <SidebarGroup>
+          <SidebarMenu>
+            {visibleNav.map((item) => {
+              const [hrefPath, hrefQuery] = item.href.split('?');
+              const hrefTab = new URLSearchParams(hrefQuery).get('tab');
+              // Items that carry a `?tab=` (e.g. Attendance -> /self-service?tab=attendance)
+              // must also match the current tab, otherwise "My Payroll" (no tab) and
+              // "Attendance" would both light up simultaneously on that page.
+              const active = !!(
+                (pathname === hrefPath || pathname.startsWith(hrefPath + '/'))
+                && (!hrefTab || searchParams.get('tab') === hrefTab)
+                && (hrefTab || !searchParams.get('tab'))
+              );
 
-          // Tasks gets an expandable submenu (My Tasks / Assigned by me / All
-          // Tasks / Approvals / Completed) instead of a plain link, same pattern
-          // as Admin Panel below. Collapsed rail has no room for a submenu, so it
-          // falls back to a direct link like every other rail icon.
-          if (item.href === '/tasks' && !collapsed) {
-            return (
-              <div key={item.href}>
-                <button
-                  type="button"
-                  title={item.label}
-                  onClick={() => setTasksOpen((v) => !v)}
-                  className={cn(
-                    'flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all w-full',
-                    isTasksPath
-                      ? 'text-white shadow-sm'
-                      : 'text-white/75 hover:text-white hover:bg-white/6',
-                  )}
-                  style={isTasksPath ? { backgroundColor: activeBg, color: '#fff' } : {}}
-                >
-                  <item.icon className="w-4 h-4 shrink-0" style={isTasksPath ? { color: activeIconColor } : {}} />
-                  <span className="flex-1 text-left truncate">{item.label}</span>
-                  <ChevronDown
-                    className={cn('w-3.5 h-3.5 transition-transform duration-200', tasksOpen && 'rotate-180')}
-                    style={isTasksPath ? { color: activeIconColor } : { color: 'rgba(255,255,255,0.4)' }}
-                  />
-                </button>
-                {tasksOpen && (
-                  <div className="ml-3 pl-3 border-l border-white/[0.07] space-y-0.5 mt-0.5">
-                    {visibleTaskSubItems.map((sub) => {
-                      const subActive = isTasksPath && activeTaskView === sub.view;
-                      return (
-                        <Link
-                          key={sub.view}
-                          href={`/tasks?view=${sub.view}`}
-                          className={cn(
-                            'flex items-center px-3 py-2 rounded-lg text-xs font-medium transition-all',
-                            subActive
-                              ? 'text-white'
-                              : 'text-white/60 hover:text-white hover:bg-white/6',
-                          )}
-                          style={subActive ? { backgroundColor: `${primaryColor}40`, color: '#fff' } : {}}
-                        >
-                          {sub.label}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          }
+              if (item.href === '/tasks') {
+                return (
+                  <NavGroup
+                    key={item.href} icon={item.icon} label={item.label} railHref={item.href}
+                    active={isTasksPath} open={tasksOpen} onOpenChange={setTasksOpen}
+                    activeBg={activeBg} activeIconColor={activeIconColor}
+                  >
+                    {visibleTaskSubItems.map((sub) => (
+                      <NavSubLink
+                        key={sub.view} href={`/tasks?view=${sub.view}`} label={sub.label}
+                        active={isTasksPath && activeTaskView === sub.view}
+                        activeBg={`${primaryColor}40`} activeIconColor={activeIconColor}
+                      />
+                    ))}
+                  </NavGroup>
+                );
+              }
 
-          // Policies gets the same expandable-submenu treatment as Tasks
-          // above — collapsed rail still links straight through since
-          // there's only one policy page today.
-          if (item.href === '/policies/attendance' && !collapsed) {
-            return (
-              <div key={item.href}>
-                <button
-                  type="button"
-                  title={item.label}
-                  onClick={() => setPoliciesOpen((v) => !v)}
-                  className={cn(
-                    'flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all w-full',
-                    isPoliciesPath
-                      ? 'text-white shadow-sm'
-                      : 'text-white/75 hover:text-white hover:bg-white/6',
-                  )}
-                  style={isPoliciesPath ? { backgroundColor: activeBg, color: '#fff' } : {}}
-                >
-                  <item.icon className="w-4 h-4 shrink-0" style={isPoliciesPath ? { color: activeIconColor } : {}} />
-                  <span className="flex-1 text-left truncate">{item.label}</span>
-                  <ChevronDown
-                    className={cn('w-3.5 h-3.5 transition-transform duration-200', policiesOpen && 'rotate-180')}
-                    style={isPoliciesPath ? { color: activeIconColor } : { color: 'rgba(255,255,255,0.4)' }}
-                  />
-                </button>
-                {policiesOpen && (
-                  <div className="ml-3 pl-3 border-l border-white/[0.07] space-y-0.5 mt-0.5">
-                    {POLICY_SUB_ITEMS.map((sub) => {
-                      const subActive = pathname === sub.href || pathname.startsWith(`${sub.href}/`);
-                      return (
-                        <Link
-                          key={sub.href}
-                          href={sub.href}
-                          className={cn(
-                            'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all',
-                            subActive
-                              ? 'text-white'
-                              : 'text-white/60 hover:text-white hover:bg-white/6',
-                          )}
-                          style={subActive ? { backgroundColor: `${primaryColor}40`, color: '#fff' } : {}}
-                        >
-                          <sub.icon className="w-3.5 h-3.5 shrink-0" style={subActive ? { color: activeIconColor } : {}} />
-                          {sub.label}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          }
+              if (item.href === '/policies/attendance') {
+                return (
+                  <NavGroup
+                    key={item.href} icon={item.icon} label={item.label} railHref={item.href}
+                    active={isPoliciesPath} open={policiesOpen} onOpenChange={setPoliciesOpen}
+                    activeBg={activeBg} activeIconColor={activeIconColor}
+                  >
+                    {POLICY_SUB_ITEMS.map((sub) => (
+                      <NavSubLink
+                        key={sub.href} href={sub.href} label={sub.label} icon={sub.icon}
+                        active={pathname === sub.href || pathname.startsWith(`${sub.href}/`)}
+                        activeBg={`${primaryColor}40`} activeIconColor={activeIconColor}
+                      />
+                    ))}
+                  </NavGroup>
+                );
+              }
 
-          // Invoices gets the same expandable-submenu treatment as Policies
-          // above — Official (the existing invoicing system) and Personal (a
-          // fully separate section, own contacts/numbering/data) live side by
-          // side instead of Personal needing its own top-level nav slot.
-          if (item.href === '/invoices' && !collapsed) {
-            return (
-              <div key={item.href}>
-                <button
-                  type="button"
-                  title={item.label}
-                  onClick={() => setInvoicesOpen((v) => !v)}
-                  className={cn(
-                    'flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all w-full',
-                    isInvoicesPath
-                      ? 'text-white shadow-sm'
-                      : 'text-white/75 hover:text-white hover:bg-white/6',
-                  )}
-                  style={isInvoicesPath ? { backgroundColor: activeBg, color: '#fff' } : {}}
-                >
-                  <item.icon className="w-4 h-4 shrink-0" style={isInvoicesPath ? { color: activeIconColor } : {}} />
-                  <span className="flex-1 text-left truncate">{item.label}</span>
-                  <ChevronDown
-                    className={cn('w-3.5 h-3.5 transition-transform duration-200', invoicesOpen && 'rotate-180')}
-                    style={isInvoicesPath ? { color: activeIconColor } : { color: 'rgba(255,255,255,0.4)' }}
-                  />
-                </button>
-                {invoicesOpen && (
-                  <div className="ml-3 pl-3 border-l border-white/[0.07] space-y-0.5 mt-0.5">
-                    {visibleInvoiceSubItems.map((sub) => {
-                      const subActive = pathname === sub.href || pathname.startsWith(`${sub.href}/`);
-                      return (
-                        <Link
-                          key={sub.href}
-                          href={sub.href}
-                          className={cn(
-                            'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all',
-                            subActive
-                              ? 'text-white'
-                              : 'text-white/60 hover:text-white hover:bg-white/6',
-                          )}
-                          style={subActive ? { backgroundColor: `${primaryColor}40`, color: '#fff' } : {}}
-                        >
-                          <sub.icon className="w-3.5 h-3.5 shrink-0" style={subActive ? { color: activeIconColor } : {}} />
-                          {sub.label}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          }
+              if (item.href === '/invoices') {
+                return (
+                  <NavGroup
+                    key={item.href} icon={item.icon} label={item.label} railHref={item.href}
+                    active={isInvoicesPath} open={invoicesOpen} onOpenChange={setInvoicesOpen}
+                    activeBg={activeBg} activeIconColor={activeIconColor}
+                  >
+                    {visibleInvoiceSubItems.map((sub) => (
+                      <NavSubLink
+                        key={sub.href} href={sub.href} label={sub.label} icon={sub.icon}
+                        active={pathname === sub.href || pathname.startsWith(`${sub.href}/`)}
+                        activeBg={`${primaryColor}40`} activeIconColor={activeIconColor}
+                      />
+                    ))}
+                  </NavGroup>
+                );
+              }
 
-          // Reports gets the same expandable-submenu treatment as Policies
-          // above — Team Reports (per-member activity) and Keyword Reports
-          // (org-wide keyword sheet) live side by side instead of forcing
-          // Keyword Reports onto its own top-level nav slot.
-          if (item.href === '/reports' && !collapsed) {
-            return (
-              <div key={item.href}>
-                <button
-                  type="button"
-                  title={item.label}
-                  onClick={() => setReportsOpen((v) => !v)}
-                  className={cn(
-                    'flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all w-full',
-                    isReportsPath
-                      ? 'text-white shadow-sm'
-                      : 'text-white/75 hover:text-white hover:bg-white/6',
-                  )}
-                  style={isReportsPath ? { backgroundColor: activeBg, color: '#fff' } : {}}
-                >
-                  <item.icon className="w-4 h-4 shrink-0" style={isReportsPath ? { color: activeIconColor } : {}} />
-                  <span className="flex-1 text-left truncate">{item.label}</span>
-                  <ChevronDown
-                    className={cn('w-3.5 h-3.5 transition-transform duration-200', reportsOpen && 'rotate-180')}
-                    style={isReportsPath ? { color: activeIconColor } : { color: 'rgba(255,255,255,0.4)' }}
-                  />
-                </button>
-                {reportsOpen && (
-                  <div className="ml-3 pl-3 border-l border-white/[0.07] space-y-0.5 mt-0.5">
+              if (item.href === '/reports') {
+                // '/reports' is itself a prefix of every other sub-route, so a plain
+                // startsWith would light up every row at once — Team Reports only
+                // claims '/reports' and its own '/reports/[id]' detail route, not
+                // any of the other sub-items' routes.
+                const otherSubRoutes = REPORTS_SUB_ITEMS.filter((s) => s.href !== '/reports');
+                return (
+                  <NavGroup
+                    key={item.href} icon={item.icon} label={item.label} railHref={item.href}
+                    active={isReportsPath} open={reportsOpen} onOpenChange={setReportsOpen}
+                    activeBg={activeBg} activeIconColor={activeIconColor}
+                  >
                     {REPORTS_SUB_ITEMS.map((sub) => {
-                      // '/reports' is itself a prefix of every other sub-route, so a plain
-                      // startsWith would light up every row at once — Team Reports only
-                      // claims '/reports' and its own '/reports/[id]' detail route, not
-                      // any of the other sub-items' routes.
-                      const otherSubRoutes = REPORTS_SUB_ITEMS.filter((s) => s.href !== '/reports');
                       const subActive = sub.href === '/reports'
                         ? pathname === '/reports' || (pathname.startsWith('/reports/') && !otherSubRoutes.some((s) => pathname === s.href || pathname.startsWith(`${s.href}/`)))
                         : pathname === sub.href || pathname.startsWith(`${sub.href}/`);
                       return (
-                        <Link
-                          key={sub.href}
-                          href={sub.href}
-                          className={cn(
-                            'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all',
-                            subActive
-                              ? 'text-white'
-                              : 'text-white/60 hover:text-white hover:bg-white/6',
-                          )}
-                          style={subActive ? { backgroundColor: `${primaryColor}40`, color: '#fff' } : {}}
-                        >
-                          <sub.icon className="w-3.5 h-3.5 shrink-0" style={subActive ? { color: activeIconColor } : {}} />
-                          {sub.label}
-                        </Link>
+                        <NavSubLink
+                          key={sub.href} href={sub.href} label={sub.label} icon={sub.icon}
+                          active={subActive}
+                          activeBg={`${primaryColor}40`} activeIconColor={activeIconColor}
+                        />
                       );
                     })}
-                  </div>
-                )}
-              </div>
-            );
-          }
+                  </NavGroup>
+                );
+              }
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={collapsed ? undefined : item.label}
-              onMouseEnter={showRailTooltip(item.label)}
-              onMouseLeave={hideRailTooltip}
-              className={cn(
-                'flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all',
-                collapsed && 'md:justify-center md:px-0',
-                active
-                  ? 'text-white shadow-sm'
-                  : 'text-white/75 hover:text-white hover:bg-white/6',
-              )}
-              style={active ? { backgroundColor: activeBg, color: '#fff' } : {}}
-            >
-              <span className="relative shrink-0">
-                <item.icon
-                  className="w-4 h-4"
-                  style={active ? { color: activeIconColor } : {}}
+              return (
+                <NavItem
+                  key={item.href} href={item.href} label={item.label} icon={item.icon}
+                  active={active} activeBg={activeBg} activeIconColor={activeIconColor}
+                  badgeCount={BADGE_COUNTS[item.href]}
                 />
-                {/* Rail-only unread indicator — the full badge below is hidden at
-                    this width, so a dot is the only signal that survives collapse. */}
-                {showDot && (
-                  <span
-                    className="hidden md:block absolute -top-1 -right-1 w-2 h-2 rounded-full ring-2 ring-[#0F172A]"
-                    style={{ backgroundColor: activeIconColor }}
-                  />
-                )}
-              </span>
-              <span className={cn('flex items-center gap-2 min-w-0', collapsed && 'md:hidden')}>
-                <span className="truncate">{item.label}</span>
-                {item.href === '/messages' && unreadMessages > 0 && (
-                  <span
-                    className="ml-auto text-[10px] font-bold min-w-[1.15rem] h-[1.15rem] px-1 rounded-full flex items-center justify-center text-white"
-                    style={{ backgroundColor: primaryColor }}
-                  >
-                    {unreadMessages > 99 ? '99+' : unreadMessages}
-                  </span>
-                )}
-                {item.href === '/notifications' && unreadNotifications > 0 && (
-                  <span
-                    className="ml-auto text-[10px] font-bold min-w-[1.15rem] h-[1.15rem] px-1 rounded-full flex items-center justify-center text-white"
-                    style={{ backgroundColor: primaryColor }}
-                  >
-                    {unreadNotifications > 99 ? '99+' : unreadNotifications}
-                  </span>
-                )}
-                {item.href === '/approvals' && pendingApprovals > 0 && (
-                  <span
-                    className="ml-auto text-[10px] font-bold min-w-[1.15rem] h-[1.15rem] px-1 rounded-full flex items-center justify-center text-white"
-                    style={{ backgroundColor: primaryColor }}
-                  >
-                    {pendingApprovals > 99 ? '99+' : pendingApprovals}
-                  </span>
-                )}
-              </span>
-            </Link>
-          );
-        })}
+              );
+            })}
 
-        {showAdmin && (
-          <>
-            <div className={cn('pt-4 pb-1 px-3', collapsed && 'md:hidden')}>
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-white/25">Admin</span>
-            </div>
-            {/* Rail has no room for a section label — a plain divider marks the
-                same break instead. */}
-            {collapsed && <div className="hidden md:block my-2 mx-3 border-t border-white/[0.07]" />}
+            {showAdmin && (
+              <>
+                <div className={cn('pt-4 pb-1 px-2', collapsedRail && 'hidden')}>
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-white/25">Admin</span>
+                </div>
+                {collapsedRail && <div className="my-2 mx-2 border-t border-white/[0.07]" />}
 
-            {/* Admin Panel. Expanded: toggles the submenu below. Collapsed rail:
-                there's no room for a submenu at 76px, so this jumps straight to
-                the panel instead — same single-click-to-navigate pattern as
-                every other rail icon. */}
-            <button
-              title={collapsed ? undefined : 'Admin Panel'}
-              onClick={() => (collapsed ? router.push('/admin?tab=branding') : setAdminOpen((v) => !v))}
-              onMouseEnter={showRailTooltip('Admin Panel')}
-              onMouseLeave={hideRailTooltip}
-              className={cn(
-                'flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all w-full',
-                collapsed && 'md:justify-center md:px-0',
-                isAdminPath
-                  ? 'text-white shadow-sm'
-                  : 'text-white/75 hover:text-white hover:bg-white/6',
-              )}
-              style={isAdminPath ? { backgroundColor: activeBg } : {}}
-            >
-              <Settings
-                className="w-4 h-4 shrink-0"
-                style={isAdminPath ? { color: activeIconColor } : {}}
-              />
-              <span className={cn('flex-1 text-left', collapsed && 'md:hidden')}>Admin Panel</span>
-              <ChevronDown
-                className={cn('w-3.5 h-3.5 transition-transform duration-200', adminOpen && 'rotate-180', collapsed && 'md:hidden')}
-                style={isAdminPath ? { color: activeIconColor } : { color: 'rgba(255,255,255,0.4)' }}
-              />
-            </button>
-
-            {/* Submenu */}
-            {adminOpen && (
-              <div className={cn('ml-3 pl-3 border-l border-white/[0.07] space-y-0.5 mt-0.5', collapsed && 'md:hidden')}>
-                {ADMIN_SUB_ITEMS.map((sub) => {
-                  const subActive = isAdminPath && currentTab === sub.tab;
-                  return (
-                    <Link
-                      key={sub.tab}
-                      href={`/admin?tab=${sub.tab}`}
-                      className={cn(
-                        'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all',
-                        subActive
-                          ? 'text-white'
-                          : 'text-white/60 hover:text-white hover:bg-white/6',
-                      )}
-                      style={subActive ? { backgroundColor: `${primaryColor}40`, color: '#fff' } : {}}
+                {/* Collapsed rail: no room for a submenu at icon width, so this
+                    jumps straight to the panel — same as every other rail icon. */}
+                {collapsedRail ? (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={isAdminPath}
+                      tooltip="Admin Panel"
+                      onClick={() => router.push('/admin?tab=branding')}
+                      style={isAdminPath ? { backgroundColor: activeBg, color: '#fff' } : {}}
                     >
-                      <sub.icon
-                        className="w-3.5 h-3.5 shrink-0"
-                        style={subActive ? { color: activeIconColor } : {}}
-                      />
-                      {sub.label}
-                    </Link>
-                  );
-                })}
-              </div>
+                      <Settings className="w-4 h-4 shrink-0" style={isAdminPath ? { color: activeIconColor } : {}} />
+                      <span>Admin Panel</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ) : (
+                  <Collapsible open={adminOpen} onOpenChange={setAdminOpen} asChild>
+                    <SidebarMenuItem>
+                      <CollapsibleTrigger asChild>
+                        <SidebarMenuButton isActive={isAdminPath} style={isAdminPath ? { backgroundColor: activeBg, color: '#fff' } : {}}>
+                          <Settings className="w-4 h-4 shrink-0" style={isAdminPath ? { color: activeIconColor } : {}} />
+                          <span>Admin Panel</span>
+                          <ChevronDown className={cn('ml-auto w-3.5 h-3.5 transition-transform duration-200', adminOpen && 'rotate-180')} />
+                        </SidebarMenuButton>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <SidebarMenuSub>
+                          {ADMIN_SUB_ITEMS.map((sub) => (
+                            <NavSubLink
+                              key={sub.tab} href={`/admin?tab=${sub.tab}`} label={sub.label} icon={sub.icon}
+                              active={isAdminPath && currentTab === sub.tab}
+                              activeBg={`${primaryColor}40`} activeIconColor={activeIconColor}
+                            />
+                          ))}
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </SidebarMenuItem>
+                  </Collapsible>
+                )}
+              </>
             )}
-          </>
-        )}
-      </nav>
-    </aside>
-
-    {/* Edge toggle — a sibling of the aside, not a child of it: the aside's
-        own overflow-y-auto makes overflow-x compute to `auto` too (a CSS
-        overflow-pairing rule, not a bug), which would clip anything of the
-        aside's positioned outside its box. `fixed` + a left offset matching
-        the aside's current width sidesteps that entirely. Desktop only —
-        mobile already has its own X close button. Lets a route's initial
-        auto-collapse (project detail) be reopened, and the reverse. */}
-    <button
-      onClick={toggleCollapsed}
-      title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      className={cn(
-        'hidden md:flex fixed top-6 z-[60] w-6 h-6 rounded-full items-center justify-center text-white/60 hover:text-white transition-[left] duration-300 ease-in-out',
-        collapsed ? 'md:left-[64px]' : 'md:left-[208px]',
-      )}
-      style={{ background: '#1E293B', border: '1px solid rgba(255,255,255,0.1)' }}
-    >
-      {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
-    </button>
-
-    {/* Collapsed-rail hover tooltip — see railTooltip state comment above for
-        why this can't just be an absolutely-positioned span next to each icon. */}
-    {collapsed && railTooltip && (
-      <span
-        className="hidden md:block fixed left-[86px] z-[60] -translate-y-1/2 whitespace-nowrap rounded-lg bg-[#111827] px-2.5 py-1.5 text-xs font-medium text-white shadow-lg pointer-events-none"
-        style={{ top: railTooltip.top }}
-      >
-        {railTooltip.label}
-      </span>
-    )}
-    </>
+          </SidebarMenu>
+        </SidebarGroup>
+      </SidebarContent>
+    </Sidebar>
   );
 }

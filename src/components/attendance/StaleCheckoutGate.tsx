@@ -6,6 +6,7 @@ import { AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 // Blocking "you forgot to check out" popup — fires when a check-in from a
 // PREVIOUS attendance day is still open (see openSessionIsStale on
@@ -59,8 +60,17 @@ export default function StaleCheckoutGate() {
   if (!stale || !openSession) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
-      <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-4">
+    // No dismiss path at all — no onOpenChange-driven close, no Escape, no
+    // backdrop click. Resolving the stale check-out is the only way out,
+    // same as the original div-based implementation this replaces.
+    <Dialog open onOpenChange={() => {}}>
+      <DialogContent
+        showCloseButton={false}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+        className="max-w-sm sm:max-w-sm w-full rounded-2xl shadow-xl p-6 gap-4"
+      >
+        <DialogTitle className="sr-only">Forgot to check out</DialogTitle>
         <div className="flex items-start gap-3">
           <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
             <AlertTriangle className="w-4.5 h-4.5 text-amber-600" />
@@ -99,7 +109,7 @@ export default function StaleCheckoutGate() {
         >
           {mutation.isPending ? 'Saving…' : 'Save check-out time'}
         </button>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

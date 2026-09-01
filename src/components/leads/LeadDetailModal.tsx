@@ -8,6 +8,7 @@ import api from '@/lib/api';
 import Avatar from '@/components/Avatar';
 import { cn, formatDate, titleCase } from '@/lib/utils';
 import { invalidateMany, afterLeadChange } from '@/lib/queryInvalidation';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 const STATUS_OPTIONS = [
   { value: 'new', label: 'New' },
@@ -84,9 +85,9 @@ export default function LeadDetailModal({ leadId, onClose }: { leadId: string; o
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent showCloseButton={false} className="max-w-2xl sm:max-w-2xl w-full max-h-[90vh] p-0 gap-0 overflow-y-auto rounded-2xl">
+        <DialogTitle className="sr-only">{lead?.fullName ? `Lead: ${lead.fullName}` : 'Lead details'}</DialogTitle>
         <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between z-10">
           <h3 className="text-sm font-semibold text-gray-900">Lead details</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100">
@@ -260,7 +261,7 @@ export default function LeadDetailModal({ leadId, onClose }: { leadId: string; o
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

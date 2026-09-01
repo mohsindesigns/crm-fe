@@ -7,6 +7,7 @@ import { MapPin, MapPinOff, Pencil, CalendarCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import Pagination from '@/components/Pagination';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { cn, formatPeriod, titleCase } from '@/lib/utils';
 import { attendanceSourceLabel, shouldTreatUnmarkedAsAbsent, nowInKarachi } from '@/lib/attendanceDate';
 import AttendanceStatusBadges, { attendanceLabelClass } from '@/components/AttendanceStatusBadges';
@@ -174,24 +175,24 @@ export default function AttendanceBoard() {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-160">
-            <thead>
-              <tr className="border-b border-gray-100">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Worker</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Date</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check In</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check Out</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Source</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
-                {canManage && logDate && <th className="px-5 py-3 w-12" />}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
+          <Table className="w-full min-w-160">
+            <TableHeader>
+              <TableRow className="border-b border-gray-200 bg-gray-100">
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Worker</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Date</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check In</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check Out</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Source</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</TableHead>
+                {canManage && logDate && <TableHead className="px-5 py-3 w-12" />}
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-100">
               {logDate ? (
                 loadingLogDate || loadingWorkers ? (
-                  <tr><td colSpan={canManage ? 7 : 6} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</td></tr>
+                  <TableRow><TableCell colSpan={canManage ? 7 : 6} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</TableCell></TableRow>
                 ) : activeWorkers.length === 0 ? (
-                  <tr><td colSpan={canManage ? 7 : 6} className="px-5 py-8 text-sm text-gray-400 text-center">No active workers found.</td></tr>
+                  <TableRow><TableCell colSpan={canManage ? 7 : 6} className="px-5 py-8 text-sm text-gray-400 text-center">No active workers found.</TableCell></TableRow>
                 ) : (
                   activeWorkers
                     .map((w: any) => ({ w, a: logDateAttendance.find((x: any) => x.workerId === w.id) }))
@@ -205,8 +206,8 @@ export default function AttendanceBoard() {
                       const showAbsent = !a && logDate && shouldTreatUnmarkedAsAbsent(logDate);
                       const displayStatus = a?.status || (showAbsent ? 'absent' : null);
                       return (
-                        <tr key={w.id} className={cn('hover:bg-gray-50', !a && !showAbsent && 'bg-amber-50/40', showAbsent && 'bg-red-50/30')}>
-                          <td className="px-5 py-3.5 text-sm font-medium">
+                        <TableRow key={w.id} className={cn('hover:bg-gray-50', !a && !showAbsent && 'bg-amber-50/40', showAbsent && 'bg-red-50/30')}>
+                          <TableCell className="px-5 py-3.5 text-sm font-medium">
                             {w.id ? (
                               <Link href={workerAttendanceHref(w.id, month)} className={EMPLOYEE_LINK_CLASS}>
                                 {w.user?.name}
@@ -214,9 +215,9 @@ export default function AttendanceBoard() {
                             ) : (
                               <span className="text-gray-900">{w.user?.name}</span>
                             )}
-                          </td>
-                          <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">{logDate}</td>
-                          <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">{logDate}</TableCell>
+                          <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
                             {a?.checkIn ? (
                               <span className="flex items-center gap-1.5">
                                 {a.checkIn.slice(0, 5)}
@@ -229,8 +230,8 @@ export default function AttendanceBoard() {
                                 )}
                               </span>
                             ) : '—'}
-                          </td>
-                          <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
                             {a?.checkOut ? (
                               <span className="flex items-center gap-1.5">
                                 {a.checkOut.slice(0, 5)}
@@ -243,8 +244,8 @@ export default function AttendanceBoard() {
                                 )}
                               </span>
                             ) : '—'}
-                          </td>
-                          <td className="px-5 py-3.5">
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5">
                             {a && (
                               <span className={cn('px-2 py-0.5 text-[10px] font-medium rounded-full uppercase tracking-wide',
                                 a.source === 'self' ? 'bg-violet-50 text-violet-600'
@@ -258,8 +259,8 @@ export default function AttendanceBoard() {
                                 System
                               </span>
                             )}
-                          </td>
-                          <td className="px-5 py-3.5">
+                          </TableCell>
+                          <TableCell className="px-5 py-3.5">
                             {displayStatus ? (
                               a ? (
                                 <AttendanceStatusBadges record={a} />
@@ -273,9 +274,9 @@ export default function AttendanceBoard() {
                                 Not Marked
                               </span>
                             )}
-                          </td>
+                          </TableCell>
                           {canManage && (
-                            <td className="px-5 py-3.5 text-right">
+                            <TableCell className="px-5 py-3.5 text-right">
                               <button
                                 type="button"
                                 title={a ? 'Correct this record' : 'Mark this employee for this day'}
@@ -284,16 +285,16 @@ export default function AttendanceBoard() {
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
-                            </td>
+                            </TableCell>
                           )}
-                        </tr>
+                        </TableRow>
                       );
                     })
                 )
               ) : loadingAttendance ? (
-                <tr><td colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</td></tr>
+                <TableRow><TableCell colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</TableCell></TableRow>
               ) : attendance.length === 0 ? (
-                <tr><td colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">No attendance records for this month.</td></tr>
+                <TableRow><TableCell colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">No attendance records for this month.</TableCell></TableRow>
               ) : (
                 (attendance as any[]).map((a: any) => {
                   const mapLink = (lat: any, lng: any) =>
@@ -301,8 +302,8 @@ export default function AttendanceBoard() {
                   const checkInMap = mapLink(a.checkInLat, a.checkInLng);
                   const checkOutMap = mapLink(a.checkOutLat, a.checkOutLng);
                   return (
-                  <tr key={a.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-3.5 text-sm font-medium">
+                  <TableRow key={a.id} className="hover:bg-gray-50">
+                    <TableCell className="px-5 py-3.5 text-sm font-medium">
                       {a.workerId || a.worker?.id ? (
                         <Link href={workerAttendanceHref(String(a.workerId || a.worker?.id), month)} className={EMPLOYEE_LINK_CLASS}>
                           {a.worker?.user?.name}
@@ -310,9 +311,9 @@ export default function AttendanceBoard() {
                       ) : (
                         <span className="text-gray-900">{a.worker?.user?.name}</span>
                       )}
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">{(a.date || '').slice(0, 10)}</td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">{(a.date || '').slice(0, 10)}</TableCell>
+                    <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
                       {a.checkIn ? (
                         <span className="flex items-center gap-1.5">
                           {a.checkIn.slice(0, 5)}
@@ -325,8 +326,8 @@ export default function AttendanceBoard() {
                           )}
                         </span>
                       ) : '—'}
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">
                       {a.checkOut ? (
                         <span className="flex items-center gap-1.5">
                           {a.checkOut.slice(0, 5)}
@@ -339,24 +340,24 @@ export default function AttendanceBoard() {
                           )}
                         </span>
                       ) : '—'}
-                    </td>
-                    <td className="px-5 py-3.5">
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5">
                       <span className={cn('px-2 py-0.5 text-[10px] font-medium rounded-full uppercase tracking-wide',
                         a.source === 'self' ? 'bg-violet-50 text-violet-600'
                           : a.source === 'system' ? 'bg-slate-100 text-slate-600'
                             : 'bg-gray-100 text-gray-500')}>
                         {attendanceSourceLabel(a.source)}
                       </span>
-                    </td>
-                    <td className="px-5 py-3.5">
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5">
                       <AttendanceStatusBadges record={a} />
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                   );
                 })
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
         {!logDate && (
           <Pagination
@@ -599,21 +600,21 @@ export default function AttendanceBoard() {
           <p className="px-5 py-8 text-sm text-gray-400 text-center">No active employees found.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
-                  <th className="px-5 py-2.5 font-medium">Employee</th>
-                  <th className="px-5 py-2.5 font-medium">Present</th>
-                  <th className="px-5 py-2.5 font-medium">Absent</th>
-                  <th className="px-5 py-2.5 font-medium">Leave</th>
-                  <th className="px-5 py-2.5 font-medium">Half-day</th>
-                  <th className="px-5 py-2.5 font-medium">Marked / Days</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
+            <Table className="w-full text-sm">
+              <TableHeader>
+                <TableRow className="text-left text-xs text-gray-400 border-b border-gray-200 bg-gray-100">
+                  <TableHead className="px-5 py-2.5 font-medium">Employee</TableHead>
+                  <TableHead className="px-5 py-2.5 font-medium">Present</TableHead>
+                  <TableHead className="px-5 py-2.5 font-medium">Absent</TableHead>
+                  <TableHead className="px-5 py-2.5 font-medium">Leave</TableHead>
+                  <TableHead className="px-5 py-2.5 font-medium">Half-day</TableHead>
+                  <TableHead className="px-5 py-2.5 font-medium">Marked / Days</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-50">
                 {attendanceSummary.rows.map((r: any) => (
-                  <tr key={r.workerId}>
-                    <td className="px-5 py-2.5 font-medium">
+                  <TableRow key={r.workerId}>
+                    <TableCell className="px-5 py-2.5 font-medium">
                       {r.workerId ? (
                         <Link href={workerAttendanceHref(r.workerId, month)} className={EMPLOYEE_LINK_CLASS}>
                           {r.name}
@@ -621,16 +622,16 @@ export default function AttendanceBoard() {
                       ) : (
                         <span className="text-gray-900">{r.name}</span>
                       )}
-                    </td>
-                    <td className="px-5 py-2.5 text-brand-800">{r.present}</td>
-                    <td className="px-5 py-2.5 text-red-600">{r.absent}</td>
-                    <td className="px-5 py-2.5 text-amber-600">{r.leave}</td>
-                    <td className="px-5 py-2.5 text-blue-600">{r.halfDay}</td>
-                    <td className="px-5 py-2.5 text-gray-400">{r.totalMarked} / {attendanceSummary.daysInMonth}</td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="px-5 py-2.5 text-brand-800">{r.present}</TableCell>
+                    <TableCell className="px-5 py-2.5 text-red-600">{r.absent}</TableCell>
+                    <TableCell className="px-5 py-2.5 text-amber-600">{r.leave}</TableCell>
+                    <TableCell className="px-5 py-2.5 text-blue-600">{r.halfDay}</TableCell>
+                    <TableCell className="px-5 py-2.5 text-gray-400">{r.totalMarked} / {attendanceSummary.daysInMonth}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>

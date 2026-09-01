@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/store/auth';
 import Sidebar from '@/components/layout/Sidebar';
+import { SidebarProvider } from '@/components/ui/sidebar';
 import NotificationBridge from '@/components/NotificationBridge';
 import MessagesWidget from '@/components/messages/MessagesWidget';
 import StaleCheckoutGate from '@/components/attendance/StaleCheckoutGate';
@@ -117,15 +118,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const focusedMode = needsOnboarding || !!user.mustChangePassword;
 
   if (focusedMode) {
+    // No <Sidebar> here (onboarding is single-task, nothing to navigate to),
+    // but Header's SidebarTrigger still needs a SidebarProvider ancestor to
+    // call useSidebar() without throwing.
     return (
-      <div className="flex h-screen overflow-hidden">
+      <SidebarProvider className="h-screen overflow-hidden">
         <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
-      </div>
+      </SidebarProvider>
     );
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <SidebarProvider className="h-screen overflow-hidden">
       {/* Session-wide, so message alerts reach you on any screen — not only
           while Messages is open. Renders nothing. */}
       <NotificationBridge />
@@ -139,6 +143,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <main className="flex-1 overflow-y-auto overflow-x-hidden min-w-0">{children}</main>
       </div>
       <MessagesWidget />
-    </div>
+    </SidebarProvider>
   );
 }

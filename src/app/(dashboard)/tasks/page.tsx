@@ -9,6 +9,8 @@ import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import Avatar from '@/components/Avatar';
 import Linkify from '@/components/Linkify';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { cn, formatDate, todayDateInput, titleCase, uploadErrorMessage, formatFileSize } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
 
@@ -476,9 +478,9 @@ export default function TasksPage() {
         </div>
 
         {showAddTask && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={closeAddTask} />
-            <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md sm:max-w-lg p-6 space-y-4 max-h-[90dvh] overflow-y-auto">
+          <Dialog open onOpenChange={(open) => { if (!open) closeAddTask(); }}>
+            <DialogContent className="max-w-md sm:max-w-lg max-h-[90dvh] overflow-y-auto rounded-2xl shadow-xl">
+              <DialogTitle className="sr-only">Add task</DialogTitle>
               <h3 className="text-sm font-semibold text-gray-900">Add Task</h3>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1.5">Project *</label>
@@ -691,8 +693,8 @@ export default function TasksPage() {
                   {createTask.isPending ? 'Creating…' : 'Create Task'}
                 </button>
               </div>
-            </div>
-          </div>
+            </DialogContent>
+          </Dialog>
         )}
 
         <div className="bg-white rounded-xl border border-gray-200">
@@ -847,20 +849,20 @@ export default function TasksPage() {
                 })}
               </div>
 
-              <table className="hidden md:table w-full table-fixed">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50/60">
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3 w-[34%]">Task</th>
+              <Table className="hidden md:table w-full table-fixed">
+                <TableHeader>
+                  <TableRow className="border-b border-gray-200 bg-gray-100">
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3 w-[34%]">Task</TableHead>
                     {showAssigneeCol && (
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-3 w-[9rem] whitespace-nowrap">Assignee</th>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-3 w-[9rem] whitespace-nowrap">Assignee</TableHead>
                     )}
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-3 w-[6rem] whitespace-nowrap">Due</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-3 w-[6.5rem] whitespace-nowrap">Reminder</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-3 w-[11rem] whitespace-nowrap">Timestamps</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-3 w-[6.5rem] whitespace-nowrap">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-3 w-[6rem] whitespace-nowrap">Due</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-3 w-[6.5rem] whitespace-nowrap">Reminder</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-3 w-[11rem] whitespace-nowrap">Timestamps</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-3 w-[6.5rem] whitespace-nowrap">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-gray-100">
                   {tasks.map((task: any) => {
                     const isOverdue = !!task.dueAt
                       && new Date(task.dueAt) < new Date(new Date().toDateString())
@@ -871,12 +873,12 @@ export default function TasksPage() {
                       && task.assigneeId
                       && task.assigneeId !== currentUser.id;
                     return (
-                      <tr
+                      <TableRow
                         key={task.id}
                         onClick={() => openTask(task)}
                         className={cn('cursor-pointer hover:bg-gray-50/80 transition-colors align-top', isOverdue && 'bg-red-50/40')}
                       >
-                        <td className="px-5 py-3.5">
+                        <TableCell className="px-5 py-3.5">
                           <div className="flex items-start gap-2.5 min-w-0">
                             <CheckSquare className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                             <div className="min-w-0 space-y-1.5">
@@ -919,9 +921,9 @@ export default function TasksPage() {
                               )}
                             </div>
                           </div>
-                        </td>
+                        </TableCell>
                         {showAssigneeCol && (
-                          <td className="px-3 py-3.5 align-top">
+                          <TableCell className="px-3 py-3.5 align-top">
                             <div className="flex items-center gap-1.5 min-w-0">
                               <Avatar name={task.assignee?.name || task.pendingAssignee?.name} size="xs" />
                               <span className="text-xs text-gray-600 truncate">
@@ -929,9 +931,9 @@ export default function TasksPage() {
                                   || (task.pendingAssignee?.name ? `Pending: ${task.pendingAssignee.name}` : 'Unassigned')}
                               </span>
                             </div>
-                          </td>
+                          </TableCell>
                         )}
-                        <td className="px-3 py-3.5 whitespace-nowrap align-top">
+                        <TableCell className="px-3 py-3.5 whitespace-nowrap align-top">
                           {task.dueAt ? (
                             <span className={cn('flex items-center gap-1 text-xs', isOverdue ? 'text-red-600 font-medium' : 'text-gray-500')}>
                               {isOverdue ? <AlertTriangle className="w-3 h-3 shrink-0" /> : <Calendar className="w-3 h-3 shrink-0" />}
@@ -940,8 +942,8 @@ export default function TasksPage() {
                           ) : (
                             <span className="text-xs text-gray-300">—</span>
                           )}
-                        </td>
-                        <td className="px-3 py-3.5 whitespace-nowrap align-top">
+                        </TableCell>
+                        <TableCell className="px-3 py-3.5 whitespace-nowrap align-top">
                           {task.reminderAt ? (
                             <span className="flex items-center gap-1 text-xs text-amber-700" title="Auto reminder (24h before due)">
                               <Bell className="w-3 h-3 shrink-0" />
@@ -950,8 +952,8 @@ export default function TasksPage() {
                           ) : (
                             <span className="text-xs text-gray-300">—</span>
                           )}
-                        </td>
-                        <td className="px-3 py-3.5 align-top">
+                        </TableCell>
+                        <TableCell className="px-3 py-3.5 align-top">
                           {stamps.length === 0 ? (
                             <span className="text-xs text-gray-300">—</span>
                           ) : (
@@ -965,18 +967,18 @@ export default function TasksPage() {
                               ))}
                             </div>
                           )}
-                        </td>
-                        <td className="px-3 py-3.5 whitespace-nowrap align-top">
+                        </TableCell>
+                        <TableCell className="px-3 py-3.5 whitespace-nowrap align-top">
                           <span className={cn('inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-medium rounded-full', STATUS_COLORS[task.status] || 'bg-gray-100 text-gray-500')}>
                             <CircleDot className="w-3 h-3 shrink-0 opacity-70" />
                             {titleCase(task.status || 'todo')}
                           </span>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     );
                   })}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </>
           )}
         </div>

@@ -7,6 +7,8 @@ import { Filter, Download } from 'lucide-react';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import Pagination from '@/components/Pagination';
+import BarChartCard from '@/components/charts/BarChartCard';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { cn, formatDate } from '@/lib/utils';
 
 const LIMIT = 25;
@@ -50,11 +52,11 @@ function SkeletonRows({ cols = 9 }: { cols?: number }) {
   return (
     <>
       {[...Array(8)].map((_, i) => (
-        <tr key={i} className="animate-pulse border-b border-gray-50">
+        <TableRow key={i} className="animate-pulse border-b border-gray-50">
           {[...Array(cols)].map((__, j) => (
-            <td key={j} className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
+            <TableCell key={j} className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></TableCell>
           ))}
-        </tr>
+        </TableRow>
       ))}
     </>
   );
@@ -180,6 +182,19 @@ export default function BacklinkReportsPage() {
   const total = data?.total || 0;
   const totalPages = data?.totalPages || 1;
 
+  // Rows are per-project-per-builder(-per-day), so the same builder can
+  // appear across many rows — sum linksMadeInDay per linkBuilderName to get
+  // a per-builder total for the chart.
+  const builderChartData = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const r of rows) {
+      totals.set(r.linkBuilderName, (totals.get(r.linkBuilderName) || 0) + (r.linksMadeInDay || 0));
+    }
+    return Array.from(totals.entries())
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [rows]);
+
   const pageKeys = rows.map(rowKey);
   const allChecked = pageKeys.length > 0 && pageKeys.every((k) => selectedKeys.has(k));
   const someChecked = pageKeys.some((k) => selectedKeys.has(k)) && !allChecked;
@@ -291,66 +306,72 @@ export default function BacklinkReportsPage() {
           )}
         </div>
 
+        {/* ── Links Made by Builder ── */}
+        <BarChartCard
+          title="Links Made by Builder"
+          data={builderChartData}
+          categorical={false}
+          emptyMessage={isLoading ? 'Loading…' : dateScoped ? 'No link-building activity in this date range.' : 'No link-building activity yet.'}
+        />
+
         {/* ── Table ── */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-260">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/50">
-                  <th className="px-5 py-3.5 w-10">
-                    <input
-                      type="checkbox"
-                      checked={allChecked}
-                      ref={(el) => { if (el) el.indeterminate = someChecked; }}
-                      onChange={(e) => toggleAll(pageKeys, e.target.checked)}
-                      className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                    />
-                  </th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Link Builder</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project Start Date</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">{dateScoped ? 'Links Made' : 'Links Made (All Time)'}</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project Total Backlinks</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Total Indexed</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Total Non-Indexed</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Total Duplicate</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {isLoading ? (
-                  <SkeletonRows cols={10} />
-                ) : rows.length === 0 ? (
-                  <tr><td colSpan={10} className="px-5 py-12 text-center text-sm text-gray-400">{dateScoped ? 'No link-building activity in this date range.' : 'No link-building activity yet.'}</td></tr>
-                ) : (
-                  rows.map((r) => {
-                    const key = rowKey(r);
-                    return (
-                      <tr key={key} className={cn('hover:bg-gray-50 transition-colors', selectedKeys.has(key) && 'bg-brand-50/40')}>
-                        <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={selectedKeys.has(key)}
-                            onChange={() => toggleRow(key)}
-                            className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                          />
-                        </td>
-                        <td className="px-5 py-3.5 text-sm font-medium text-gray-900 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=backlinks`)}>{r.linkBuilderName}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=backlinks`)}>{r.clientName}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=backlinks`)}>{r.projectName}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=backlinks`)}>{r.projectStartDate ? formatDate(r.projectStartDate) : '—'}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-900 font-semibold text-right tabular-nums">{r.linksMadeInDay}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums">{r.projectTotalBacklinks}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums">{r.totalIndexed}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums">{r.totalNonIndexed}</td>
-                        <td className={cn('px-5 py-3.5 text-sm text-right tabular-nums', r.totalDuplicate > 0 ? 'text-amber-700 font-medium' : 'text-gray-600')}>{r.totalDuplicate}</td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+          <Table className="w-full min-w-260">
+            <TableHeader>
+              <TableRow className="border-b border-gray-200 bg-gray-100">
+                <TableHead className="px-5 py-3.5 w-10">
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    ref={(el) => { if (el) el.indeterminate = someChecked; }}
+                    onChange={(e) => toggleAll(pageKeys, e.target.checked)}
+                    className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                  />
+                </TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Link Builder</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project Start Date</TableHead>
+                <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">{dateScoped ? 'Links Made' : 'Links Made (All Time)'}</TableHead>
+                <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project Total Backlinks</TableHead>
+                <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Total Indexed</TableHead>
+                <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Total Non-Indexed</TableHead>
+                <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Total Duplicate</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-50">
+              {isLoading ? (
+                <SkeletonRows cols={10} />
+              ) : rows.length === 0 ? (
+                <TableRow><TableCell colSpan={10} className="px-5 py-12 text-center text-sm text-gray-400">{dateScoped ? 'No link-building activity in this date range.' : 'No link-building activity yet.'}</TableCell></TableRow>
+              ) : (
+                rows.map((r) => {
+                  const key = rowKey(r);
+                  return (
+                    <TableRow key={key} className={cn('hover:bg-gray-50 transition-colors', selectedKeys.has(key) && 'bg-brand-50/40')}>
+                      <TableCell className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedKeys.has(key)}
+                          onChange={() => toggleRow(key)}
+                          className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                        />
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=backlinks`)}>{r.linkBuilderName}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=backlinks`)}>{r.clientName}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=backlinks`)}>{r.projectName}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap cursor-pointer" onClick={() => router.push(`/projects/${r.projectId}?tab=backlinks`)}>{r.projectStartDate ? formatDate(r.projectStartDate) : '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-900 font-semibold text-right tabular-nums">{r.linksMadeInDay}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums">{r.projectTotalBacklinks}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums">{r.totalIndexed}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums">{r.totalNonIndexed}</TableCell>
+                      <TableCell className={cn('px-5 py-3.5 text-sm text-right tabular-nums', r.totalDuplicate > 0 ? 'text-amber-700 font-medium' : 'text-gray-600')}>{r.totalDuplicate}</TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
           <Pagination page={page} totalPages={totalPages} total={total} limit={LIMIT} onPageChange={setPage} />
         </div>
 

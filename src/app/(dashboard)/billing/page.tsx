@@ -7,6 +7,8 @@ import Link from 'next/link';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import { cn, formatDate, formatCurrency } from '@/lib/utils';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import StatCard from '@/components/dashboard/StatCard';
 
 const INV_STATUS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-600',
@@ -105,35 +107,22 @@ export default function BillingPage() {
 
         {/* Metrics row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-3 bg-brand-50">
-              <TrendingUp className="w-4 h-4 text-brand-700" />
-            </div>
-            <p className="text-xs text-gray-500 mb-1">Monthly Recurring Revenue</p>
+          <StatCard label="Monthly Recurring Revenue" icon={TrendingUp} color="brand">
             <CurrencyBreakdown map={mrrByCurrency} />
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-3 bg-blue-50">
-              <Clock className="w-4 h-4 text-blue-600" />
-            </div>
-            <p className="text-xs text-gray-500 mb-1">Outstanding</p>
+          </StatCard>
+          <StatCard label="Outstanding" icon={Clock} color="blue">
             <CurrencyBreakdown map={outstandingByCurrency} />
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-3 bg-indigo-50">
-              <CheckCircle className="w-4 h-4 text-indigo-600" />
-            </div>
-            <p className="text-xs text-gray-500 mb-1">Paid This Month</p>
+          </StatCard>
+          <StatCard label="Paid This Month" icon={CheckCircle} color="indigo">
             <CurrencyBreakdown map={paidThisMonthByCurrency} />
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-3 bg-red-50">
-              <AlertTriangle className="w-4 h-4 text-red-600" />
-            </div>
-            <p className="text-xs text-gray-500 mb-1">Overdue Invoices</p>
-            <p className="text-2xl font-bold text-red-600 mt-1">{overdueCount}</p>
-            <p className="text-xs text-gray-400">{overdueCount === 1 ? 'invoice' : 'invoices'}</p>
-          </div>
+          </StatCard>
+          <StatCard
+            label="Overdue Invoices"
+            icon={AlertTriangle}
+            color={overdueCount > 0 ? 'red' : 'gray'}
+            value={overdueCount}
+            sub={overdueCount === 1 ? 'invoice' : 'invoices'}
+          />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -148,44 +137,42 @@ export default function BillingPage() {
             ) : outstandingInvoices.length === 0 ? (
               <div className="px-5 py-10 text-center text-sm text-gray-400">No outstanding invoices yet.</div>
             ) : (
-              <div className="overflow-x-auto">
-              <table className="w-full min-w-120">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Invoice</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Client</th>
-                    <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Amount</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
+              <Table className="w-full min-w-120">
+                <TableHeader>
+                  <TableRow className="border-b border-gray-200 bg-gray-100">
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Invoice</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Client</TableHead>
+                    <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Amount</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-gray-100">
                   {outstandingInvoices.slice(0, 10).map((inv: any) => (
-                    <tr key={inv.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/invoices/${inv.id}`)}>
-                      <td className="px-5 py-3 text-sm font-medium text-gray-900 font-mono flex items-center gap-2">
+                    <TableRow key={inv.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/invoices/${inv.id}`)}>
+                      <TableCell className="px-5 py-3 text-sm font-medium text-gray-900 font-mono flex items-center gap-2">
                         <FileText className="w-3.5 h-3.5 text-gray-400" />{inv.number}
-                      </td>
-                      <td className="px-5 py-3 text-sm text-gray-600">{inv.client?.name || '—'}</td>
+                      </TableCell>
+                      <TableCell className="px-5 py-3 text-sm text-gray-600">{inv.client?.name || '—'}</TableCell>
                       {/* The column is "outstanding invoices", so the figure is
                           what's left to collect — with the face value alongside
                           it when part of the invoice has already been paid. */}
-                      <td className="px-5 py-3 text-sm font-medium text-gray-900 text-right font-mono">
+                      <TableCell className="px-5 py-3 text-sm font-medium text-gray-900 text-right font-mono">
                         {formatCurrency(inv.amountDue != null ? inv.amountDue : inv.total, inv.currency)}
                         {inv.amountPaid > 0 && (
                           <span className="block text-[11px] font-normal text-gray-400">
                             of {formatCurrency(inv.total, inv.currency)}
                           </span>
                         )}
-                      </td>
-                      <td className="px-5 py-3">
+                      </TableCell>
+                      <TableCell className="px-5 py-3">
                         <span className={cn('px-2 py-0.5 text-xs font-medium rounded-full', INV_STATUS[inv.status] || 'bg-gray-100 text-gray-600')}>
                           {inv.status}
                         </span>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-              </div>
+                </TableBody>
+              </Table>
             )}
           </div>
 

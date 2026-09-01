@@ -9,6 +9,8 @@ import Header from '@/components/layout/Header';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { cn, generatePassword, formatPeriod, titleCase } from '@/lib/utils';
 import { toast } from 'sonner';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 // Attendance used to have its own tab here, duplicating (with less capability
 // than) the org-wide Attendance page reachable from the sidebar — removed in
@@ -537,34 +539,33 @@ export default function HrPage() {
             <div className="px-5 py-4 border-b border-gray-100">
               <h3 className="text-sm font-semibold text-gray-900">Team Members</h3>
             </div>
-            <div className="overflow-x-auto">
-            <table className="w-full min-w-160">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Name</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Designation</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Department</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Type</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+            <Table className="w-full min-w-160">
+              <TableHeader>
+                <TableRow className="border-b border-gray-200 bg-gray-100">
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Name</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Designation</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Department</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Type</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-100">
                 {loadingWorkers ? (
-                  <tr><td colSpan={5} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</td></tr>
+                  <TableRow><TableCell colSpan={5} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</TableCell></TableRow>
                 ) : filteredWorkers.length === 0 ? (
-                  <tr><td colSpan={5} className="px-5 py-8 text-sm text-gray-400 text-center">
+                  <TableRow><TableCell colSpan={5} className="px-5 py-8 text-sm text-gray-400 text-center">
                     {workerStatusFilter || workerDesigFilter || workerDeptFilter || workerTypeFilter
                       ? 'No workers match these filters.'
                       : 'No workers yet. Use "Invite Employee" to add your first team member.'}
-                  </td></tr>
+                  </TableCell></TableRow>
                 ) : (
                   filteredWorkers.map((w: any) => (
-                    <tr
+                    <TableRow
                       key={w.id}
                       className="hover:bg-gray-50 cursor-pointer"
                       onClick={() => router.push(`/hr/workers/${w.id}`)}
                     >
-                      <td className="px-5 py-3.5">
+                      <TableCell className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
                           {w.profilePictureUrl ? (
                             <img src={w.profilePictureUrl} alt={w.user?.name} className="w-8 h-8 rounded-full object-cover border border-gray-200 shrink-0" />
@@ -578,21 +579,20 @@ export default function HrPage() {
                             <p className="text-xs text-gray-400">{w.user?.email}</p>
                           </div>
                         </div>
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{w.designation || '—'}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{w.department || '—'}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600 capitalize">{w.workerType}</td>
-                      <td className="px-5 py-3.5">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{w.designation || '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{w.department || '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 capitalize">{w.workerType}</TableCell>
+                      <TableCell className="px-5 py-3.5">
                         <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full capitalize', WORKER_STATUS_COLORS[w.status] || 'bg-gray-100 text-gray-600')}>
                           {titleCase(w.status)}
                         </span>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
-            </div>
+              </TableBody>
+            </Table>
           </div>
         )}
 
@@ -602,31 +602,30 @@ export default function HrPage() {
             <div className="px-5 py-4 border-b border-gray-100">
               <h3 className="text-sm font-semibold text-gray-900">Leave Requests</h3>
             </div>
-            <div className="overflow-x-auto">
-            <table className="w-full min-w-160">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Worker</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Type</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Period</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Days</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+            <Table className="w-full min-w-160">
+              <TableHeader>
+                <TableRow className="border-b border-gray-200 bg-gray-100">
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Worker</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Type</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Period</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Days</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-100">
                 {loadingLeaves ? (
-                  <tr><td colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</td></tr>
+                  <TableRow><TableCell colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</TableCell></TableRow>
                 ) : leaves.length === 0 ? (
-                  <tr><td colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">No leave requests.</td></tr>
+                  <TableRow><TableCell colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">No leave requests.</TableCell></TableRow>
                 ) : (
                   leaves.map((lr: any) => (
-                    <tr key={lr.id} className="hover:bg-gray-50">
-                      <td className="px-5 py-3.5 text-sm font-medium text-gray-900">{lr.worker?.user?.name}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600 capitalize">{lr.type}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{lr.fromDate} – {lr.toDate}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{lr.days}</td>
-                      <td className="px-5 py-3.5">
+                    <TableRow key={lr.id} className="hover:bg-gray-50">
+                      <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900">{lr.worker?.user?.name}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 capitalize">{lr.type}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{lr.fromDate} – {lr.toDate}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{lr.days}</TableCell>
+                      <TableCell className="px-5 py-3.5">
                         <div className="space-y-1">
                           <span className={cn('inline-flex px-2.5 py-1 text-xs font-medium rounded-full capitalize',
                             lr.status === 'approved' ? 'bg-brand-100 text-brand-800' :
@@ -640,8 +639,8 @@ export default function HrPage() {
                             </p>
                           )}
                         </div>
-                      </td>
-                      <td className="px-5 py-3.5">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5">
                         {lr.status === 'requested' && (
                           <div className="flex flex-wrap gap-2">
                             <button
@@ -662,24 +661,20 @@ export default function HrPage() {
                             </button>
                           </div>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
-            </div>
+              </TableBody>
+            </Table>
           </div>
         )}
 
         {/* Reject leave modal */}
         {rejectLeaveTarget && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div
-              className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-              onClick={() => { setRejectLeaveTarget(null); setRejectLeaveNote(''); }}
-            />
-            <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+          <Dialog open onOpenChange={(open) => { if (!open) { setRejectLeaveTarget(null); setRejectLeaveNote(''); } }}>
+            <DialogContent className="max-w-md sm:max-w-md rounded-2xl">
+              <DialogTitle className="sr-only">Reject leave request</DialogTitle>
               <div>
                 <h3 className="text-sm font-semibold text-gray-900">Reject leave request</h3>
                 <p className="text-xs text-gray-500 mt-1">
@@ -719,8 +714,8 @@ export default function HrPage() {
                   {reviewLeave.isPending ? 'Rejecting…' : 'Reject Leave'}
                 </button>
               </div>
-            </div>
-          </div>
+            </DialogContent>
+          </Dialog>
         )}
 
         {/* Contractor Invoices */}
@@ -730,35 +725,34 @@ export default function HrPage() {
               <Receipt className="w-4 h-4 text-gray-400" />
               <h3 className="text-sm font-semibold text-gray-900">Contractor Invoices</h3>
             </div>
-            <div className="overflow-x-auto">
-            <table className="w-full min-w-160">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Contractor</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Period</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Amount</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">File</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+            <Table className="w-full min-w-160">
+              <TableHeader>
+                <TableRow className="border-b border-gray-200 bg-gray-100">
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Contractor</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Period</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Amount</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">File</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-100">
                 {loadingInvoices ? (
-                  <tr><td colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</td></tr>
+                  <TableRow><TableCell colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</TableCell></TableRow>
                 ) : (contractorInvoices as any[]).length === 0 ? (
-                  <tr><td colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">No contractor invoices.</td></tr>
+                  <TableRow><TableCell colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">No contractor invoices.</TableCell></TableRow>
                 ) : (
                   (contractorInvoices as any[]).map((inv: any) => (
-                    <tr key={inv.id} className="hover:bg-gray-50">
-                      <td className="px-5 py-3.5 text-sm font-medium text-gray-900">{inv.worker?.user?.name || '—'}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{formatPeriod(inv.period)}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{inv.currency} {parseFloat(inv.amount).toLocaleString()}</td>
-                      <td className="px-5 py-3.5 text-sm">
+                    <TableRow key={inv.id} className="hover:bg-gray-50">
+                      <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900">{inv.worker?.user?.name || '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{formatPeriod(inv.period)}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{inv.currency} {parseFloat(inv.amount).toLocaleString()}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm">
                         {inv.fileUrl ? (
                           <a href={inv.fileUrl} target="_blank" rel="noreferrer" className="text-brand-700 hover:text-brand-800 font-medium text-xs">View file</a>
                         ) : <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-5 py-3.5">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5">
                         <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full capitalize',
                           inv.status === 'approved' ? 'bg-brand-100 text-brand-800' :
                           inv.status === 'paid' ? 'bg-blue-100 text-blue-700' :
@@ -766,8 +760,8 @@ export default function HrPage() {
                           'bg-amber-100 text-amber-700')}>
                           {inv.status}
                         </span>
-                      </td>
-                      <td className="px-5 py-3.5">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5">
                         {inv.status === 'submitted' && (
                           <div className="flex gap-2">
                             <button
@@ -784,13 +778,12 @@ export default function HrPage() {
                             </button>
                           </div>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
-            </div>
+              </TableBody>
+            </Table>
           </div>
         )}
 
@@ -798,42 +791,41 @@ export default function HrPage() {
         {tab === 'payroll' && (
           <div className="space-y-4">
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="overflow-x-auto">
-              <table className="w-full min-w-140">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Period</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Working days</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Created</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
+              <Table className="w-full min-w-140">
+                <TableHeader>
+                  <TableRow className="border-b border-gray-200 bg-gray-100">
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Period</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Working days</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Created</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-gray-100">
                   {loadingPayroll ? (
-                    <tr><td colSpan={5} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</td></tr>
+                    <TableRow><TableCell colSpan={5} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</TableCell></TableRow>
                   ) : filteredPayrollRuns.length === 0 ? (
-                    <tr><td colSpan={5} className="px-5 py-8 text-sm text-gray-400 text-center">
+                    <TableRow><TableCell colSpan={5} className="px-5 py-8 text-sm text-gray-400 text-center">
                       {payrollStatusFilter ? 'No payroll runs with this status.' : 'No payroll runs yet. Pick a month above to create one.'}
-                    </td></tr>
+                    </TableCell></TableRow>
                   ) : (
                     filteredPayrollRuns.map((run: any) => (
-                      <tr
+                      <TableRow
                         key={run.id}
                         className="hover:bg-gray-50 cursor-pointer"
                         onClick={() => router.push(`/hr/payroll/${run.id}`)}
                       >
-                        <td className="px-5 py-3.5 text-sm font-medium text-gray-900">{formatPeriod(run.period)}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600">{run.workingDaysPerMonth ?? '—'}</td>
-                        <td className="px-5 py-3.5">
+                        <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900">{formatPeriod(run.period)}</TableCell>
+                        <TableCell className="px-5 py-3.5 text-sm text-gray-600">{run.workingDaysPerMonth ?? '—'}</TableCell>
+                        <TableCell className="px-5 py-3.5">
                           <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full capitalize', PAYROLL_STATUS_COLORS[run.status] || 'bg-gray-100 text-gray-600')}>
                             {titleCase(run.status)}
                           </span>
-                        </td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600">
+                        </TableCell>
+                        <TableCell className="px-5 py-3.5 text-sm text-gray-600">
                           {new Date(run.createdAt).toLocaleDateString()}
-                        </td>
-                        <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
+                        </TableCell>
+                        <TableCell className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-3">
                             {NEXT_STATUS[run.status] && (
                               <button
@@ -864,13 +856,12 @@ export default function HrPage() {
                               Delete
                             </button>
                           </div>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))
                   )}
-                </tbody>
-              </table>
-              </div>
+                </TableBody>
+              </Table>
             </div>
           </div>
         )}

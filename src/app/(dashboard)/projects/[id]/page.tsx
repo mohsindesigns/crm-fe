@@ -18,8 +18,9 @@ import { usersForRoleSlot } from '@/lib/projectTeam';
 import { useState, useRef, useMemo, useEffect, Fragment } from 'react';
 import { useAuthStore } from '@/store/auth';
 import ClientRequestsTab from '@/components/projects/ClientRequestsTab';
-import { useSidebarStore } from '@/store/sidebar';
+import { useSidebar } from '@/components/ui/sidebar';
 import ProjectStatusPanel from '@/components/projects/ProjectStatusPanel';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 const KEYWORD_PAGE_SIZE = 10;
 const TASK_PAGE_SIZE = 5;
@@ -171,6 +172,7 @@ export default function ProjectDetailPage() {
   const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const branding = useAuthStore((s) => s.branding);
+  const { setOpen: setSidebarOpen } = useSidebar();
   const [actionNote, setActionNote] = useState('');
   // Stage Actions is a lot of vertical space (deliverable uploader, note,
   // buttons) — collapsed to a summary bar by default so it doesn't push the
@@ -230,9 +232,9 @@ export default function ProjectDetailPage() {
   // Give the status panel room: collapse the left nav for as long as a project
   // detail page is open, restore it on the way out (to any other page).
   useEffect(() => {
-    useSidebarStore.getState().setCollapsed(true);
-    return () => useSidebarStore.getState().setCollapsed(false);
-  }, []);
+    setSidebarOpen(false);
+    return () => setSidebarOpen(true);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', id],
@@ -3083,11 +3085,11 @@ export default function ProjectDetailPage() {
               </div>
               )}
               <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-                <table className="w-full min-w-[1580px]">
-                  <thead>
-                    <tr className="border-b border-gray-100">
+                <Table className="w-full min-w-[1580px]">
+                  <TableHeader>
+                    <TableRow className="border-b border-gray-100">
                       {canActOnProject && (
-                        <th className="px-3 py-3 w-10">
+                        <TableHead className="px-3 py-3 w-10">
                           <input
                             type="checkbox"
                             checked={allDeletableBacklinksSelected}
@@ -3097,32 +3099,32 @@ export default function ProjectDetailPage() {
                             title="Select all deletable backlinks"
                             aria-label="Select all deletable backlinks"
                           />
-                        </th>
+                        </TableHead>
                       )}
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Published URL</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Domain</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Link builder</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Publish date</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">DA</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">S.S</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Type</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Status</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Indexed</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Added</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Last updated</th>
-                      <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 w-12" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Published URL</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Domain</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Link builder</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Publish date</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">DA</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">S.S</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Type</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Status</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Indexed</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Added</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Last updated</TableHead>
+                      <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 w-12" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-gray-100">
                     {backlinks.length === 0 ? (
-                      <tr><td colSpan={canActOnProject ? 13 : 12} className="px-4 py-8 text-sm text-gray-400 text-center">No backlinks yet.</td></tr>
+                      <TableRow><TableCell colSpan={canActOnProject ? 13 : 12} className="px-4 py-8 text-sm text-gray-400 text-center">No backlinks yet.</TableCell></TableRow>
                     ) : (
                       backlinks.map((bl: any) => {
                         const locked = !!bl.isIndexed;
                         return (
-                        <tr key={bl.id} className={cn('hover:bg-gray-50', isDuplicate(bl) && 'bg-amber-50/70', inactiveRow(bl.isActive))}>
+                        <TableRow key={bl.id} className={cn('hover:bg-gray-50', isDuplicate(bl) && 'bg-amber-50/70', inactiveRow(bl.isActive))}>
                           {canActOnProject && (
-                            <td className="px-3 py-3">
+                            <TableCell className="px-3 py-3">
                               <input
                                 type="checkbox"
                                 checked={selectedBacklinkIds.has(bl.id)}
@@ -3131,14 +3133,14 @@ export default function ProjectDetailPage() {
                                 className="rounded border-gray-300 text-brand-700 focus:ring-brand-600 disabled:opacity-40"
                                 aria-label={`Select ${bl.sourceUrl || bl.domain || 'backlink'}`}
                               />
-                            </td>
+                            </TableCell>
                           )}
-                          <td className="px-4 py-3 text-sm text-blue-600 max-w-[200px] truncate">
+                          <TableCell className="px-4 py-3 text-sm text-blue-600 max-w-[200px] truncate">
                             <a href={bl.sourceUrl} target="_blank" rel="noreferrer">{bl.sourceUrl}</a>
                             {isDuplicate(bl) && <span className="ml-1.5 text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full align-middle">Duplicate</span>}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{bl.domain || '—'}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">
+                          </TableCell>
+                          <TableCell className="px-4 py-3 text-sm text-gray-600">{bl.domain || '—'}</TableCell>
+                          <TableCell className="px-4 py-3 whitespace-nowrap">
                             {canActOnProject ? (() => {
                               // A link imported from a sheet can be credited to
                               // someone who has since changed role and dropped out
@@ -3164,8 +3166,8 @@ export default function ProjectDetailPage() {
                             })() : (
                               <span className="text-sm text-gray-600">{bl.assignedWriter?.name || '—'}</span>
                             )}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                          </TableCell>
+                          <TableCell className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                             {canActOnProject ? (
                               <input
                                 type="date"
@@ -3181,11 +3183,11 @@ export default function ProjectDetailPage() {
                             ) : (
                               bl.date ? formatDate(bl.date, 'MMM d, yyyy') : '—'
                             )}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{bl.da ?? '—'}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{bl.spamScore ?? '—'}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600 capitalize">{titleCase(bl.linkType)}</td>
-                          <td className="px-4 py-3">
+                          </TableCell>
+                          <TableCell className="px-4 py-3 text-sm text-gray-600">{bl.da ?? '—'}</TableCell>
+                          <TableCell className="px-4 py-3 text-sm text-gray-600">{bl.spamScore ?? '—'}</TableCell>
+                          <TableCell className="px-4 py-3 text-sm text-gray-600 capitalize">{titleCase(bl.linkType)}</TableCell>
+                          <TableCell className="px-4 py-3">
                             {canActOnProject ? (
                               <select
                                 defaultValue={bl.status || 'live'}
@@ -3199,8 +3201,8 @@ export default function ProjectDetailPage() {
                             ) : (
                               <span className="text-sm text-gray-600 capitalize">{bl.status || 'live'}</span>
                             )}
-                          </td>
-                          <td className="px-4 py-3">
+                          </TableCell>
+                          <TableCell className="px-4 py-3">
                             {canActOnProject ? (
                               <select
                                 defaultValue={bl.isIndexed ? 'yes' : 'no'}
@@ -3215,14 +3217,14 @@ export default function ProjectDetailPage() {
                                 {bl.isIndexed ? 'Yes' : 'No'}
                               </span>
                             )}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                          </TableCell>
+                          <TableCell className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
                             {bl.createdAt ? formatDate(bl.createdAt, 'MMM d, yyyy') : '—'}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                          </TableCell>
+                          <TableCell className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
                             {bl.updatedAt ? formatDate(bl.updatedAt, 'MMM d, yyyy · h:mm a') : '—'}
-                          </td>
-                          <td className="px-4 py-3 text-right">
+                          </TableCell>
+                          <TableCell className="px-4 py-3 text-right">
                             {locked ? (
                               <span className="text-[10px] font-medium text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded-full whitespace-nowrap" title="Indexed — can't be removed">
                                 Indexed
@@ -3241,13 +3243,13 @@ export default function ProjectDetailPage() {
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             )}
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                         );
                       })
                     )}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </div>
             );
@@ -3450,11 +3452,11 @@ export default function ProjectDetailPage() {
                     </div>
                   )}
                 </div>
-                <table className="w-full min-w-[880px]">
-                  <thead>
-                    <tr className="border-b border-gray-100">
+                <Table className="w-full min-w-[880px]">
+                  <TableHeader>
+                    <TableRow className="border-b border-gray-100">
                       {canActOnProject && deletableContentIds.length > 0 && (
-                        <th className="px-4 py-3 w-10">
+                        <TableHead className="px-4 py-3 w-10">
                           <input
                             type="checkbox"
                             checked={deletableContentIds.length > 0 && deletableContentIds.every((cid) => selectedContentIds.has(cid))}
@@ -3463,25 +3465,25 @@ export default function ProjectDetailPage() {
                             aria-label="Select all deletable content"
                             title="Select all deletable content"
                           />
-                        </th>
+                        </TableHead>
                       )}
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Page title</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Keywords</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Words</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">File</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Submitted by</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Date</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Status</th>
-                      <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Page title</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Keywords</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Words</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">File</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Submitted by</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Date</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Status</TableHead>
+                      <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-gray-100">
                     {historyContent.length === 0 ? (
-                      <tr>
-                        <td colSpan={9} className="px-4 py-8 text-sm text-gray-400 text-center">
+                      <TableRow>
+                        <TableCell colSpan={9} className="px-4 py-8 text-sm text-gray-400 text-center">
                           No content submissions yet.
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ) : (
                       historyContent.map((cs: any) => {
                         const kwMap = new Map((keywords as any[]).map((k) => [k.id, k.primaryKeyword]));
@@ -3495,9 +3497,9 @@ export default function ProjectDetailPage() {
                         const isDeletableRow = deletableContentIds.includes(cs.id);
                         return (
                           <Fragment key={cs.id}>
-                          <tr className={cn('hover:bg-gray-50', isSuperseded && 'bg-slate-50/70 text-gray-500')}>
+                          <TableRow className={cn('hover:bg-gray-50', isSuperseded && 'bg-slate-50/70 text-gray-500')}>
                             {canActOnProject && deletableContentIds.length > 0 && (
-                              <td className="px-4 py-3">
+                              <TableCell className="px-4 py-3">
                                 <input
                                   type="checkbox"
                                   checked={selectedContentIds.has(cs.id)}
@@ -3510,9 +3512,9 @@ export default function ProjectDetailPage() {
                                   className="rounded border-gray-300 text-brand-700 focus:ring-brand-600 disabled:opacity-40"
                                   aria-label={`Select ${cs.pageName}`}
                                 />
-                              </td>
+                              </TableCell>
                             )}
-                            <td className="px-4 py-3 text-sm font-medium text-gray-900 max-w-[200px] whitespace-normal break-words">
+                            <TableCell className="px-4 py-3 text-sm font-medium text-gray-900 max-w-[200px] whitespace-normal break-words">
                               <div className="space-y-1">
                                 <div className={isSuperseded ? 'text-gray-500' : undefined}>{cs.pageName}</div>
                                 <div className="inline-flex items-center gap-1.5">
@@ -3526,8 +3528,8 @@ export default function ProjectDetailPage() {
                                   ) : null}
                                 </div>
                               </div>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-600 max-w-[260px]">
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-sm text-gray-600 max-w-[260px]">
                               {kwLabels.length ? (
                                 <div className="flex flex-wrap gap-1">
                                   {kwLabels.map((label: string) => (
@@ -3539,22 +3541,22 @@ export default function ProjectDetailPage() {
                               ) : (
                                 <span className="text-gray-400">—</span>
                               )}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                               {cs.wordCount != null ? Number(cs.wordCount).toLocaleString() : '—'}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-600 max-w-[180px] truncate" title={cs.fileName || cs.fileUrl || ''}>
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-sm text-gray-600 max-w-[180px] truncate" title={cs.fileName || cs.fileUrl || ''}>
                               {cs.fileName === 'Link'
                                 ? (cs.fileUrl || 'Link')
                                 : (cs.fileName || (cs.fileUrl ? 'Attached' : '—'))}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                               {cs.submitter?.name || '—'}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
                               {cs.createdAt ? formatDate(cs.createdAt) : '—'}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap">
+                            </TableCell>
+                            <TableCell className="px-4 py-3 whitespace-nowrap">
                               <span
                                 title={cs.status === 'rejected' || isSuperseded ? cs.rejectionReason || '' : ''}
                                 className={cn(
@@ -3567,8 +3569,8 @@ export default function ProjectDetailPage() {
                               >
                                 {isSuperseded ? 'Superseded' : (cs.status || 'pending')}
                               </span>
-                            </td>
-                            <td className="px-4 py-3 text-right">
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-right">
                               <div className="inline-flex items-center gap-0.5">
                                 {cs.fileUrl && (
                                   <>
@@ -3644,11 +3646,11 @@ export default function ProjectDetailPage() {
                                   </button>
                                 )}
                               </div>
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                           {isLive && rejectingContentId === cs.id && (
-                            <tr>
-                              <td colSpan={9} className="px-4 py-3 bg-red-50/50 border-t border-red-100">
+                            <TableRow>
+                              <TableCell colSpan={9} className="px-4 py-3 bg-red-50/50 border-t border-red-100">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <input
                                     autoFocus
@@ -3682,15 +3684,15 @@ export default function ProjectDetailPage() {
                                     Reopen keeps this approved file as a superseded history version and opens a revise entry so the writer can upload a new deliverable.
                                   </p>
                                 )}
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           )}
                           </Fragment>
                         );
                       })
                     )}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </div>
           )}
@@ -3952,15 +3954,14 @@ export default function ProjectDetailPage() {
                         </div>
                       </div>
                     )}
-                    <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-100 bg-gray-50/60">
+                    <Table className="w-full text-sm">
+                      <TableHeader>
+                        <TableRow className="border-b border-gray-100 bg-gray-50/60">
                           {/* Select-all covers only the rows this user may
                               actually review, so ticking it can never queue an
                               action that will be rejected server-side. */}
                           {reviewableBlogIds.length > 0 && (
-                            <th className="px-3 py-2.5 w-10">
+                            <TableHead className="px-3 py-2.5 w-10">
                               <input
                                 type="checkbox"
                                 checked={allReviewableBlogsSelected}
@@ -3968,23 +3969,23 @@ export default function ProjectDetailPage() {
                                 className="w-3.5 h-3.5 rounded accent-brand-700"
                                 title="Select all pending"
                               />
-                            </th>
+                            </TableHead>
                           )}
-                          <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Type</th>
-                          <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">Blog Title</th>
-                          <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Main Keyword</th>
-                          <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Volume</th>
-                          <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">KD</th>
-                          <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">Supporting Keywords</th>
-                          <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">URL Slug</th>
-                          <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">File</th>
-                          <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Status</th>
-                          <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Writer</th>
-                          <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Designer</th>
-                          <th className="w-28" />
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Type</TableHead>
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">Blog Title</TableHead>
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Main Keyword</TableHead>
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Volume</TableHead>
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">KD</TableHead>
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">Supporting Keywords</TableHead>
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">URL Slug</TableHead>
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">File</TableHead>
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Status</TableHead>
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Writer</TableHead>
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Designer</TableHead>
+                          <TableHead className="w-28" />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="divide-y divide-gray-100">
                         {sheetRows.map((row: any) => {
                           const canReviewRow = (isAdminUser || iAmProjectManager || iAmProjectStrategist)
                             && row.status === 'pending'
@@ -3993,9 +3994,9 @@ export default function ProjectDetailPage() {
                           const isSelected = selectedBlogIds.includes(row.id);
                           return (
                             <Fragment key={row.id}>
-                              <tr className={cn('align-top', inactiveRow(row.isActive), isSelected && 'bg-brand-50/40')}>
+                              <TableRow className={cn('align-top', inactiveRow(row.isActive), isSelected && 'bg-brand-50/40')}>
                                 {reviewableBlogIds.length > 0 && (
-                                  <td className="px-3 py-2.5">
+                                  <TableCell className="px-3 py-2.5">
                                     {canReviewRow && (
                                       <input
                                         type="checkbox"
@@ -4006,27 +4007,27 @@ export default function ProjectDetailPage() {
                                         className="w-3.5 h-3.5 rounded accent-brand-700"
                                       />
                                     )}
-                                  </td>
+                                  </TableCell>
                                 )}
-                                <td className="px-3 py-2.5 whitespace-nowrap text-gray-700">{cellOrDash(row.contentType)}</td>
-                                <td className="px-3 py-2.5 text-gray-900 font-medium max-w-xs break-words">
+                                <TableCell className="px-3 py-2.5 whitespace-nowrap text-gray-700">{cellOrDash(row.contentType)}</TableCell>
+                                <TableCell className="px-3 py-2.5 text-gray-900 font-medium max-w-xs break-words">
                                   {row.title}
                                   {row.status === 'rejected' && row.rejectionReason && (
                                     <p className="text-[11px] text-red-600 font-normal mt-0.5">{row.rejectionReason}</p>
                                   )}
-                                </td>
-                                <td className="px-3 py-2.5 whitespace-nowrap text-gray-700">{cellOrDash(row.mainKeyword)}</td>
-                                <td className="px-3 py-2.5 whitespace-nowrap text-gray-700 tabular-nums">{cellOrDash(row.volume)}</td>
-                                <td className="px-3 py-2.5 whitespace-nowrap text-gray-700 tabular-nums">{cellOrDash(row.kd)}</td>
-                                <td className="px-3 py-2.5 align-top">
+                                </TableCell>
+                                <TableCell className="px-3 py-2.5 whitespace-nowrap text-gray-700">{cellOrDash(row.mainKeyword)}</TableCell>
+                                <TableCell className="px-3 py-2.5 whitespace-nowrap text-gray-700 tabular-nums">{cellOrDash(row.volume)}</TableCell>
+                                <TableCell className="px-3 py-2.5 whitespace-nowrap text-gray-700 tabular-nums">{cellOrDash(row.kd)}</TableCell>
+                                <TableCell className="px-3 py-2.5 align-top">
                                   <SupportingKeywordsCell raw={row.supportingKeywords} />
-                                </td>
-                                <td className="px-3 py-2.5 text-gray-700 max-w-[160px]">
+                                </TableCell>
+                                <TableCell className="px-3 py-2.5 text-gray-700 max-w-[160px]">
                                   <span className="block truncate" title={row.urlSlug || undefined}>
                                     {cellOrDash(row.urlSlug)}
                                   </span>
-                                </td>
-                                <td className="px-3 py-2.5 text-gray-700 max-w-[160px]">
+                                </TableCell>
+                                <TableCell className="px-3 py-2.5 text-gray-700 max-w-[160px]">
                                   {row.fileUrl ? (
                                     <button
                                       type="button"
@@ -4048,8 +4049,8 @@ export default function ProjectDetailPage() {
                                   ) : (
                                     <span className="text-gray-400">—</span>
                                   )}
-                                </td>
-                                <td className="px-3 py-2.5 whitespace-nowrap">
+                                </TableCell>
+                                <TableCell className="px-3 py-2.5 whitespace-nowrap">
                                   {/* "Draft" covers two genuinely different
                                       states — nobody is on it yet, versus a
                                       writer has it and hasn't submitted. The
@@ -4080,8 +4081,8 @@ export default function ProjectDetailPage() {
                                       </span>
                                     );
                                   })()}
-                                </td>
-                                <td className="px-3 py-2.5 whitespace-nowrap">
+                                </TableCell>
+                                <TableCell className="px-3 py-2.5 whitespace-nowrap">
                                   {canActOnProject && row.status !== 'approved' ? (() => {
                                     const options = [...(assignableBlogWriters as any[])];
                                     if (row.assignedWriterId && row.assignedWriter && !options.some((u) => u.id === row.assignedWriterId)) {
@@ -4104,8 +4105,8 @@ export default function ProjectDetailPage() {
                                   })() : (
                                     <span className="text-gray-700">{row.assignedWriter?.name || '—'}</span>
                                   )}
-                                </td>
-                                <td className="px-3 py-2.5 whitespace-nowrap">
+                                </TableCell>
+                                <TableCell className="px-3 py-2.5 whitespace-nowrap">
                                   {row.status !== 'approved' ? (
                                     <span className="text-gray-400" title="Assign a designer once this blog is approved">—</span>
                                   ) : canActOnProject ? (() => {
@@ -4130,8 +4131,8 @@ export default function ProjectDetailPage() {
                                   })() : (
                                     <span className="text-gray-700">{row.assignedDesigner?.name || '—'}</span>
                                   )}
-                                </td>
-                                <td className="px-3 py-2.5">
+                                </TableCell>
+                                <TableCell className="px-3 py-2.5">
                                   <div className="flex items-center gap-1 justify-end">
                                     {row.fileUrl && (
                                       <>
@@ -4221,11 +4222,11 @@ export default function ProjectDetailPage() {
                                       </button>
                                     )}
                                   </div>
-                                </td>
-                              </tr>
+                                </TableCell>
+                              </TableRow>
                               {isRejecting && (
-                                <tr>
-                                  <td colSpan={12} className="px-3 pb-3">
+                                <TableRow>
+                                  <TableCell colSpan={12} className="px-3 pb-3">
                                     <div className="flex flex-wrap items-center gap-2 bg-red-50/60 border border-red-200 rounded-lg p-2.5">
                                       <input
                                         value={blogRejectReason}
@@ -4249,15 +4250,14 @@ export default function ProjectDetailPage() {
                                         Cancel
                                       </button>
                                     </div>
-                                  </td>
-                                </tr>
+                                  </TableCell>
+                                </TableRow>
                               )}
                             </Fragment>
                           );
                         })}
-                      </tbody>
-                    </table>
-                    </div>
+                      </TableBody>
+                    </Table>
                   </div>
                 )}
               </div>
@@ -4335,31 +4335,31 @@ export default function ProjectDetailPage() {
                             inputs floating between two keyword names it was
                             impossible to tell which box belonged to which row. */}
                         <div className="max-h-80 overflow-y-auto border border-gray-200 rounded-lg">
-                          <table className="w-full">
-                            <thead className="sticky top-0 bg-gray-50 z-10">
-                              <tr className="border-b border-gray-200">
-                                <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2">Keyword</th>
-                                <th className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2 w-28 whitespace-nowrap">
+                          <Table className="w-full">
+                            <TableHeader className="sticky top-0 bg-gray-50 z-10">
+                              <TableRow className="border-b border-gray-200">
+                                <TableHead className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2">Keyword</TableHead>
+                                <TableHead className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2 w-28 whitespace-nowrap">
                                   Last recorded
-                                </th>
-                                <th className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2 w-36 whitespace-nowrap">
+                                </TableHead>
+                                <TableHead className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2 w-36 whitespace-nowrap">
                                   Position on {rankDate || 'this date'}
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
+                                </TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody className="divide-y divide-gray-100">
                               {rows.map((r: any) => (
-                                <tr key={r.keywordId} className="hover:bg-gray-50">
-                                  <td className="px-3 py-2 text-sm text-gray-800">
+                                <TableRow key={r.keywordId} className="hover:bg-gray-50">
+                                  <TableCell className="px-3 py-2 text-sm text-gray-800">
                                     {r.primaryKeyword}
                                     {r.pageName && <span className="block text-xs text-gray-400">{r.pageName}</span>}
-                                  </td>
-                                  <td className="px-3 py-2 text-sm text-right text-gray-500">
+                                  </TableCell>
+                                  <TableCell className="px-3 py-2 text-sm text-right text-gray-500">
                                     {r.latestPosition != null
                                       ? <>#{r.latestPosition}{rankings?.latestDate && <span className="block text-[11px] text-gray-400">{rankings.latestDate}</span>}</>
                                       : <span className="text-gray-300">Never</span>}
-                                  </td>
-                                  <td className="px-3 py-2">
+                                  </TableCell>
+                                  <TableCell className="px-3 py-2">
                                     <div className="flex items-center justify-end gap-1.5">
                                       <input
                                         type="number"
@@ -4401,11 +4401,11 @@ export default function ProjectDetailPage() {
                                         Not ranking
                                       </button>
                                     </div>
-                                  </td>
-                                </tr>
+                                  </TableCell>
+                                </TableRow>
                               ))}
-                            </tbody>
-                          </table>
+                            </TableBody>
+                          </Table>
                         </div>
                         <p className="text-[11px] text-gray-400">
                           Type the Google position — <span className="font-medium">1</span> is the top result.
@@ -4473,14 +4473,14 @@ export default function ProjectDetailPage() {
                       No active keywords on this project yet — add keywords first, then record their rankings here.
                     </p>
                   ) : (
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-100">
-                          <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 sticky left-0 bg-white">Keyword</th>
-                          <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Volume</th>
-                          <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Change</th>
+                    <Table className="w-full">
+                      <TableHeader>
+                        <TableRow className="border-b border-gray-100">
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 sticky left-0 bg-white">Keyword</TableHead>
+                          <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Volume</TableHead>
+                          <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Change</TableHead>
                           {columnDates.map((d) => (
-                            <th key={d} className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">
+                            <TableHead key={d} className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">
                               <span className="inline-flex items-center gap-1.5">
                                 {formatDate(d, 'MMM d')}
                                 {isAdminUser && (
@@ -4494,21 +4494,21 @@ export default function ProjectDetailPage() {
                                   </button>
                                 )}
                               </span>
-                            </th>
+                            </TableHead>
                           ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="divide-y divide-gray-100">
                         {rows.map((r: any) => (
-                          <tr key={r.keywordId} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm text-gray-900 sticky left-0 bg-white">
+                          <TableRow key={r.keywordId} className="hover:bg-gray-50">
+                            <TableCell className="px-4 py-3 text-sm text-gray-900 sticky left-0 bg-white">
                               {r.primaryKeyword}
                               {r.pageName && <span className="block text-xs text-gray-400">{r.pageName}</span>}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-600 text-right">
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-sm text-gray-600 text-right">
                               {r.volume != null ? r.volume.toLocaleString() : '—'}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right whitespace-nowrap">
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-sm text-right whitespace-nowrap">
                               {/* Positive change = climbed the results, since a
                                   lower rank number is a better position. */}
                               {r.change == null ? (
@@ -4520,11 +4520,11 @@ export default function ProjectDetailPage() {
                               ) : (
                                 <span className="text-gray-400">0</span>
                               )}
-                            </td>
+                            </TableCell>
                             {columnDates.map((d) => {
                               const pos = r.positions?.[d];
                               return (
-                                <td
+                                <TableCell
                                   key={d}
                                   className={cn(
                                     'px-4 py-3 text-sm text-right',
@@ -4532,13 +4532,13 @@ export default function ProjectDetailPage() {
                                   )}
                                 >
                                   {pos == null ? <span className="text-gray-300">—</span> : pos}
-                                </td>
+                                </TableCell>
                               );
                             })}
-                          </tr>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   )}
                 </div>
               </div>

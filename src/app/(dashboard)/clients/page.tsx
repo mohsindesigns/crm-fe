@@ -14,6 +14,8 @@ import ActiveToggle, { InactiveBadge } from '@/components/ActiveToggle';
 import ShowInactiveToggle, { useShowInactive } from '@/components/ShowInactiveToggle';
 import { cn, inactiveRow, formatCurrency } from '@/lib/utils';
 import { invalidateMany, afterClientChange } from '@/lib/queryInvalidation';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 // Who owes money, and who is actually late. Kept apart because they answer
 // different questions — only the overdue set needs chasing.
@@ -42,20 +44,20 @@ function SkeletonRows() {
   return (
     <>
       {[...Array(8)].map((_, i) => (
-        <tr key={i} className="animate-pulse border-b border-gray-50">
-          <td className="px-5 py-3.5">
+        <TableRow key={i} className="animate-pulse border-b border-gray-50">
+          <TableCell className="px-5 py-3.5">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-gray-100 shrink-0" />
               <div className="h-4 bg-gray-100 rounded w-36" />
             </div>
-          </td>
-          <td className="px-5 py-3.5"><div className="h-5 bg-gray-100 rounded-full w-16" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-10" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-8" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-12" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-14" /></td>
-        </tr>
+          </TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-5 bg-gray-100 rounded-full w-16" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-10" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-8" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-12" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-14" /></TableCell>
+        </TableRow>
       ))}
     </>
   );
@@ -248,32 +250,31 @@ export default function ClientsPage() {
 
         {/* ── Table ── */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-140">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/50">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Outstanding</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Currency</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Contacts</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Notes</th>
-                <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+          <Table className="w-full min-w-140">
+            <TableHeader>
+              <TableRow className="border-b border-gray-200 bg-gray-100">
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Outstanding</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Currency</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Contacts</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Notes</TableHead>
+                <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-50">
               {isLoading ? (
                 <SkeletonRows />
               ) : clients.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-5 py-12 text-center text-sm text-gray-400">
+                <TableRow>
+                  <TableCell colSpan={7} className="px-5 py-12 text-center text-sm text-gray-400">
                     No clients found.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : (
                 clients.map((client: any) => (
-                  <tr key={client.id} className={cn('hover:bg-gray-50/60 transition-colors', inactiveRow(client.isActive))}>
-                    <td className="px-5 py-3.5">
+                  <TableRow key={client.id} className={cn('hover:bg-gray-50/60 transition-colors', inactiveRow(client.isActive))}>
+                    <TableCell className="px-5 py-3.5">
                       <Link href={`/clients/${client.id}`} className="flex items-center gap-3 group">
                         <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
                           <Briefcase className="w-4 h-4 text-blue-600" />
@@ -283,13 +284,13 @@ export default function ClientsPage() {
                         </span>
                         {client.isActive === false && <InactiveBadge />}
                       </Link>
-                    </td>
-                    <td className="px-5 py-3.5">
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5">
                       <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', STATUS_COLORS[client.status] || 'bg-gray-100 text-gray-600')}>
                         {client.status}
                       </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-sm">
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5 text-sm">
                       {Array.isArray(client.outstanding) && client.outstanding.length > 0 ? (
                         // Amount and its overdue flag read as one statement, so
                         // they sit on one line — the badge wraps under only when
@@ -330,11 +331,11 @@ export default function ClientsPage() {
                       ) : (
                         <span className="text-gray-400">—</span>
                       )}
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600">{client.defaultCurrency}</td>
-                    <td className="px-5 py-3.5 text-sm text-gray-600">{client.contacts?.length ?? 0}</td>
-                    <td className="px-5 py-3.5 text-sm text-gray-400 max-w-xs truncate">{client.notes || '—'}</td>
-                    <td className="px-5 py-3.5">
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5 text-sm text-gray-600">{client.defaultCurrency}</TableCell>
+                    <TableCell className="px-5 py-3.5 text-sm text-gray-600">{client.contacts?.length ?? 0}</TableCell>
+                    <TableCell className="px-5 py-3.5 text-sm text-gray-400 max-w-xs truncate">{client.notes || '—'}</TableCell>
+                    <TableCell className="px-5 py-3.5">
                       <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => {
@@ -356,13 +357,12 @@ export default function ClientsPage() {
                           }}
                         />
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
-          </div>
+            </TableBody>
+          </Table>
 
           <Pagination page={page} totalPages={totalPages} total={total} limit={LIMIT} onPageChange={setPage} />
         </div>
@@ -371,9 +371,9 @@ export default function ClientsPage() {
 
       {/* ── Edit modal ── */}
       {editingClient && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setEditingClient(null)} />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+        <Dialog open onOpenChange={(open) => { if (!open) setEditingClient(null); }}>
+          <DialogContent className="max-w-md sm:max-w-md rounded-2xl">
+            <DialogTitle className="sr-only">Edit client</DialogTitle>
             <h3 className="text-sm font-semibold text-gray-900">Edit Client</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -429,8 +429,8 @@ export default function ClientsPage() {
                 {updateMutation.isPending ? 'Saving…' : 'Save Changes'}
               </button>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       <ConfirmDialog

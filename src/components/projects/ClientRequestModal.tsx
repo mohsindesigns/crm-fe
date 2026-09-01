@@ -12,6 +12,7 @@ import { useAuthStore } from '@/store/auth';
 import LeadFormRenderer, { type FieldType, type FormField } from '@/components/leads/LeadFormRenderer';
 import { DEFAULT_THEME, BORDER_RADIUS_OPTIONS, type BorderRadius, type LeadFormTheme } from '@/lib/leadFormTheme';
 import ColorInput from '@/components/ColorInput';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 // Compose a requirements form and submit it for approval — a three-step wizard,
 // in the order staff actually think about it:
@@ -400,9 +401,9 @@ export default function ClientRequestModal({
       : '';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
-      <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl ring-1 ring-gray-900/5 w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent showCloseButton={false} className="max-w-5xl sm:max-w-5xl w-full max-h-[92vh] p-0 gap-0 overflow-hidden flex flex-col rounded-2xl">
+        <DialogTitle className="sr-only">Request requirements</DialogTitle>
 
         {/* ── Header: title, then the stepper on its own full-width row ── */}
         <div className="shrink-0 border-b border-gray-200">
@@ -922,7 +923,7 @@ export default function ClientRequestModal({
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -9,25 +9,13 @@ import {
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import Avatar from '@/components/Avatar';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { KpiPill } from '@/components/dashboard/StatCard';
 import { cn, formatDate, titleCase } from '@/lib/utils';
 
 function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function KpiCard({ icon: Icon, label, value, iconBg }: { icon: any; label: string; value: number | string; iconBg: string }) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-3">
-      <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center shrink-0', iconBg)}>
-        <Icon className="w-4 h-4 text-white" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-xl font-bold text-gray-900 tabular-nums">{value}</p>
-        <p className="text-xs text-gray-500">{label}</p>
-      </div>
-    </div>
-  );
 }
 
 const TASK_STATUS_COLOR: Record<string, string> = {
@@ -36,7 +24,7 @@ const TASK_STATUS_COLOR: Record<string, string> = {
 };
 
 function EmptyRow({ colSpan, text }: { colSpan: number; text: string }) {
-  return <tr><td colSpan={colSpan} className="px-4 py-8 text-center text-sm text-gray-400">{text}</td></tr>;
+  return <TableRow><TableCell colSpan={colSpan} className="px-4 py-8 text-center text-sm text-gray-400">{text}</TableCell></TableRow>;
 }
 
 function SectionTable({ title, children }: { title: string; children: React.ReactNode }) {
@@ -45,7 +33,7 @@ function SectionTable({ title, children }: { title: string; children: React.Reac
       <div className="px-5 py-3.5 border-b border-gray-100">
         <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
       </div>
-      <div className="overflow-x-auto">{children}</div>
+      {children}
     </div>
   );
 }
@@ -131,121 +119,121 @@ export default function MemberReportPage() {
 
         {/* ── KPIs ── */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <KpiCard icon={CheckCircle2} label="Tasks Completed" value={summary.tasksCompleted} iconBg="bg-brand-600" />
-          <KpiCard icon={ListTodo} label="Open Tasks" value={summary.tasksOpen} iconBg="bg-amber-500" />
-          <KpiCard icon={FileText} label="Content Submitted" value={summary.contentSubmitted} iconBg="bg-blue-500" />
-          <KpiCard icon={Type} label="Words Written" value={summary.wordCount} iconBg="bg-indigo-500" />
-          <KpiCard icon={Link2} label="Backlinks Added" value={summary.backlinksAdded} iconBg="bg-teal-600" />
-          <KpiCard icon={KeyRound} label="Keywords Assigned" value={summary.keywordsAssigned} iconBg="bg-violet-500" />
+          <KpiPill icon={CheckCircle2} label="Tasks Completed" value={summary.tasksCompleted} color="brand" />
+          <KpiPill icon={ListTodo} label="Open Tasks" value={summary.tasksOpen} color="amber" />
+          <KpiPill icon={FileText} label="Content Submitted" value={summary.contentSubmitted} color="blue" />
+          <KpiPill icon={Type} label="Words Written" value={summary.wordCount} color="indigo" />
+          <KpiPill icon={Link2} label="Backlinks Added" value={summary.backlinksAdded} color="teal" />
+          <KpiPill icon={KeyRound} label="Keywords Assigned" value={summary.keywordsAssigned} color="violet" />
         </div>
 
         {/* ── Tasks completed ── */}
         <SectionTable title={`Tasks Completed (${tasks.length})`}>
-          <table className="w-full min-w-140">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/50">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Task</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Project</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Status</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Completed</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+          <Table className="w-full min-w-140">
+            <TableHeader>
+              <TableRow className="border-b border-gray-200 bg-gray-100">
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Task</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Project</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Status</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Completed</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-50">
               {tasks.length === 0 ? <EmptyRow colSpan={4} text="No tasks completed in this range." /> : tasks.map((t: any) => (
-                <tr key={t.id}>
-                  <td className="px-4 py-2.5 text-sm text-gray-900">{t.title}</td>
-                  <td className="px-4 py-2.5 text-sm text-gray-500">{t.project?.name || '—'}</td>
-                  <td className="px-4 py-2.5">
+                <TableRow key={t.id}>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-900">{t.title}</TableCell>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-500">{t.project?.name || '—'}</TableCell>
+                  <TableCell className="px-4 py-2.5">
                     <span className={cn('px-2 py-0.5 text-xs font-medium rounded-full', TASK_STATUS_COLOR[t.status] || 'bg-gray-100 text-gray-600')}>
                       {titleCase(t.status)}
                     </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-sm text-gray-500">{t.completedAt ? formatDate(t.completedAt, 'MMM d, yyyy p') : '—'}</td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-500">{t.completedAt ? formatDate(t.completedAt, 'MMM d, yyyy p') : '—'}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </SectionTable>
 
         {/* ── Content submitted ── */}
         <SectionTable title={`Content Submitted (${content.length})`}>
-          <table className="w-full min-w-140">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/50">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Page</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Project</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Words</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Status</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Submitted</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+          <Table className="w-full min-w-140">
+            <TableHeader>
+              <TableRow className="border-b border-gray-200 bg-gray-100">
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Page</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Project</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Words</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Status</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Submitted</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-50">
               {content.length === 0 ? <EmptyRow colSpan={5} text="No content submitted in this range." /> : content.map((c: any) => (
-                <tr key={c.id}>
-                  <td className="px-4 py-2.5 text-sm text-gray-900">{c.pageName}{c.revisionNumber > 1 ? ` (rev ${c.revisionNumber})` : ''}</td>
-                  <td className="px-4 py-2.5 text-sm text-gray-500">{c.project?.name || '—'}</td>
-                  <td className="px-4 py-2.5 text-sm text-gray-500 tabular-nums">{c.wordCount ?? '—'}</td>
-                  <td className="px-4 py-2.5">
+                <TableRow key={c.id}>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-900">{c.pageName}{c.revisionNumber > 1 ? ` (rev ${c.revisionNumber})` : ''}</TableCell>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-500">{c.project?.name || '—'}</TableCell>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-500 tabular-nums">{c.wordCount ?? '—'}</TableCell>
+                  <TableCell className="px-4 py-2.5">
                     <span className={cn('px-2 py-0.5 text-xs font-medium rounded-full',
                       c.status === 'approved' ? 'bg-brand-100 text-brand-800'
                       : c.status === 'rejected' ? 'bg-red-100 text-red-700'
                       : 'bg-amber-100 text-amber-700')}>
                       {titleCase(c.status)}
                     </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-sm text-gray-500">{formatDate(c.createdAt, 'MMM d, yyyy p')}</td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-500">{formatDate(c.createdAt, 'MMM d, yyyy p')}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </SectionTable>
 
         {/* ── Backlinks added ── */}
         <SectionTable title={`Backlinks Added (${backlinks.length})`}>
-          <table className="w-full min-w-140">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/50">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Domain</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Project</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Type</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Status</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Added</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+          <Table className="w-full min-w-140">
+            <TableHeader>
+              <TableRow className="border-b border-gray-200 bg-gray-100">
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Domain</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Project</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Type</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Status</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Added</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-50">
               {backlinks.length === 0 ? <EmptyRow colSpan={5} text="No backlinks added in this range." /> : backlinks.map((b: any) => (
-                <tr key={b.id}>
-                  <td className="px-4 py-2.5 text-sm text-gray-900 truncate max-w-60" title={b.sourceUrl}>{b.domain || b.sourceUrl}</td>
-                  <td className="px-4 py-2.5 text-sm text-gray-500">{b.project?.name || '—'}</td>
-                  <td className="px-4 py-2.5 text-sm text-gray-500 capitalize">{b.linkType}</td>
-                  <td className="px-4 py-2.5 text-sm text-gray-500 capitalize">{b.status}</td>
-                  <td className="px-4 py-2.5 text-sm text-gray-500">{formatDate(b.createdAt, 'MMM d, yyyy p')}</td>
-                </tr>
+                <TableRow key={b.id}>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-900 truncate max-w-60" title={b.sourceUrl}>{b.domain || b.sourceUrl}</TableCell>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-500">{b.project?.name || '—'}</TableCell>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-500 capitalize">{b.linkType}</TableCell>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-500 capitalize">{b.status}</TableCell>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-500">{formatDate(b.createdAt, 'MMM d, yyyy p')}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </SectionTable>
 
         {/* ── Keywords assigned (current, not date-scoped) ── */}
         <SectionTable title={`Keywords Assigned (${keywords.length})`}>
-          <table className="w-full min-w-140">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/50">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Keyword</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Page</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Project</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+          <Table className="w-full min-w-140">
+            <TableHeader>
+              <TableRow className="border-b border-gray-200 bg-gray-100">
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Keyword</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Page</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-2.5">Project</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-50">
               {keywords.length === 0 ? <EmptyRow colSpan={3} text="No active keywords assigned." /> : keywords.map((k: any) => (
-                <tr key={k.id}>
-                  <td className="px-4 py-2.5 text-sm text-gray-900">{k.primaryKeyword}</td>
-                  <td className="px-4 py-2.5 text-sm text-gray-500">{k.pageName || '—'}</td>
-                  <td className="px-4 py-2.5 text-sm text-gray-500">{k.project?.name || '—'}</td>
-                </tr>
+                <TableRow key={k.id}>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-900">{k.primaryKeyword}</TableCell>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-500">{k.pageName || '—'}</TableCell>
+                  <TableCell className="px-4 py-2.5 text-sm text-gray-500">{k.project?.name || '—'}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </SectionTable>
 
       </div>

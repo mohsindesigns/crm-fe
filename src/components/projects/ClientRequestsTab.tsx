@@ -9,6 +9,7 @@ import { useAuthStore } from '@/store/auth';
 import { formatDate } from '@/lib/utils';
 import ClientRequestModal from '@/components/projects/ClientRequestModal';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 // "Has the client sent their requirements back yet?" — the whole point of this
 // tab. Each row is one emailed form; a responded row expands to the answers.
@@ -410,9 +411,9 @@ export default function ClientRequestsTab({
       {/* Reject needs a typed reason, so it's its own dialog rather than a
           ConfirmDialog — the backend rejects an empty one. */}
       {rejectTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setRejectTarget(null)} />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-5">
+        <Dialog open onOpenChange={(open) => { if (!open) setRejectTarget(null); }}>
+          <DialogContent className="max-w-md sm:max-w-md w-full rounded-2xl shadow-xl border-none p-5 gap-0">
+            <DialogTitle className="sr-only">Reject this request</DialogTitle>
             <h3 className="text-sm font-semibold text-gray-900">Reject this request?</h3>
             <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
               Nothing will be emailed to {rejectTarget.recipientEmail}.
@@ -445,8 +446,8 @@ export default function ClientRequestsTab({
                 {rejectMutation.isPending ? 'Rejecting…' : 'Reject request'}
               </button>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       )}
 
       <ConfirmDialog

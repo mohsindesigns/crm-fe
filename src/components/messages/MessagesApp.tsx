@@ -25,6 +25,7 @@ import {
   RoomBanners, SeenBy, BulkAddModal, QUICK_EMOJI,
 } from '@/components/messages/ChatPanels';
 import { DesktopNotifyPrompt } from '@/components/NotificationBridge';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 const MENTION_TOKEN = /@\[([^\]]+)\]\((user|contact|all):([0-9a-f-]{36}|all)\)/gi;
 
@@ -1706,18 +1707,9 @@ export default function MessagesApp({
             )}
 
             {showAddPeople && canManageMembers && (
-              <div
-                className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-brand-900/40 backdrop-blur-[2px]"
-                onClick={() => setShowAddPeople(false)}
-                role="presentation"
-              >
-                <div
-                  className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-brand-900/10 overflow-hidden animate-msg-in max-h-[min(85vh,640px)] flex flex-col"
-                  onClick={(e) => e.stopPropagation()}
-                  role="dialog"
-                  aria-modal="true"
-                  aria-labelledby="add-people-title"
-                >
+              <Dialog open onOpenChange={(open) => { if (!open) setShowAddPeople(false); }}>
+                <DialogContent showCloseButton={false} className="max-w-lg sm:max-w-lg w-full p-0 gap-0 overflow-hidden rounded-2xl max-h-[min(85vh,640px)] flex flex-col">
+                  <DialogTitle className="sr-only">Add people to room</DialogTitle>
                   <div
                     className="px-5 py-4 flex items-start gap-3"
                     style={{ background: `linear-gradient(145deg, ${BRAND.primaryDark}, ${primaryColor})` }}
@@ -1909,8 +1901,8 @@ export default function MessagesApp({
                       Done
                     </button>
                   </div>
-                </div>
-              </div>
+                </DialogContent>
+              </Dialog>
             )}
 
             <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-4">

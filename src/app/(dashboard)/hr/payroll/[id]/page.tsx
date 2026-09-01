@@ -10,6 +10,7 @@ import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import Avatar from '@/components/Avatar';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { cn, downloadAuthedFile, formatPeriod, titleCase, viewAuthedFile } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -276,25 +277,25 @@ export default function PayrollRunDetailPage() {
               No items yet. {run.status === 'draft' ? 'Click "Recalculate from Attendance" or advance to Open for Review to auto-generate items.' : ''}
             </div>
           ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Employee</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Present</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Absent</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Late</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Base</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Tax</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Net</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+            <Table className="w-full">
+              <TableHeader>
+                <TableRow className="border-b border-gray-200 bg-gray-100">
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Employee</TableHead>
+                  <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Present</TableHead>
+                  <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Absent</TableHead>
+                  <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Late</TableHead>
+                  <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Base</TableHead>
+                  <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Tax</TableHead>
+                  <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Net</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-100">
                 {items.map((item: any) => (
                   <>
-                    <tr key={item.id} className={cn('hover:bg-gray-50', item.isLocked ? 'bg-blue-50/30' : '')}>
-                      <td className="px-5 py-3.5">
+                    <TableRow key={item.id} className={cn('hover:bg-gray-50', item.isLocked ? 'bg-blue-50/30' : '')}>
+                      <TableCell className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
                           <Avatar src={item.worker?.user?.avatarUrl} name={item.worker?.user?.name} size="xs" />
                           <div>
@@ -302,10 +303,10 @@ export default function PayrollRunDetailPage() {
                             {item.worker?.designation && <p className="text-xs text-gray-400">{item.worker.designation}</p>}
                           </div>
                         </div>
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600 text-right">{item.presentDays}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600 text-right">{item.absentDays + item.halfDays * 0.5}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600 text-right">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right">{item.presentDays}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right">{item.absentDays + item.halfDays * 0.5}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right">
                         {item.lateCount || 0}
                         {Number(item.latePenaltyDays || 0) > 0 && (
                           <span
@@ -319,21 +320,21 @@ export default function PayrollRunDetailPage() {
                             −{item.latePenaltyDays}d{Number(item.latePenaltyUnpaidDays || 0) > 0 ? ' unpaid' : ' leave'}
                           </span>
                         )}
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600 text-right">{Number(item.base || 0).toLocaleString()}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right">{Number(item.base || 0).toLocaleString()}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600 text-right tabular-nums">
                         {Number(item.deductions?.tax || 0).toLocaleString()}
-                      </td>
-                      <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 text-right">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm font-semibold text-gray-900 text-right">
                         {Number(item.computedNet || 0).toLocaleString()}
                         {item.isLocked && <span className="ml-1 text-blue-500 text-xs">🔒</span>}
-                      </td>
-                      <td className="px-5 py-3.5">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5">
                         <span className={cn('px-2.5 py-0.5 text-xs font-medium rounded-full', ITEM_STATUS_COLORS[item.employeeStatus] || 'bg-gray-100 text-gray-500')}>
                           {titleCase(item.employeeStatus)}
                         </span>
-                      </td>
-                      <td className="px-5 py-3.5">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5">
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
@@ -376,21 +377,21 @@ export default function PayrollRunDetailPage() {
                             </button>
                           )}
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                     {/* Inline concern note */}
                     {item.employeeStatus === 'concern_raised' && item.concernNote && (
-                      <tr key={`${item.id}-concern`} className="bg-red-50">
-                        <td colSpan={9} className="px-5 py-2">
+                      <TableRow key={`${item.id}-concern`} className="bg-red-50">
+                        <TableCell colSpan={9} className="px-5 py-2">
                           <p className="text-xs text-red-700">
                             <strong>Concern:</strong> {item.concernNote}
                           </p>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     )}
                     {editTaxItemId === item.id && (
-                      <tr key={`${item.id}-tax`} className="bg-brand-50/40">
-                        <td colSpan={9} className="px-5 py-3">
+                      <TableRow key={`${item.id}-tax`} className="bg-brand-50/40">
+                        <TableCell colSpan={9} className="px-5 py-3">
                           <div className="flex flex-wrap items-end gap-3">
                             <div>
                               <label className="block text-xs font-medium text-gray-700 mb-1">Tax override (monthly)</label>
@@ -422,13 +423,13 @@ export default function PayrollRunDetailPage() {
                               Cancel
                             </button>
                           </div>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     )}
                     {/* Rectify form */}
                     {rectifyItemId === item.id && (
-                      <tr key={`${item.id}-rectify`}>
-                        <td colSpan={9} className="px-5 py-4 bg-amber-50 border-t border-amber-200">
+                      <TableRow key={`${item.id}-rectify`}>
+                        <TableCell colSpan={9} className="px-5 py-4 bg-amber-50 border-t border-amber-200">
                           <div className="space-y-3">
                             <p className="text-xs font-semibold text-amber-800">Rectify Payroll Item — {item.worker?.user?.name}</p>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -539,13 +540,13 @@ export default function PayrollRunDetailPage() {
                               </button>
                             </div>
                           </div>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     )}
                   </>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           )}
         </div>
 
@@ -555,17 +556,17 @@ export default function PayrollRunDetailPage() {
             <div className="px-5 py-4 border-b border-gray-100">
               <h3 className="text-sm font-semibold text-gray-900">Disbursement Details</h3>
             </div>
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Employee</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Recipient</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Bank</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Account</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+            <Table className="w-full">
+              <TableHeader>
+                <TableRow className="border-b border-gray-200 bg-gray-100">
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Employee</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Recipient</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Bank</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Account</TableHead>
+                  <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-100">
                 {lockedItems.map((item: any) => {
                   const split = Array.isArray(item.disbursementSplit) ? item.disbursementSplit : [];
                   // No split configured for this worker — same single row as before this feature.
@@ -580,38 +581,38 @@ export default function PayrollRunDetailPage() {
                     amount: item.computedNet,
                   }];
                   return rows.map((line: any, idx: number) => (
-                    <tr key={`disb-${item.id}-${idx}`} className="hover:bg-gray-50">
-                      <td className="px-5 py-3 text-sm font-medium text-gray-900">
+                    <TableRow key={`disb-${item.id}-${idx}`} className="hover:bg-gray-50">
+                      <TableCell className="px-5 py-3 text-sm font-medium text-gray-900">
                         {idx === 0 && (
                           <>
                             {item.worker?.user?.name}
                             {item.worker?.designation && <span className="text-gray-400 text-xs ml-1">· {item.worker.designation}</span>}
                           </>
                         )}
-                      </td>
-                      <td className="px-5 py-3 text-sm text-gray-600">
+                      </TableCell>
+                      <TableCell className="px-5 py-3 text-sm text-gray-600">
                         {line.name}
                         {line.relation && <span className="text-gray-400 text-xs ml-1">· {line.relation}</span>}
-                      </td>
-                      <td className="px-5 py-3 text-sm text-gray-600">{line.bankName || '—'}</td>
-                      <td className="px-5 py-3 text-sm text-gray-600 font-mono text-xs">
+                      </TableCell>
+                      <TableCell className="px-5 py-3 text-sm text-gray-600">{line.bankName || '—'}</TableCell>
+                      <TableCell className="px-5 py-3 text-sm text-gray-600 font-mono text-xs">
                         {line.bankAccountTitle && <span className="block text-gray-900">{line.bankAccountTitle}</span>}
                         {line.bankAccountNumber || line.iban || '—'}
-                      </td>
-                      <td className="px-5 py-3 text-sm font-semibold text-gray-900 text-right">
+                      </TableCell>
+                      <TableCell className="px-5 py-3 text-sm font-semibold text-gray-900 text-right">
                         {item.worker?.currency || 'PKR'} {Number(line.amount || 0).toLocaleString()}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ));
                 })}
-                <tr className="bg-gray-50 border-t-2 border-gray-200">
-                  <td colSpan={4} className="px-5 py-3 text-sm font-semibold text-gray-700 text-right">Total</td>
-                  <td className="px-5 py-3 text-sm font-bold text-gray-900 text-right">
+                <TableRow className="bg-gray-50 border-t-2 border-gray-200">
+                  <TableCell colSpan={4} className="px-5 py-3 text-sm font-semibold text-gray-700 text-right">Total</TableCell>
+                  <TableCell className="px-5 py-3 text-sm font-bold text-gray-900 text-right">
                     {totalNet.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>

@@ -10,6 +10,7 @@ import Header from '@/components/layout/Header';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import ActiveToggle, { InactiveBadge } from '@/components/ActiveToggle';
 import ShowInactiveToggle, { useShowInactive } from '@/components/ShowInactiveToggle';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { cn, inactiveRow } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 
@@ -451,49 +452,49 @@ export default function HrSettingsPage() {
               {selectedTaxYear && (
                 <>
                   <div className="overflow-x-auto border border-gray-100 rounded-lg">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-100 bg-gray-50/80">
-                          <th className="text-left text-xs font-semibold text-gray-500 px-3 py-2">Min (yearly)</th>
-                          <th className="text-left text-xs font-semibold text-gray-500 px-3 py-2">Max</th>
-                          <th className="text-left text-xs font-semibold text-gray-500 px-3 py-2">Fixed</th>
-                          <th className="text-left text-xs font-semibold text-gray-500 px-3 py-2">Rate %</th>
-                          <th className="w-10" />
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
+                    <Table className="w-full text-sm">
+                      <TableHeader>
+                        <TableRow className="border-b border-gray-200 bg-gray-100">
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 px-3 py-2">Min (yearly)</TableHead>
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 px-3 py-2">Max</TableHead>
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 px-3 py-2">Fixed</TableHead>
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 px-3 py-2">Rate %</TableHead>
+                          <TableHead className="w-10" />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="divide-y divide-gray-100">
                         {[...(selectedTaxYear.slabs || [])]
                           .sort((a: any, b: any) => (a.sortOrder - b.sortOrder) || (Number(a.minAmount) - Number(b.minAmount)))
                           .map((slab: any) => (
-                            <tr key={slab.id} className={inactiveRow(slab.isActive)}>
-                              <td className="px-3 py-2 tabular-nums text-gray-800">
+                            <TableRow key={slab.id} className={inactiveRow(slab.isActive)}>
+                              <TableCell className="px-3 py-2 tabular-nums text-gray-800">
                                 {Number(slab.minAmount).toLocaleString()}
                                 {slab.isActive === false && <InactiveBadge className="ml-2" />}
-                              </td>
-                              <td className="px-3 py-2 tabular-nums text-gray-800">
+                              </TableCell>
+                              <TableCell className="px-3 py-2 tabular-nums text-gray-800">
                                 {slab.maxAmount == null ? '∞' : Number(slab.maxAmount).toLocaleString()}
-                              </td>
-                              <td className="px-3 py-2 tabular-nums text-gray-800">{Number(slab.fixedAmount || 0).toLocaleString()}</td>
-                              <td className="px-3 py-2 tabular-nums text-gray-800">{Number(slab.ratePercent || 0)}</td>
-                              <td className="px-2 py-2">
+                              </TableCell>
+                              <TableCell className="px-3 py-2 tabular-nums text-gray-800">{Number(slab.fixedAmount || 0).toLocaleString()}</TableCell>
+                              <TableCell className="px-3 py-2 tabular-nums text-gray-800">{Number(slab.ratePercent || 0)}</TableCell>
+                              <TableCell className="px-2 py-2">
                                 <ActiveToggle
                                   isActive={slab.isActive !== false}
                                   label="slab"
                                   disabled={toggleSlabActive.isPending}
                                   onToggle={(next) => toggleSlabActive.mutate({ id: slab.id, next })}
                                 />
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           ))}
                         {(selectedTaxYear.slabs || []).length === 0 && (
-                          <tr>
-                            <td colSpan={5} className="px-3 py-6 text-center text-xs text-gray-400">
+                          <TableRow>
+                            <TableCell colSpan={5} className="px-3 py-6 text-center text-xs text-gray-400">
                               No slabs yet — add FBR brackets below.
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         )}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_1fr_1fr_auto] gap-3 items-end">

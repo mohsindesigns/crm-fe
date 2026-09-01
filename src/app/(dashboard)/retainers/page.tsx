@@ -11,6 +11,7 @@ import ActiveToggle, { InactiveBadge } from '@/components/ActiveToggle';
 import ShowInactiveToggle, { useShowInactive } from '@/components/ShowInactiveToggle';
 import { cn, formatDate, formatCurrency, inactiveRow } from '@/lib/utils';
 import { invalidateMany, afterRetainerChange } from '@/lib/queryInvalidation';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'bg-brand-100 text-brand-800',
@@ -295,38 +296,38 @@ export default function RetainersPage() {
         {/* Two extra columns on the Subscriptions tab would otherwise squash the
             rest on a narrow screen, so the table scrolls inside its own card. */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-          <table className={cn('w-full', isSubs && 'min-w-200')}>
-            <thead>
-              <tr className="border-b border-gray-100">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">{isSubs ? 'Subscription' : 'Package'}</th>
-                {isSubs && <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Vendor</th>}
-                <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Cycle</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">{isSubs ? 'Renews' : 'Next Invoice'}</th>
+          <Table className={cn('w-full', isSubs && 'min-w-200')}>
+            <TableHeader>
+              <TableRow className="border-b border-gray-100">
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">{isSubs ? 'Subscription' : 'Package'}</TableHead>
+                {isSubs && <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Vendor</TableHead>}
+                <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Cycle</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">{isSubs ? 'Renews' : 'Next Invoice'}</TableHead>
                 {/* Whether the CLIENT can use it, which is not the same question as
                     whether the retainer is still billing — hence a column of its own. */}
-                {isSubs && <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client access</th>}
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
-                <th className="px-5 py-3.5" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
+                {isSubs && <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Client access</TableHead>}
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</TableHead>
+                <TableHead className="px-5 py-3.5" />
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-100">
               {isLoading ? (
-                <tr><td colSpan={colCount} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</td></tr>
+                <TableRow><TableCell colSpan={colCount} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</TableCell></TableRow>
               ) : retainerArr.length === 0 ? (
-                <tr>
-                  <td colSpan={colCount} className="px-5 py-10 text-center text-sm text-gray-400">
+                <TableRow>
+                  <TableCell colSpan={colCount} className="px-5 py-10 text-center text-sm text-gray-400">
                     {isSubs
                       ? 'No subscriptions yet. Tick “Subscription” on a package in Admin → Packages, then sell it to a client.'
                       : 'No retainers yet.'}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : (
                 retainerArr.map((ret: any) => (
-                  <tr key={ret.id} className={cn('hover:bg-gray-50', inactiveRow(ret.isActive))}>
+                  <TableRow key={ret.id} className={cn('hover:bg-gray-50', inactiveRow(ret.isActive))}>
                     {editId === ret.id ? (
-                      <td colSpan={colCount} className="px-5 py-4">
+                      <TableCell colSpan={colCount} className="px-5 py-4">
                         <div className="flex items-center gap-3">
                           <div className="flex-1">
                             <span className="text-sm font-medium text-gray-900">{ret.client?.name}</span>
@@ -359,33 +360,33 @@ export default function RetainersPage() {
                             <X className="w-4 h-4" />
                           </button>
                         </div>
-                      </td>
+                      </TableCell>
                     ) : (
                       <>
-                        <td className="px-5 py-3.5 text-sm font-medium text-gray-900">
+                        <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900">
                           {ret.client?.name || '—'}
                           {ret.isActive === false && <InactiveBadge className="ml-2" />}
-                        </td>
-                        <td className="px-5 py-3.5 text-sm text-gray-500">
+                        </TableCell>
+                        <TableCell className="px-5 py-3.5 text-sm text-gray-500">
                           {ret.package?.name || ret.clientPackage?.package?.name || '—'}
-                        </td>
+                        </TableCell>
                         {isSubs && (
-                          <td className="px-5 py-3.5 text-sm text-gray-500">{ret.vendor || '—'}</td>
+                          <TableCell className="px-5 py-3.5 text-sm text-gray-500">{ret.vendor || '—'}</TableCell>
                         )}
-                        <td className="px-5 py-3.5 text-sm font-semibold text-gray-900 text-right font-mono">
+                        <TableCell className="px-5 py-3.5 text-sm font-semibold text-gray-900 text-right font-mono">
                           {formatCurrency(ret.amount, ret.currency)}
-                        </td>
-                        <td className="px-5 py-3.5">
+                        </TableCell>
+                        <TableCell className="px-5 py-3.5">
                           <span className="flex items-center gap-1.5 text-sm text-gray-600">
                             <RefreshCw className="w-3.5 h-3.5 text-gray-400" />
                             {CYCLE_LABELS[ret.cycle] || ret.cycle}
                           </span>
-                        </td>
-                        <td className="px-5 py-3.5 text-sm text-gray-600">
+                        </TableCell>
+                        <TableCell className="px-5 py-3.5 text-sm text-gray-600">
                           {ret.nextInvoiceDate ? formatDate(ret.nextInvoiceDate) : '—'}
-                        </td>
+                        </TableCell>
                         {isSubs && (
-                          <td className="px-5 py-3.5">
+                          <TableCell className="px-5 py-3.5">
                             <span
                               className={cn('px-2.5 py-1 text-xs font-medium rounded-full', ENTITLEMENT_COLORS[ret.entitlement] || 'bg-gray-100 text-gray-600')}
                               title={ret.entitlementReason || undefined}
@@ -395,14 +396,14 @@ export default function RetainersPage() {
                             {ret.entitlementReason && (
                               <p className="text-[11px] text-gray-400 mt-1">{ret.entitlementReason}</p>
                             )}
-                          </td>
+                          </TableCell>
                         )}
-                        <td className="px-5 py-3.5">
+                        <TableCell className="px-5 py-3.5">
                           <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', STATUS_COLORS[ret.status] || 'bg-gray-100 text-gray-600')}>
                             {ret.status}
                           </span>
-                        </td>
-                        <td className="px-5 py-3.5">
+                        </TableCell>
+                        <TableCell className="px-5 py-3.5">
                           <div className="flex items-center gap-1 justify-end">
                             <button onClick={() => { setEditId(ret.id); setEditForm({ status: ret.status, amount: String(ret.amount), nextInvoiceDate: ret.nextInvoiceDate || '' }); }}
                               className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors">
@@ -418,14 +419,14 @@ export default function RetainersPage() {
                               }}
                             />
                           </div>
-                        </td>
+                        </TableCell>
                       </>
                     )}
-                  </tr>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </div>
 

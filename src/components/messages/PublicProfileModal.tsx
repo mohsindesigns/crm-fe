@@ -6,6 +6,7 @@ import api from '@/lib/api';
 import Avatar from '@/components/Avatar';
 import { BRAND } from '@/lib/brand';
 import { cn, titleCase } from '@/lib/utils';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 type PublicProfileModalProps = {
   userId: string | null;
@@ -33,18 +34,12 @@ export default function PublicProfileModal({
   const showRoleChip = roleLabel && roleLabel !== title;
 
   return (
-    <div
-      className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
-      onClick={onClose}
-      role="presentation"
-    >
-      <div
-        className="relative w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl shadow-brand-900/20 animate-msg-in"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="profile-title"
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="max-w-sm sm:max-w-sm w-full p-0 gap-0 border-0 overflow-hidden rounded-3xl bg-white shadow-2xl shadow-brand-900/20 animate-msg-in"
       >
+        <DialogTitle className="sr-only">{profile?.name ? `${profile.name}'s profile` : 'User profile'}</DialogTitle>
         {/* Cover */}
         <div
           className="relative h-28"
@@ -223,7 +218,7 @@ export default function PublicProfileModal({
             </>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

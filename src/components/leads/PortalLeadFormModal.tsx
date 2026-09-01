@@ -8,6 +8,7 @@ import { usePortalStore } from '@/store/portal';
 import { useBranding } from '@/hooks/useBranding';
 import LeadFormRenderer, { type FieldType, type FormField } from '@/components/leads/LeadFormRenderer';
 import { DEFAULT_THEME, BORDER_RADIUS_OPTIONS, type BorderRadius, type LeadFormTheme } from '@/lib/leadFormTheme';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
@@ -154,9 +155,9 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
   const previewBranding = { brandName: orgBranding.brandName, logoUrl: orgBranding.logoUrl };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent showCloseButton={false} className="max-w-5xl sm:max-w-5xl w-full max-h-[92vh] p-0 gap-0 overflow-hidden flex flex-col rounded-2xl">
+        <DialogTitle className="sr-only">{isEdit ? 'Edit form' : 'New lead form'}</DialogTitle>
         <div className="border-b border-gray-100 px-5 py-4 flex items-center justify-between shrink-0">
           <h3 className="text-sm font-semibold text-gray-900">{isEdit ? 'Edit form' : 'New lead form'}</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100">
@@ -311,7 +312,7 @@ export default function PortalLeadFormModal({ form, onClose }: { form?: any; onC
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

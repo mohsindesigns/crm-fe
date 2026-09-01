@@ -8,6 +8,7 @@ import Header from '@/components/layout/Header';
 import Avatar from '@/components/Avatar';
 import Pagination from '@/components/Pagination';
 import { cn, formatDate } from '@/lib/utils';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 const LIMIT = 25;
 
@@ -49,17 +50,17 @@ function SkeletonRows() {
   return (
     <>
       {[...Array(8)].map((_, i) => (
-        <tr key={i} className="animate-pulse border-b border-gray-50">
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-28" /></td>
-          <td className="px-5 py-3.5">
+        <TableRow key={i} className="animate-pulse border-b border-gray-50">
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-28" /></TableCell>
+          <TableCell className="px-5 py-3.5">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-full bg-gray-100 shrink-0" />
               <div className="h-4 bg-gray-100 rounded w-24" />
             </div>
-          </td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16" /></td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-56" /></td>
-        </tr>
+          </TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-16" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-56" /></TableCell>
+        </TableRow>
       ))}
     </>
   );
@@ -182,46 +183,44 @@ export default function ActivityLogsPage() {
 
         {/* ── Table ── */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-180">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/50">
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Time</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">User</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Action</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Details</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {isLoading ? (
-                  <SkeletonRows />
-                ) : logs.length === 0 ? (
-                  <tr><td colSpan={4} className="px-5 py-12 text-center text-sm text-gray-400">No activity found.</td></tr>
-                ) : (
-                  logs.map((log) => (
-                    <tr key={log.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-5 py-3.5 whitespace-nowrap">
-                        <span className="text-sm text-gray-600">{formatDate(log.createdAt, 'MMM d, yyyy h:mm a')}</span>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-2">
-                          <Avatar src={log.actor?.avatarUrl} name={log.actor?.name || log.actorName} size="sm" />
-                          <span className="text-sm font-medium text-gray-900">{log.actor?.name || log.actorName || 'Unknown'}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <ActionBadge action={log.action} />
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <p className="text-sm text-gray-700">{log.description}</p>
-                        <p className="text-xs text-gray-400 font-mono mt-0.5">{log.method} {log.path}</p>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <Table className="w-full min-w-180">
+            <TableHeader>
+              <TableRow className="border-b border-gray-200 bg-gray-100">
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Time</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">User</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Action</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Details</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-50">
+              {isLoading ? (
+                <SkeletonRows />
+              ) : logs.length === 0 ? (
+                <TableRow><TableCell colSpan={4} className="px-5 py-12 text-center text-sm text-gray-400">No activity found.</TableCell></TableRow>
+              ) : (
+                logs.map((log) => (
+                  <TableRow key={log.id} className="hover:bg-gray-50 transition-colors">
+                    <TableCell className="px-5 py-3.5 whitespace-nowrap">
+                      <span className="text-sm text-gray-600">{formatDate(log.createdAt, 'MMM d, yyyy h:mm a')}</span>
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5">
+                      <div className="flex items-center gap-2">
+                        <Avatar src={log.actor?.avatarUrl} name={log.actor?.name || log.actorName} size="sm" />
+                        <span className="text-sm font-medium text-gray-900">{log.actor?.name || log.actorName || 'Unknown'}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5">
+                      <ActionBadge action={log.action} />
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5">
+                      <p className="text-sm text-gray-700">{log.description}</p>
+                      <p className="text-xs text-gray-400 font-mono mt-0.5">{log.method} {log.path}</p>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
           <Pagination page={page} totalPages={totalPages} total={total} limit={LIMIT} onPageChange={setPage} />
         </div>
 

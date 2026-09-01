@@ -7,6 +7,10 @@ import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import Header from '@/components/layout/Header';
 import AttendanceCheckWidget from '@/components/AttendanceCheckWidget';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import BarChartCard from '@/components/charts/BarChartCard';
+import DonutChartCard from '@/components/charts/DonutChartCard';
+import StatCard, { type StatCardColor } from '@/components/dashboard/StatCard';
 import { cn, formatCurrency, formatDate, titleCase } from '@/lib/utils';
 
 const WAITING_TYPE_LABELS: Record<string, string> = {
@@ -65,62 +69,13 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: 'bg-gray-100 text-gray-500',
 };
 
-function StatCard({ label, value, sub, icon: Icon, iconColor, progress, href }: {
-  label: string; value: string | number; sub: string; icon: any; iconColor: string;
-  progress?: { pct: number; color: string };
-  href?: string;
-}) {
-  const body = (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 flex flex-col h-full">
-      <div className="flex flex-wrap items-center justify-between mb-4 gap-2">
-        <p className="min-w-0 break-words pr-2 text-[10px] sm:text-xs font-semibold uppercase tracking-wide sm:tracking-wider leading-tight text-gray-400">{label}</p>
-        <div className={cn('w-8 h-8 shrink-0 rounded-lg flex items-center justify-center', iconColor)}>
-          <Icon className="w-4 h-4 text-white" />
-        </div>
-      </div>
-      <div className="flex-1 flex flex-col justify-between">
-        <div>
-          <p className="text-3xl font-bold text-gray-900 tabular-nums">{value}</p>
-          <p className="text-xs text-gray-400 mt-1">{sub}</p>
-        </div>
-        {progress && (
-          <div className="mt-4">
-            <div className="flex flex-wrap items-center justify-between mb-1.5 gap-2">
-              <span className="text-[10px] text-gray-400">of total</span>
-              <span className="text-[10px] font-semibold text-gray-500">{progress.pct}%</span>
-            </div>
-            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-              <div
-                className={cn('h-full rounded-full transition-all', progress.color)}
-                style={{ width: `${progress.pct}%` }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  return href ? (
-    <Link href={href} className="block hover:shadow-sm transition-shadow cursor-pointer">
-      {body}
-    </Link>
-  ) : body;
-}
-
-function CurrencyCard({ label, map, icon: Icon, iconColor, href }: {
-  label: string; map: Record<string, number> | undefined; icon: any; iconColor: string;
+function CurrencyCard({ label, map, icon, color, href }: {
+  label: string; map: Record<string, number> | undefined; icon: React.ElementType; color: StatCardColor;
   href?: string;
 }) {
   const entries = Object.entries(map || {}).filter(([, amt]) => amt > 0);
-  const body = (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-5 flex flex-col h-full">
-      <div className="flex flex-wrap items-center justify-between mb-4 gap-2">
-        <p className="min-w-0 break-words pr-2 text-[10px] sm:text-xs font-semibold uppercase tracking-wide sm:tracking-wider leading-tight text-gray-400">{label}</p>
-        <div className={cn('w-8 h-8 shrink-0 rounded-lg flex items-center justify-center', iconColor)}>
-          <Icon className="w-4 h-4 text-white" />
-        </div>
-      </div>
+  return (
+    <StatCard label={label} icon={icon} color={color} href={href}>
       {entries.length === 0 ? (
         <p className="text-3xl font-bold text-gray-900">—</p>
       ) : (
@@ -133,14 +88,8 @@ function CurrencyCard({ label, map, icon: Icon, iconColor, href }: {
           ))}
         </div>
       )}
-    </div>
+    </StatCard>
   );
-
-  return href ? (
-    <Link href={href} className="block hover:shadow-sm transition-shadow cursor-pointer">
-      {body}
-    </Link>
-  ) : body;
 }
 
 export default function DashboardPage() {
@@ -189,6 +138,19 @@ export default function DashboardPage() {
   const needsProfileCompletion = workerProfile && ['invited', 'profile_pending'].includes(workerProfile.status);
 
   const stageBuckets = Object.entries(byStage || {}) as [string, any[]][];
+  const stageChartData = stageBuckets
+    .map(([stageKey, projects]) => ({ label: titleCase(stageKey), value: projects.length }))
+    .sort((a, b) => b.value - a.value);
+
+  // Combined open + done tasks, grouped by their actual status — a fuller
+  // breakdown than the open/done split the list above shows.
+  const taskStatusCounts = [...openTasks, ...doneTasks].reduce((acc: Record<string, number>, t: any) => {
+    acc[t.status] = (acc[t.status] || 0) + 1;
+    return acc;
+  }, {});
+  const taskStatusChartData = Object.entries(taskStatusCounts)
+    .map(([status, value]) => ({ label: titleCase(status), value: value as number }))
+    .sort((a, b) => b.value - a.value);
 
   return (
     <div className="flex flex-col h-full">
@@ -246,11 +208,10 @@ export default function DashboardPage() {
             value={metrics?.activeProjects ?? '—'}
             sub={`${metrics?.totalProjects ?? 0} total projects`}
             icon={FolderKanban}
-            iconColor="bg-brand-600"
+            color="brand"
             href="/projects?status=active"
             progress={metrics?.totalProjects ? {
               pct: Math.round(((metrics.activeProjects || 0) / metrics.totalProjects) * 100),
-              color: 'bg-brand-600',
             } : undefined}
           />
           <StatCard
@@ -258,11 +219,10 @@ export default function DashboardPage() {
             value={metrics?.completedProjects ?? '—'}
             sub={metrics?.totalProjects ? `${Math.round(((metrics.completedProjects || 0) / metrics.totalProjects) * 100)}% of all projects` : 'No projects yet'}
             icon={Users}
-            iconColor="bg-blue-500"
+            color="blue"
             href="/projects?status=completed"
             progress={metrics?.totalProjects ? {
               pct: Math.round(((metrics.completedProjects || 0) / metrics.totalProjects) * 100),
-              color: 'bg-blue-500',
             } : undefined}
           />
           {canSeeBilling && (
@@ -270,7 +230,7 @@ export default function DashboardPage() {
               label="Revenue (paid)"
               map={metrics?.revenueByCurrency}
               icon={DollarSign}
-              iconColor="bg-violet-500"
+              color="violet"
               href="/invoices?status=paid"
             />
           )}
@@ -279,7 +239,7 @@ export default function DashboardPage() {
               label="Outstanding"
               map={metrics?.outstandingByCurrency}
               icon={AlertCircle}
-              iconColor="bg-amber-500"
+              color="amber"
               href="/billing"
             />
           )}
@@ -420,42 +380,42 @@ export default function DashboardPage() {
                 <p className="px-5 py-6 text-sm text-gray-400 text-center">No pending tasks.</p>
               ) : (
                 <div className="max-h-72 overflow-y-auto">
-                  <table className="w-full">
-                    <thead className="sticky top-0 bg-white">
-                      <tr className="border-b border-gray-100">
-                        <th className="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-5 py-2 w-full">Task</th>
-                        <th className="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-3 py-2 whitespace-nowrap">Due</th>
-                        <th className="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-3 py-2 whitespace-nowrap">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
+                  <Table className="w-full">
+                    <TableHeader className="sticky top-0 bg-white">
+                      <TableRow className="border-b border-gray-200 bg-gray-100">
+                        <TableHead className="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-5 py-2 w-full">Task</TableHead>
+                        <TableHead className="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-3 py-2 whitespace-nowrap">Due</TableHead>
+                        <TableHead className="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-3 py-2 whitespace-nowrap">Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="divide-y divide-gray-50">
                       {openTasks.slice(0, 8).map((t: any) => {
                         const isOverdue = !!t.dueAt
                           && new Date(t.dueAt) < new Date(new Date().toDateString())
                           && !['done', 'approved'].includes(t.status);
                         return (
-                          <tr key={t.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-5 py-2.5 w-full">
+                          <TableRow key={t.id} className="hover:bg-gray-50 transition-colors">
+                            <TableCell className="px-5 py-2.5 w-full">
                               <Link href={`/tasks/${t.projectId}/${t.id}`} className="block min-w-0">
                                 <p className="text-sm font-medium text-gray-900 truncate">{t.title}</p>
                                 <p className="text-xs text-gray-400 truncate">{t.project?.client?.name && `${t.project.client.name} · `}{t.project?.name}</p>
                               </Link>
-                            </td>
-                            <td className="px-3 py-2.5 whitespace-nowrap">
+                            </TableCell>
+                            <TableCell className="px-3 py-2.5 whitespace-nowrap">
                               <span className={cn('text-xs', isOverdue ? 'text-red-600 font-medium' : 'text-gray-400')}>
                                 {t.dueAt ? formatDate(t.dueAt, 'MMM d') : '—'}
                               </span>
-                            </td>
-                            <td className="px-3 py-2.5 whitespace-nowrap">
+                            </TableCell>
+                            <TableCell className="px-3 py-2.5 whitespace-nowrap">
                               <span className="inline-block px-2 py-0.5 text-[10px] font-medium rounded-full bg-gray-100 text-gray-600">
                                 {titleCase(t.status)}
                               </span>
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         );
                       })}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </div>
@@ -468,83 +428,93 @@ export default function DashboardPage() {
                 <p className="px-5 py-6 text-sm text-gray-400 text-center">No completed tasks yet.</p>
               ) : (
                 <div className="max-h-72 overflow-y-auto">
-                  <table className="w-full">
-                    <thead className="sticky top-0 bg-white">
-                      <tr className="border-b border-gray-100">
-                        <th className="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-5 py-2 w-full">Task</th>
-                        <th className="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-3 py-2 whitespace-nowrap">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
+                  <Table className="w-full">
+                    <TableHeader className="sticky top-0 bg-white">
+                      <TableRow className="border-b border-gray-200 bg-gray-100">
+                        <TableHead className="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-5 py-2 w-full">Task</TableHead>
+                        <TableHead className="text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-3 py-2 whitespace-nowrap">Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="divide-y divide-gray-50">
                       {doneTasks.slice(0, 8).map((t: any) => (
-                        <tr key={t.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-5 py-2.5 w-full">
+                        <TableRow key={t.id} className="hover:bg-gray-50 transition-colors">
+                          <TableCell className="px-5 py-2.5 w-full">
                             <Link href={`/tasks/${t.projectId}/${t.id}`} className="block min-w-0">
                               <p className="text-sm font-medium text-gray-900 truncate">{t.title}</p>
                               <p className="text-xs text-gray-400 truncate">{t.project?.client?.name && `${t.project.client.name} · `}{t.project?.name}</p>
                             </Link>
-                          </td>
-                          <td className="px-3 py-2.5 whitespace-nowrap">
+                          </TableCell>
+                          <TableCell className="px-3 py-2.5 whitespace-nowrap">
                             <span className="inline-block px-2 py-0.5 text-[10px] font-medium rounded-full bg-brand-100 text-brand-800">
                               {titleCase(t.status)}
                             </span>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Projects by stage */}
+        {/* Projects by stage + my tasks by status */}
+        {(stageChartData.length > 0 || taskStatusChartData.length > 0) && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch">
+            {stageChartData.length > 0 && (
+              <div className="lg:col-span-2">
+                <BarChartCard title="Active Projects by Stage" data={stageChartData} />
+              </div>
+            )}
+            {taskStatusChartData.length > 0 && (
+              <DonutChartCard title="My Tasks by Status" data={taskStatusChartData} />
+            )}
+          </div>
+        )}
         {stageBuckets.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200">
             <div className="px-5 py-4 border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-900">Active Projects by Stage</h3>
+              <h3 className="text-sm font-semibold text-gray-900">All Active Projects</h3>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-180">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Project</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Client</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Service</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Stage</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Due</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {stageBuckets.flatMap(([stageKey, projects]) =>
-                    projects.map((project: any) => (
-                      <tr key={project.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-5 py-3.5">
-                          <Link href={`/projects/${project.id}`} className="text-sm font-medium text-gray-900 hover:text-brand-700 transition-colors">
-                            {project.name}
-                          </Link>
-                        </td>
-                        <td className="px-5 py-3.5 text-sm text-gray-500">{project.client?.name || '—'}</td>
-                        <td className="px-5 py-3.5 text-sm text-gray-500 capitalize">{project.serviceTypeKey}</td>
-                        <td className="px-5 py-3.5">
-                          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600 capitalize">
-                            {titleCase(stageKey)}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <span className={cn('px-2 py-0.5 text-xs font-medium rounded-full', STATUS_COLORS[project.status] || 'bg-gray-100 text-gray-600')}>
-                            {project.status}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3.5 text-sm text-gray-400">{project.deliveryDate || '—'}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <Table className="w-full min-w-180">
+              <TableHeader>
+                <TableRow className="border-b border-gray-200 bg-gray-100">
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Project</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Client</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Service</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Stage</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Due</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-100">
+                {stageBuckets.flatMap(([stageKey, projects]) =>
+                  projects.map((project: any) => (
+                    <TableRow key={project.id} className="hover:bg-gray-50 transition-colors">
+                      <TableCell className="px-5 py-3.5">
+                        <Link href={`/projects/${project.id}`} className="text-sm font-medium text-gray-900 hover:text-brand-700 transition-colors">
+                          {project.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-500">{project.client?.name || '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-500 capitalize">{project.serviceTypeKey}</TableCell>
+                      <TableCell className="px-5 py-3.5">
+                        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600 capitalize">
+                          {titleCase(stageKey)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5">
+                        <span className={cn('px-2 py-0.5 text-xs font-medium rounded-full', STATUS_COLORS[project.status] || 'bg-gray-100 text-gray-600')}>
+                          {project.status}
+                        </span>
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-400">{project.deliveryDate || '—'}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>

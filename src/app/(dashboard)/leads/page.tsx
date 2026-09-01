@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search, Filter, Target, FileEdit, Pause, Play, ChevronDown, ChevronUp } from 'lucide-react';
@@ -11,6 +11,7 @@ import Avatar from '@/components/Avatar';
 import LeadDetailModal from '@/components/leads/LeadDetailModal';
 import LeadFormModal from '@/components/leads/LeadFormModal';
 import EmbedSnippet from '@/components/leads/EmbedSnippet';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { cn, formatDate, titleCase } from '@/lib/utils';
 import { invalidateMany, afterLeadFormChange } from '@/lib/queryInvalidation';
 import { useAuthStore } from '@/store/auth';
@@ -49,6 +50,13 @@ export default function LeadsPage() {
   const [showFormModal, setShowFormModal] = useState(false);
   const [editingForm, setEditingForm] = useState<any>(null);
   const [expandedFormId, setExpandedFormId] = useState<string | null>(null);
+
+  // Deep-link from global search (?open=<leadId>) — opens the lead's detail
+  // modal directly instead of landing on the plain list.
+  useEffect(() => {
+    const openId = searchParams.get('open');
+    if (openId) setOpenLeadId(openId);
+  }, [searchParams]);
 
   const { data: leads = [], isLoading: leadsLoading } = useQuery({
     queryKey: ['leads', { status, search, projectId, campaign, dateFrom, dateTo }],
@@ -203,63 +211,61 @@ export default function LeadsPage() {
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-160">
-                  <thead>
-                    <tr className="border-b border-gray-100 bg-gray-50/50">
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Lead</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Campaign</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Assigned</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Received</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {leadsLoading ? (
-                      <tr><td colSpan={6} className="px-5 py-12 text-center text-sm text-gray-400">Loading…</td></tr>
-                    ) : (leads as any[]).length === 0 ? (
-                      <tr><td colSpan={6} className="px-5 py-12 text-center text-sm text-gray-400">No leads yet.</td></tr>
-                    ) : (
-                      (leads as any[]).map((lead) => (
-                        <tr
-                          key={lead.id}
-                          onClick={() => setOpenLeadId(lead.id)}
-                          className="hover:bg-gray-50/60 transition-colors cursor-pointer"
-                        >
-                          <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center shrink-0">
-                                <Target className="w-4 h-4 text-brand-700" />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">{lead.fullName || 'Unnamed'}</p>
-                                <p className="text-xs text-gray-400 truncate">{lead.email || lead.phone || '—'}</p>
-                              </div>
+              <Table className="w-full min-w-160">
+                <TableHeader>
+                  <TableRow className="border-b border-gray-200 bg-gray-100">
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Lead</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Project</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Campaign</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Assigned</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Received</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-gray-50">
+                  {leadsLoading ? (
+                    <TableRow><TableCell colSpan={6} className="px-5 py-12 text-center text-sm text-gray-400">Loading…</TableCell></TableRow>
+                  ) : (leads as any[]).length === 0 ? (
+                    <TableRow><TableCell colSpan={6} className="px-5 py-12 text-center text-sm text-gray-400">No leads yet.</TableCell></TableRow>
+                  ) : (
+                    (leads as any[]).map((lead) => (
+                      <TableRow
+                        key={lead.id}
+                        onClick={() => setOpenLeadId(lead.id)}
+                        className="hover:bg-gray-50/60 transition-colors cursor-pointer"
+                      >
+                        <TableCell className="px-5 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center shrink-0">
+                              <Target className="w-4 h-4 text-brand-700" />
                             </div>
-                          </td>
-                          <td className="px-5 py-3.5 text-sm text-gray-600">{lead.project?.name || '—'}</td>
-                          <td className="px-5 py-3.5 text-sm text-gray-600">{lead.campaign || '—'}</td>
-                          <td className="px-5 py-3.5">
-                            <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', STATUS_COLORS[lead.status])}>
-                              {titleCase(lead.status)}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3.5">
-                            {lead.assignee ? (
-                              <div className="flex items-center gap-1.5">
-                                <Avatar src={lead.assignee.avatarUrl} name={lead.assignee.name} size="xs" className="w-5 h-5" />
-                                <span className="text-sm text-gray-600 truncate">{lead.assignee.name}</span>
-                              </div>
-                            ) : <span className="text-sm text-gray-400">Unassigned</span>}
-                          </td>
-                          <td className="px-5 py-3.5 text-sm text-gray-500 whitespace-nowrap">{formatDate(lead.createdAt)}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">{lead.fullName || 'Unnamed'}</p>
+                              <p className="text-xs text-gray-400 truncate">{lead.email || lead.phone || '—'}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="px-5 py-3.5 text-sm text-gray-600">{lead.project?.name || '—'}</TableCell>
+                        <TableCell className="px-5 py-3.5 text-sm text-gray-600">{lead.campaign || '—'}</TableCell>
+                        <TableCell className="px-5 py-3.5">
+                          <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', STATUS_COLORS[lead.status])}>
+                            {titleCase(lead.status)}
+                          </span>
+                        </TableCell>
+                        <TableCell className="px-5 py-3.5">
+                          {lead.assignee ? (
+                            <div className="flex items-center gap-1.5">
+                              <Avatar src={lead.assignee.avatarUrl} name={lead.assignee.name} size="xs" className="w-5 h-5" />
+                              <span className="text-sm text-gray-600 truncate">{lead.assignee.name}</span>
+                            </div>
+                          ) : <span className="text-sm text-gray-400">Unassigned</span>}
+                        </TableCell>
+                        <TableCell className="px-5 py-3.5 text-sm text-gray-500 whitespace-nowrap">{formatDate(lead.createdAt)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
             </div>
           </div>
         )}

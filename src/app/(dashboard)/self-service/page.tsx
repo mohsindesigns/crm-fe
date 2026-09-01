@@ -15,6 +15,8 @@ import ImageLightbox from '@/components/ImageLightbox';
 import AttendanceBoard from '@/components/AttendanceBoard';
 import AttendanceStatusBadges, { AttendanceLabelLegend, getAttendanceStatusBadges } from '@/components/AttendanceStatusBadges';
 import { isWeekendDate } from '@/lib/attendanceDate';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useAuthStore } from '@/store/auth';
 import { cn, formatDate, formatPeriod, downloadFile, downloadAuthedFile, uploadErrorMessage, titleCase } from '@/lib/utils';
 import { marksAttendance } from '@/lib/routePermissions';
@@ -1283,9 +1285,9 @@ export default function SelfServicePage() {
 
         {/* Raise a concern modal */}
         {showConcernModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setShowConcernModal(false)} />
-            <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+          <Dialog open onOpenChange={(open) => { if (!open) setShowConcernModal(false); }}>
+            <DialogContent className="max-w-md sm:max-w-md rounded-2xl shadow-xl">
+              <DialogTitle className="sr-only">Raise a concern</DialogTitle>
               <div>
                 <h3 className="text-sm font-semibold text-gray-900">Raise a concern</h3>
                 <p className="text-xs text-gray-500 mt-1">Describe what looks wrong about this payroll — HR will review and follow up.</p>
@@ -1316,8 +1318,8 @@ export default function SelfServicePage() {
                   {payrollReviewMutation.isPending ? 'Submitting…' : 'Submit'}
                 </button>
               </div>
-            </div>
-          </div>
+            </DialogContent>
+          </Dialog>
         )}
 
         {/* Tab bar */}
@@ -1896,25 +1898,25 @@ export default function SelfServicePage() {
                   </span>
                 </div>
                 <div className="overflow-x-auto mt-3">
-                  <table className="w-full min-w-[640px]">
-                    <thead>
-                      <tr className="border-b border-gray-100">
-                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Date</th>
-                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</th>
-                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check In</th>
-                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check Out</th>
-                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Hours</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
+                  <Table className="w-full min-w-[640px]">
+                    <TableHeader>
+                      <TableRow className="border-b border-gray-200 bg-gray-100">
+                        <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Date</TableHead>
+                        <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</TableHead>
+                        <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check In</TableHead>
+                        <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Check Out</TableHead>
+                        <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Hours</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="divide-y divide-gray-100">
                       {attendance.map((a: any) => {
                         const mapLink = (lat: any, lng: any) => (lat != null && lng != null ? `https://www.google.com/maps?q=${lat},${lng}` : null);
                         const checkInMap = mapLink(a.checkInLat, a.checkInLng);
                         const checkOutMap = mapLink(a.checkOutLat, a.checkOutLng);
                         return (
-                          <tr key={a.id} className="hover:bg-gray-50">
-                            <td className="px-5 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">{formatDate(a.date)}</td>
-                            <td className="px-5 py-3">
+                          <TableRow key={a.id} className="hover:bg-gray-50">
+                            <TableCell className="px-5 py-3 text-sm font-medium text-gray-900 whitespace-nowrap">{formatDate(a.date)}</TableCell>
+                            <TableCell className="px-5 py-3">
                               <span className="flex items-center gap-1.5">
                                 <AttendanceStatusBadges
                                   record={a}
@@ -1924,8 +1926,8 @@ export default function SelfServicePage() {
                                   <span title={a.note}><Info className="w-3.5 h-3.5 text-gray-300" /></span>
                                 )}
                               </span>
-                            </td>
-                            <td className="px-5 py-3 text-sm text-gray-600 whitespace-nowrap">
+                            </TableCell>
+                            <TableCell className="px-5 py-3 text-sm text-gray-600 whitespace-nowrap">
                               {a.checkIn ? (
                                 <span className="flex items-center gap-1.5">
                                   {a.checkIn.slice(0, 5)}
@@ -1946,8 +1948,8 @@ export default function SelfServicePage() {
                                   )}
                                 </span>
                               ) : '—'}
-                            </td>
-                            <td className="px-5 py-3 text-sm text-gray-600 whitespace-nowrap">
+                            </TableCell>
+                            <TableCell className="px-5 py-3 text-sm text-gray-600 whitespace-nowrap">
                               {a.checkOut ? (
                                 <span className="flex items-center gap-1.5">
                                   {a.checkOut.slice(0, 5)}
@@ -1960,13 +1962,13 @@ export default function SelfServicePage() {
                                   )}
                                 </span>
                               ) : '—'}
-                            </td>
-                            <td className="px-5 py-3 text-sm text-gray-600">{a.hours ?? '—'}</td>
-                          </tr>
+                            </TableCell>
+                            <TableCell className="px-5 py-3 text-sm text-gray-600">{a.hours ?? '—'}</TableCell>
+                          </TableRow>
                         );
                       })}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
                 <Pagination
                   page={attendanceResp?.page || 1}

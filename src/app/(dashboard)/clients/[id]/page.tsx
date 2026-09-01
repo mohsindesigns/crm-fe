@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Plus, Trash2, Globe, Mail, Phone, User, FileText, FileSignature, Briefcase, Pencil, X, Save, Package, Layers, RefreshCw, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Globe, Mail, Phone, User, Users, FileText, FileSignature, Briefcase, Pencil, X, Save, Package, Layers, RefreshCw, AlertCircle, FolderKanban } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { toast } from 'sonner';
@@ -17,6 +17,9 @@ import { cn, formatDate, formatCurrency, titleCase, inactiveRow } from '@/lib/ut
 import { invalidateMany, afterClientChange } from '@/lib/queryInvalidation';
 import { usersForRoleSlot } from '@/lib/projectTeam';
 import { TimelineSteps } from '@/components/TimelineSteps';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { STAT_TINTS } from '@/components/dashboard/StatCard';
+import BarChartCard from '@/components/charts/BarChartCard';
 
 /** Mirrors ClientService._validateContact — a contact we can't email is a
  *  contact we can't send a quotation, an invoice, or a portal login code to. */
@@ -196,6 +199,18 @@ export default function ClientDetailPage() {
     queryFn: () => api.get(`/invoices?clientId=${id}`).then((r) => r.data?.data ?? r.data ?? []),
     enabled: tab === 'invoices' || tab === 'overview',
   });
+
+  // Invoice-status breakdown for the Overview tab's "Invoices by Status"
+  // chart — aggregated client-side from the same `invoices` fetch the
+  // Invoices tab table already uses, no separate API call.
+  const invoiceStatusChartData = Object.entries(
+    (invoices || []).reduce((acc: Record<string, number>, inv: any) => {
+      acc[inv.status] = (acc[inv.status] || 0) + 1;
+      return acc;
+    }, {}),
+  )
+    .map(([status, count]) => ({ label: titleCase(status), value: count as number }))
+    .sort((a, b) => b.value - a.value);
 
   const { data: timeline } = useQuery({
     queryKey: ['client-timeline', id],
@@ -550,6 +565,7 @@ export default function ClientDetailPage() {
 
         {/* Overview tab */}
         {tab === 'overview' && (
+          <div className="space-y-4">
           <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
             {editing ? (
               <div className="space-y-4">
@@ -635,18 +651,25 @@ export default function ClientDetailPage() {
                     // amount was being clipped mid-digits ("$5,55…"). min-w-0 plus
                     // a smaller mobile size lets it shrink instead of overflow.
                     <div className="grid grid-cols-3 gap-2 sm:gap-4 pt-2">
-                      <div className="min-w-0 text-center p-3 sm:p-4 bg-gray-50 rounded-lg">
-                        <div className="text-lg sm:text-2xl font-semibold text-gray-900">{activeProjects}</div>
-                        <div className="text-[11px] sm:text-xs text-gray-500 mt-1">Active Projects</div>
-                      </div>
-                      <div className="min-w-0 text-center p-3 sm:p-4 bg-gray-50 rounded-lg">
-                        <div className="text-lg sm:text-2xl font-semibold text-gray-900 break-words">{formatCurrency(outstanding, client.defaultCurrency)}</div>
-                        <div className="text-[11px] sm:text-xs text-gray-500 mt-1">Outstanding</div>
-                      </div>
-                      <div className="min-w-0 text-center p-3 sm:p-4 bg-gray-50 rounded-lg">
-                        <div className="text-lg sm:text-2xl font-semibold text-gray-900">{contacts.length}</div>
-                        <div className="text-[11px] sm:text-xs text-gray-500 mt-1">Contacts</div>
-                      </div>
+                      {[
+                        { label: 'Active Projects', value: activeProjects, icon: FolderKanban, color: 'brand' as const },
+                        { label: 'Outstanding', value: formatCurrency(outstanding, client.defaultCurrency), icon: AlertCircle, color: outstanding > 0 ? 'red' as const : 'gray' as const },
+                        { label: 'Contacts', value: contacts.length, icon: Users, color: 'blue' as const },
+                      ].map((tile) => {
+                        const tint = STAT_TINTS[tile.color];
+                        return (
+                          <div
+                            key={tile.label}
+                            className={cn('min-w-0 text-center p-3 sm:p-4 rounded-lg bg-gradient-to-br to-white border border-gray-100', tint.wash)}
+                          >
+                            <div className={cn('mx-auto mb-1.5 w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center', tint.icon)}>
+                              <tile.icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+                            </div>
+                            <div className="text-lg sm:text-2xl font-semibold text-gray-900 break-words">{tile.value}</div>
+                            <div className="text-[11px] sm:text-xs text-gray-500 mt-1">{tile.label}</div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })()}
@@ -725,6 +748,11 @@ export default function ClientDetailPage() {
                 </div>
               </div>
             )}
+          </div>
+
+          {invoiceStatusChartData.length > 0 && (
+            <BarChartCard title="Invoices by Status" data={invoiceStatusChartData} categorical />
+          )}
           </div>
         )}
 
@@ -1852,46 +1880,44 @@ export default function ClientDetailPage() {
                 </button>
               </div>
             )}
-            <div className="overflow-x-auto">
-            <table className="w-full min-w-140">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Invoice</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Issued</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Due</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+            <Table className="w-full min-w-140">
+              <TableHeader>
+                <TableRow className="border-b border-gray-100">
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Invoice</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Issued</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Due</TableHead>
+                  <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-100">
                 {!invoices ? (
-                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</td></tr>
+                  <TableRow><TableCell colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</TableCell></TableRow>
                 ) : (invoices as any[]).length === 0 ? (
-                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No invoices for this client.</td></tr>
+                  <TableRow><TableCell colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No invoices for this client.</TableCell></TableRow>
                 ) : (
                   (invoices as any[]).map((inv: any) => (
-                    <tr key={inv.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/invoices/${inv.id}`)}>
-                      <td className="px-5 py-3.5">
+                    <TableRow key={inv.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/invoices/${inv.id}`)}>
+                      <TableCell className="px-5 py-3.5">
                         <span className="text-sm font-medium text-gray-900 font-mono flex items-center gap-2">
                           <FileText className="w-4 h-4 text-gray-400" />{inv.number}
                         </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{inv.issuedAt ? formatDate(inv.issuedAt) : '—'}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{inv.dueAt ? formatDate(inv.dueAt) : '—'}</td>
-                      <td className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{inv.issuedAt ? formatDate(inv.issuedAt) : '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{inv.dueAt ? formatDate(inv.dueAt) : '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
                         {formatCurrency(inv.total, inv.currency)}
-                      </td>
-                      <td className="px-5 py-3.5">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5">
                         <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', INV_STATUS[inv.status] || 'bg-gray-100 text-gray-600')}>
                           {inv.status}
                         </span>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
-            </div>
+              </TableBody>
+            </Table>
           </div>
         )}
 
@@ -1906,49 +1932,47 @@ export default function ClientDetailPage() {
                 <Plus className="w-3.5 h-3.5" /> New Quotation
               </button>
             </div>
-            <div className="overflow-x-auto">
-            <table className="w-full min-w-140">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Quotation</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Prospect</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Sent</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+            <Table className="w-full min-w-140">
+              <TableHeader>
+                <TableRow className="border-b border-gray-100">
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Quotation</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Prospect</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Sent</TableHead>
+                  <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-100">
                 {!quotations ? (
-                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</td></tr>
+                  <TableRow><TableCell colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</TableCell></TableRow>
                 ) : (quotations as any[]).length === 0 ? (
-                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No quotations for this client.</td></tr>
+                  <TableRow><TableCell colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No quotations for this client.</TableCell></TableRow>
                 ) : (
                   (quotations as any[]).map((doc: any) => (
-                    <tr key={doc.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/documents/${doc.id}`)}>
-                      <td className="px-5 py-3.5">
+                    <TableRow key={doc.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/documents/${doc.id}`)}>
+                      <TableCell className="px-5 py-3.5">
                         <span className="text-sm font-medium text-gray-900 font-mono flex items-center gap-2">
                           <FileSignature className="w-4 h-4 text-gray-400" />{doc.number}
                         </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">
                         <p className="text-gray-900">{doc.prospectName}</p>
                         {doc.businessName && <p className="text-xs text-gray-400">{doc.businessName}</p>}
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{doc.sentAt ? formatDate(doc.sentAt) : '—'}</td>
-                      <td className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{doc.sentAt ? formatDate(doc.sentAt) : '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
                         {formatCurrency(doc.amount, doc.currency)}
-                      </td>
-                      <td className="px-5 py-3.5">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5">
                         <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', DOC_STATUS[doc.status] || 'bg-gray-100 text-gray-600')}>
                           {doc.status}
                         </span>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
-            </div>
+              </TableBody>
+            </Table>
           </div>
         )}
 
@@ -1963,49 +1987,47 @@ export default function ClientDetailPage() {
                 <Plus className="w-3.5 h-3.5" /> New Proposal
               </button>
             </div>
-            <div className="overflow-x-auto">
-            <table className="w-full min-w-140">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Proposal</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Prospect</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Sent</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+            <Table className="w-full min-w-140">
+              <TableHeader>
+                <TableRow className="border-b border-gray-100">
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Proposal</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Prospect</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Sent</TableHead>
+                  <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-100">
                 {!proposals ? (
-                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</td></tr>
+                  <TableRow><TableCell colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</TableCell></TableRow>
                 ) : (proposals as any[]).length === 0 ? (
-                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No proposals for this client.</td></tr>
+                  <TableRow><TableCell colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No proposals for this client.</TableCell></TableRow>
                 ) : (
                   (proposals as any[]).map((doc: any) => (
-                    <tr key={doc.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/documents/${doc.id}`)}>
-                      <td className="px-5 py-3.5">
+                    <TableRow key={doc.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/documents/${doc.id}`)}>
+                      <TableCell className="px-5 py-3.5">
                         <span className="text-sm font-medium text-gray-900 font-mono flex items-center gap-2">
                           <FileText className="w-4 h-4 text-gray-400" />{doc.number}
                         </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">
                         <p className="text-gray-900">{doc.prospectName}</p>
                         {doc.businessName && <p className="text-xs text-gray-400">{doc.businessName}</p>}
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{doc.sentAt ? formatDate(doc.sentAt) : '—'}</td>
-                      <td className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{doc.sentAt ? formatDate(doc.sentAt) : '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
                         {formatCurrency(doc.amount, doc.currency)}
-                      </td>
-                      <td className="px-5 py-3.5">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5">
                         <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', DOC_STATUS[doc.status] || 'bg-gray-100 text-gray-600')}>
                           {doc.status}
                         </span>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
-            </div>
+              </TableBody>
+            </Table>
           </div>
         )}
 
@@ -2020,49 +2042,47 @@ export default function ClientDetailPage() {
                 <Plus className="w-3.5 h-3.5" /> New Agreement
               </button>
             </div>
-            <div className="overflow-x-auto">
-            <table className="w-full min-w-140">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Agreement</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Prospect</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Sent</th>
-                  <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
+            <Table className="w-full min-w-140">
+              <TableHeader>
+                <TableRow className="border-b border-gray-100">
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Agreement</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Prospect</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Sent</TableHead>
+                  <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Amount</TableHead>
+                  <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-100">
                 {!agreements ? (
-                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</td></tr>
+                  <TableRow><TableCell colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">Loading…</TableCell></TableRow>
                 ) : (agreements as any[]).length === 0 ? (
-                  <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No agreements for this client.</td></tr>
+                  <TableRow><TableCell colSpan={5} className="px-5 py-10 text-center text-sm text-gray-400">No agreements for this client.</TableCell></TableRow>
                 ) : (
                   (agreements as any[]).map((doc: any) => (
-                    <tr key={doc.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/documents/${doc.id}`)}>
-                      <td className="px-5 py-3.5">
+                    <TableRow key={doc.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/documents/${doc.id}`)}>
+                      <TableCell className="px-5 py-3.5">
                         <span className="text-sm font-medium text-gray-900 font-mono flex items-center gap-2">
                           <FileSignature className="w-4 h-4 text-gray-400" />{doc.number}
                         </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">
                         <p className="text-gray-900">{doc.prospectName}</p>
                         {doc.businessName && <p className="text-xs text-gray-400">{doc.businessName}</p>}
-                      </td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600">{doc.sentAt ? formatDate(doc.sentAt) : '—'}</td>
-                      <td className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{doc.sentAt ? formatDate(doc.sentAt) : '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900 text-right font-mono">
                         {formatCurrency(doc.amount, doc.currency)}
-                      </td>
-                      <td className="px-5 py-3.5">
+                      </TableCell>
+                      <TableCell className="px-5 py-3.5">
                         <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full', DOC_STATUS[doc.status] || 'bg-gray-100 text-gray-600')}>
                           {doc.status}
                         </span>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
-            </div>
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>

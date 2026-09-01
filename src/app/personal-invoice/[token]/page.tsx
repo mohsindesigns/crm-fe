@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { CheckCircle2, Download, CreditCard, Info } from 'lucide-react';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 // Public pay page for a Personal invoice — mirrors invoice/[token]/page.tsx
 // against crm-be's separate, token-scoped /api/public/personal-invoices/:token
@@ -173,28 +174,26 @@ export default function PublicPersonalInvoicePage() {
           <div className="px-5 sm:px-8 py-4 border-b border-gray-100">
             <h2 className="text-sm font-semibold text-gray-900">What this covers</h2>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-125">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-5 sm:px-8 py-2.5">Item</th>
-                  <th className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">Qty</th>
-                  <th className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">Rate</th>
-                  <th className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-5 sm:px-8 py-2.5">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {inv.lines.map((l: any, i: number) => (
-                  <tr key={i}>
-                    <td className="px-5 sm:px-8 py-3 text-sm text-gray-900">{l.description}</td>
-                    <td className="px-3 py-3 text-sm text-gray-600 text-right">{Number(l.qty)}</td>
-                    <td className="px-3 py-3 text-sm text-gray-600 text-right font-mono">{money(inv.currency, l.unitPrice)}</td>
-                    <td className="px-5 sm:px-8 py-3 text-sm font-medium text-gray-900 text-right font-mono">{money(inv.currency, l.amount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table className="w-full min-w-125">
+            <TableHeader>
+              <TableRow className="border-b border-gray-200 bg-gray-100">
+                <TableHead className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-5 sm:px-8 py-2.5">Item</TableHead>
+                <TableHead className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">Qty</TableHead>
+                <TableHead className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">Rate</TableHead>
+                <TableHead className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-5 sm:px-8 py-2.5">Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-50">
+              {inv.lines.map((l: any, i: number) => (
+                <TableRow key={i}>
+                  <TableCell className="px-5 sm:px-8 py-3 text-sm text-gray-900">{l.description}</TableCell>
+                  <TableCell className="px-3 py-3 text-sm text-gray-600 text-right">{Number(l.qty)}</TableCell>
+                  <TableCell className="px-3 py-3 text-sm text-gray-600 text-right font-mono">{money(inv.currency, l.unitPrice)}</TableCell>
+                  <TableCell className="px-5 sm:px-8 py-3 text-sm font-medium text-gray-900 text-right font-mono">{money(inv.currency, l.amount)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
 
           <div className="px-5 sm:px-8 py-4 border-t border-gray-100 space-y-1.5">
             <div className="flex items-center justify-between text-sm">
@@ -210,33 +209,31 @@ export default function PublicPersonalInvoicePage() {
             <div className="px-5 sm:px-8 py-4 border-b border-gray-100">
               <h2 className="text-sm font-semibold text-gray-900">Payments received</h2>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-100">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-5 sm:px-8 py-2.5">Payment</th>
-                    <th className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Date</th>
-                    <th className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-5 sm:px-8 py-2.5">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {inv.payments.map((p: any, i: number) => (
-                    <tr key={i}>
-                      <td className="px-5 sm:px-8 py-3 text-sm text-gray-900">
-                        <span className="text-gray-400 mr-2">{i + 1}</span>
-                        {p.methodLabel || 'Payment'}
-                      </td>
-                      <td className="px-3 py-3 text-sm text-gray-600 text-right whitespace-nowrap">
-                        {p.paidAt ? new Date(p.paidAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                      </td>
-                      <td className="px-5 sm:px-8 py-3 text-sm font-medium text-emerald-700 text-right font-mono whitespace-nowrap">
-                        −{money(inv.currency, p.amount)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table className="w-full min-w-100">
+              <TableHeader>
+                <TableRow className="border-b border-gray-200 bg-gray-100">
+                  <TableHead className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-5 sm:px-8 py-2.5">Payment</TableHead>
+                  <TableHead className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Date</TableHead>
+                  <TableHead className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-5 sm:px-8 py-2.5">Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-gray-50">
+                {inv.payments.map((p: any, i: number) => (
+                  <TableRow key={i}>
+                    <TableCell className="px-5 sm:px-8 py-3 text-sm text-gray-900">
+                      <span className="text-gray-400 mr-2">{i + 1}</span>
+                      {p.methodLabel || 'Payment'}
+                    </TableCell>
+                    <TableCell className="px-3 py-3 text-sm text-gray-600 text-right whitespace-nowrap">
+                      {p.paidAt ? new Date(p.paidAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                    </TableCell>
+                    <TableCell className="px-5 sm:px-8 py-3 text-sm font-medium text-emerald-700 text-right font-mono whitespace-nowrap">
+                      −{money(inv.currency, p.amount)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
             <div className="px-5 sm:px-8 py-4 border-t border-gray-100 space-y-1.5">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-500">Total paid</span>

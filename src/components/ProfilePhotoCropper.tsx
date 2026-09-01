@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import Cropper, { Area } from 'react-easy-crop';
 import { toast } from 'sonner';
 import { getCroppedImageBlob } from '@/lib/cropImage';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 interface ProfilePhotoCropperProps {
   imageSrc: string;
@@ -35,9 +36,9 @@ export default function ProfilePhotoCropper({ imageSrc, onCancel, onComplete }: 
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onCancel} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+    <Dialog open onOpenChange={(open) => { if (!open) onCancel(); }}>
+      <DialogContent className="max-w-md sm:max-w-md w-full p-0 gap-0 overflow-hidden rounded-2xl">
+        <DialogTitle className="sr-only">Crop profile photo</DialogTitle>
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="text-sm font-semibold text-gray-900">Crop profile photo</h3>
           <p className="text-xs text-gray-500 mt-0.5">Drag to reposition · use the slider to zoom</p>
@@ -87,7 +88,7 @@ export default function ProfilePhotoCropper({ imageSrc, onCancel, onComplete }: 
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

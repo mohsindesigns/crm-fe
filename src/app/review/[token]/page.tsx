@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { CheckCircle2, XCircle, FileText, Download, ExternalLink, CreditCard } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { sanitizeRichHtml, richTextProseClass } from '@/lib/richText';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 type Branding = {
   brandName: string;
@@ -399,25 +400,25 @@ export default function PublicDocumentReviewPage() {
           {(hasLineItems || hasResolvedServices) && (
             <div className="order-2 lg:order-2 px-5 sm:px-8 pb-2">
               <div className="overflow-x-auto rounded-xl border border-gray-200">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-100 bg-gray-50/60">
-                      <th className="w-10 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">#</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">Item</th>
-                      <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
+                <Table className="w-full text-sm">
+                  <TableHeader>
+                    <TableRow className="border-b border-gray-200 bg-gray-100">
+                      <TableHead className="w-10 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">#</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">Item</TableHead>
+                      <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-gray-100">
                     {hasLineItems ? lineItems.map((li: any, i: number) => (
-                      <tr key={i}>
-                        <td className="px-3 py-3 text-gray-400 align-top">{i + 1}</td>
-                        <td className="px-3 py-3 align-top">
+                      <TableRow key={i}>
+                        <TableCell className="px-3 py-3 text-gray-400 align-top">{i + 1}</TableCell>
+                        <TableCell className="px-3 py-3 align-top">
                           <p className="font-medium text-gray-900">{li.description}{Number(li.qty) > 1 ? ` × ${li.qty}` : ''}</p>
-                        </td>
-                        <td className="px-3 py-3 text-right font-mono text-gray-700 align-top whitespace-nowrap">
+                        </TableCell>
+                        <TableCell className="px-3 py-3 text-right font-mono text-gray-700 align-top whitespace-nowrap">
                           {currency} {((Number(li.qty) || 1) * (Number(li.unitPrice) || 0)).toLocaleString()}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     )) : resolvedServices.map((s: any, i: number) => {
                       // Pre-approval in "build your package" mode this row mirrors whatever
                       // the client has picked below, so the Items table and the sidebar
@@ -430,9 +431,9 @@ export default function PublicDocumentReviewPage() {
                         : (Array.isArray(s.features) ? s.features : []);
                       const billingTag = picked ? packageBillingBadge(picked).short : null;
                       return (
-                      <tr key={s.serviceTypeKey}>
-                        <td className="px-3 py-3 text-gray-400 align-top">{i + 1}</td>
-                        <td className="px-3 py-3 align-top">
+                      <TableRow key={s.serviceTypeKey}>
+                        <TableCell className="px-3 py-3 text-gray-400 align-top">{i + 1}</TableCell>
+                        <TableCell className="px-3 py-3 align-top">
                           <p className="font-medium text-gray-900">
                             {s.serviceName}{label ? ` — ${label}` : ''}
                             {billingTag ? <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{billingTag}</span> : null}
@@ -448,15 +449,15 @@ export default function PublicDocumentReviewPage() {
                               ))}
                             </ul>
                           )}
-                        </td>
-                        <td className="px-3 py-3 text-right font-mono text-gray-700 align-top whitespace-nowrap">
+                        </TableCell>
+                        <TableCell className="px-3 py-3 text-right font-mono text-gray-700 align-top whitespace-nowrap">
                           {price != null ? `${currency} ${price.toLocaleString()}${picked ? priceSuffix(picked) : ''}` : '—'}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
               {(isApproved || (!isMenuMode && !multiplePackageOptions)) && (
                 <div className="mt-4 pt-4 border-t border-gray-100 space-y-1.5 max-w-xs ml-auto">

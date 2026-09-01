@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { X, Mail, Phone, Calendar, Megaphone, History } from 'lucide-react';
 import { usePortalStore } from '@/store/portal';
 import { cn, formatDate, titleCase } from '@/lib/utils';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
@@ -45,9 +46,9 @@ export default function PortalLeadDetailModal({ leadId, onClose }: { leadId: str
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent showCloseButton={false} className="max-w-lg sm:max-w-lg w-full max-h-[90vh] p-0 gap-0 overflow-y-auto rounded-2xl">
+        <DialogTitle className="sr-only">Lead details</DialogTitle>
         <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between z-10">
           <h3 className="text-sm font-semibold text-gray-900">Lead details</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100">
@@ -116,7 +117,7 @@ export default function PortalLeadDetailModal({ leadId, onClose }: { leadId: str
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

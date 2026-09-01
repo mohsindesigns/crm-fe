@@ -12,6 +12,7 @@ import Avatar from '@/components/Avatar';
 import { InactiveBadge } from '@/components/ActiveToggle';
 import ShowInactiveToggle, { useShowInactive } from '@/components/ShowInactiveToggle';
 import { cn, generatePassword, titleCase, inactiveRow } from '@/lib/utils';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 
 const LIMIT = 25;
 
@@ -19,8 +20,8 @@ function SkeletonRows() {
   return (
     <>
       {[...Array(8)].map((_, i) => (
-        <tr key={i} className="animate-pulse border-b border-gray-50">
-          <td className="px-5 py-3.5">
+        <TableRow key={i} className="animate-pulse border-b border-gray-50">
+          <TableCell className="px-5 py-3.5">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-gray-100 shrink-0" />
               <div className="space-y-1.5">
@@ -28,10 +29,10 @@ function SkeletonRows() {
                 <div className="h-3 bg-gray-100 rounded w-44" />
               </div>
             </div>
-          </td>
-          <td className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></td>
-          <td className="px-5 py-3.5"><div className="h-5 bg-gray-100 rounded-full w-14" /></td>
-        </tr>
+          </TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-4 bg-gray-100 rounded w-20" /></TableCell>
+          <TableCell className="px-5 py-3.5"><div className="h-5 bg-gray-100 rounded-full w-14" /></TableCell>
+        </TableRow>
       ))}
     </>
   );
@@ -234,28 +235,27 @@ export default function TeamPage() {
 
         {/* ── Table ── */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-140">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/50">
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Member</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Role</th>
-                <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+          <Table className="w-full min-w-140">
+            <TableHeader>
+              <TableRow className="border-b border-gray-200 bg-gray-100">
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Member</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Role</TableHead>
+                <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-gray-50">
               {isLoading ? (
                 <SkeletonRows />
               ) : users.length === 0 ? (
-                <tr><td colSpan={3} className="px-5 py-12 text-center text-sm text-gray-400">No team members found.</td></tr>
+                <TableRow><TableCell colSpan={3} className="px-5 py-12 text-center text-sm text-gray-400">No team members found.</TableCell></TableRow>
               ) : (
                 users.map((u: any) => (
-                  <tr
+                  <TableRow
                     key={u.id}
                     className={cn('hover:bg-gray-50 transition-colors cursor-pointer', inactiveRow(u.isActive))}
                     onClick={() => u.worker?.id ? router.push(`/hr/workers/${u.worker.id}`) : undefined}
                   >
-                    <td className="px-5 py-3.5">
+                    <TableCell className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
                         <Avatar src={u.avatarUrl} name={u.name} size="sm" />
                         <div>
@@ -266,14 +266,14 @@ export default function TeamPage() {
                           <p className="text-xs text-gray-400">{u.email}</p>
                         </div>
                       </div>
-                    </td>
-                    <td className="px-5 py-3.5">
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5">
                       <div className="flex items-center gap-1.5">
                         <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: u.role?.color || '#94a3b8' }} />
                         <span className="text-sm text-gray-600">{u.role?.name}</span>
                       </div>
-                    </td>
-                    <td className="px-5 py-3.5">
+                    </TableCell>
+                    <TableCell className="px-5 py-3.5">
                       {(() => {
                         const s = u.worker?.status;
                         const map: Record<string, string> = {
@@ -289,13 +289,12 @@ export default function TeamPage() {
                           </span>
                         );
                       })()}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
-          </div>
+            </TableBody>
+          </Table>
 
           <Pagination page={page} totalPages={totalPages} total={total} limit={LIMIT} onPageChange={setPage} />
         </div>
