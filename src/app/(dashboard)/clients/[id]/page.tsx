@@ -116,14 +116,17 @@ export default function ClientDetailPage() {
   const [editContactId, setEditContactId] = useState<string | null>(null);
   const [editContactForm, setEditContactForm] = useState({ name: '', email: '', phone: '', role: '', businessName: '', state: '', billingAddress: '', useForInvoice: false, portalAccess: false });
   const [showSellForm, setShowSellForm] = useState(false);
-  const [sellForm, setSellForm] = useState({ packageId: '', startDate: '', deliveryDate: '', description: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' });
+  const [sellForm, setSellForm] = useState({ packageId: '', startDate: '', deliveryDate: '', description: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '', allowPartialPayment: false });
+  // Whether the admin has touched the partial-payment box on this form — until
+  // then it shows the org-wide default, same pattern as the New Invoice form.
+  const [partialTouched, setPartialTouched] = useState(false);
   // Only meaningful when the sale spawns exactly one project — same rule
   // /projects/new uses (see its `roleSlots` comment): with more than one
   // project each is assigned individually afterward.
   const [sellAssignments, setSellAssignments] = useState<Record<string, string>>({});
   // Extra packages bought in the same sale. They go out at list price — the
-  // discount / custom-price / installment controls above stay tied to the main
-  // package, because those only make sense one package at a time.
+  // discount / custom-price controls above stay tied to the main package,
+  // because those only make sense one package at a time.
   const [extraPackageIds, setExtraPackageIds] = useState<string[]>([]);
   // Per-package pricing for the extras, keyed by package id. The sell-packages
   // endpoint already accepts these overrides per entry; the UI just never
@@ -131,34 +134,7 @@ export default function ClientDetailPage() {
   const [extraTerms, setExtraTerms] = useState<Record<string, {
     discountType: string; discountValue: string; discountCycles: string; customPrice: string; description: string;
   }>>({});
-  const [sellInstallmentPlan, setSellInstallmentPlan] = useState<{ type: 'percent' | 'amount'; value: string; dueAt: string; label: string }[]>([]);
 
-  function addDaysToDate(dateStr: string, days: number) {
-    const base = dateStr && /^\d{4}-\d{2}-\d{2}/.test(dateStr)
-      ? dateStr.slice(0, 10)
-      : new Date().toISOString().slice(0, 10);
-    const d = new Date(`${base}T12:00:00`);
-    d.setDate(d.getDate() + (Number(days) || 0));
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  }
-
-  function todayDateStr() {
-    const d = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  }
-
-  // A package template's installment row may be the current { type, value, ... }
-  // shape or an older { percent, ... } one saved before "amount" rows existed —
-  // read both the same way.
-  function normalizeTemplateInstallment(row: any): { type: 'percent' | 'amount'; value: string } {
-    const type: 'percent' | 'amount' = row.type === 'amount' ? 'amount' : 'percent';
-    const raw = row.value !== undefined && row.value !== null && row.value !== ''
-      ? row.value
-      : (type === 'amount' ? row.amount : row.percent);
-    return { type, value: raw != null ? String(raw) : '' };
-  }
   const [cancelPackageId, setCancelPackageId] = useState<string | null>(null);
   const [editPriceId, setEditPriceId] = useState<string | null>(null);
   const [editPriceValue, setEditPriceValue] = useState('');
@@ -276,6 +252,17 @@ export default function ClientDetailPage() {
     enabled: tab === 'packages' && showSellForm && canSell,
   });
 
+  // Same org-wide default the New Invoice form shows, so a sell-form checkbox
+  // left untouched matches what the resulting invoice would actually get.
+  const { data: billingDefaults } = useQuery({
+    queryKey: ['invoice-billing-defaults'],
+    queryFn: () => api.get('/invoices/billing-defaults').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+    enabled: tab === 'packages' && showSellForm && canSell,
+  });
+  const partialDefault = !!billingDefaults?.allowPartialPaymentDefault;
+  const sellAllowPartial = partialTouched ? sellForm.allowPartialPayment : partialDefault;
+
   const sellPackage = useMutation({
     mutationFn: (data: typeof sellForm) => {
       const primary = {
@@ -284,14 +271,6 @@ export default function ClientDetailPage() {
         discountValue: !data.customPrice && data.discountType && data.discountValue ? Number(data.discountValue) : undefined,
         discountCycles: !data.customPrice && data.discountType && data.discountCycles ? Number(data.discountCycles) : undefined,
         customPrice: data.customPrice ? Number(data.customPrice) : undefined,
-        installmentPlan: sellInstallmentPlan.filter((p) => p.value && p.dueAt).length
-          ? sellInstallmentPlan.filter((p) => p.value && p.dueAt).map((p) => ({
-            type: p.type,
-            value: Number(p.value),
-            dueAt: p.dueAt,
-            label: p.label || undefined,
-          }))
-          : undefined,
       };
 
       // Multiple packages go through the plural endpoint, which sells them in
@@ -301,6 +280,7 @@ export default function ClientDetailPage() {
           startDate: data.startDate || undefined,
           deliveryDate: data.deliveryDate || undefined,
           description: data.description || undefined,
+          allowPartialPayment: data.allowPartialPayment,
           packages: [
             primary,
             ...extraPackageIds.map((packageId) => {
@@ -325,6 +305,7 @@ export default function ClientDetailPage() {
         startDate: data.startDate || undefined,
         deliveryDate: data.deliveryDate || undefined,
         description: data.description || undefined,
+        allowPartialPayment: data.allowPartialPayment,
       }).then((r) => r.data);
     },
     onSuccess: async (res) => {
@@ -341,9 +322,9 @@ export default function ClientDetailPage() {
       }
       await invalidateMany(qc, afterClientChange(id));
       setShowSellForm(false);
-      setSellForm({ packageId: '', startDate: '', deliveryDate: '', description: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' });
+      setSellForm({ packageId: '', startDate: '', deliveryDate: '', description: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '', allowPartialPayment: false });
+      setPartialTouched(false);
       setSellAssignments({});
-      setSellInstallmentPlan([]);
       setExtraPackageIds([]);
       setExtraTerms({});
       const n = res?.projects?.length || 0;
@@ -358,9 +339,9 @@ export default function ClientDetailPage() {
       if (res?.retainersCreated) {
         parts.push(`${res.retainersCreated} retainer${res.retainersCreated !== 1 ? 's' : ''} created`);
       }
-      if (!res?.isRecurring && (res?.invoicesCreated || res?.installmentInvoices?.length)) {
-        const c = res.invoicesCreated || res.installmentInvoices.length;
-        parts.push(`${c} invoice${c !== 1 ? 's' : ''} scheduled/issued`);
+      if (!res?.isRecurring && (res?.invoicesCreated || res?.saleInvoices?.length)) {
+        const c = res.invoicesCreated || res.saleInvoices.length;
+        parts.push(`${c} invoice${c !== 1 ? 's' : ''} issued`);
       }
       toast.success(parts.filter(Boolean).join(' — ') + '.');
       // Packages already sold are kept; only the ones that failed are reported,
@@ -1081,7 +1062,7 @@ export default function ClientDetailPage() {
               </div>
               {canSell && (
                 <button
-                  onClick={() => { setShowSellForm((v) => !v); setSellForm({ packageId: '', startDate: '', deliveryDate: '', description: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '' }); setSellAssignments({}); setSellInstallmentPlan([]); }}
+                  onClick={() => { setShowSellForm((v) => !v); setSellForm({ packageId: '', startDate: '', deliveryDate: '', description: '', discountType: '', discountValue: '', discountCycles: '', customPrice: '', allowPartialPayment: false }); setPartialTouched(false); setSellAssignments({}); }}
                   className="flex items-center gap-1.5 shrink-0 whitespace-nowrap bg-brand-700 hover:bg-brand-800 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
                 >
                   <Plus className="w-4 h-4" />
@@ -1120,23 +1101,7 @@ export default function ClientDetailPage() {
                     <label className="block text-xs font-medium text-gray-700 mb-1.5">Package <span className="text-red-500">*</span></label>
                     <select
                       value={sellForm.packageId}
-                      onChange={(e) => {
-                        const packageId = e.target.value;
-                        setSellForm({ ...sellForm, packageId });
-                        const p = (sellablePackages as any[]).find((x: any) => x.id === packageId);
-                        const start = sellForm.startDate || todayDateStr();
-                        if (!p?.isRecurring && Array.isArray(p?.installmentPlan) && p.installmentPlan.length) {
-                          setSellInstallmentPlan(p.installmentPlan.map((row: any) => ({
-                            label: row.label || '',
-                            ...normalizeTemplateInstallment(row),
-                            dueAt: row.dueAt
-                              ? String(row.dueAt).slice(0, 10)
-                              : addDaysToDate(start, Number(row.offsetDays) || 0),
-                          })));
-                        } else {
-                          setSellInstallmentPlan([]);
-                        }
-                      }}
+                      onChange={(e) => setSellForm({ ...sellForm, packageId: e.target.value })}
                       className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
                     >
                       <option value="">Select a package…</option>
@@ -1160,30 +1125,7 @@ export default function ClientDetailPage() {
                     <input
                       type="date"
                       value={sellForm.startDate}
-                      onChange={(e) => {
-                        const startDate = e.target.value;
-                        setSellForm({ ...sellForm, startDate });
-                        // If installments were prefilled from a package template (relative days),
-                        // keep due dates aligned when the admin changes the sale start date —
-                        // only when the plan still matches the package template row count.
-                        const p = (sellablePackages as any[]).find((x: any) => x.id === sellForm.packageId);
-                        if (
-                          startDate
-                          && Array.isArray(p?.installmentPlan)
-                          && p.installmentPlan.length
-                          && sellInstallmentPlan.length === p.installmentPlan.length
-                        ) {
-                          setSellInstallmentPlan(p.installmentPlan.map((row: any, i: number) => {
-                            const normalized = normalizeTemplateInstallment(row);
-                            return {
-                              label: sellInstallmentPlan[i]?.label || row.label || '',
-                              type: sellInstallmentPlan[i]?.value ? sellInstallmentPlan[i].type : normalized.type,
-                              value: sellInstallmentPlan[i]?.value || normalized.value,
-                              dueAt: addDaysToDate(startDate, Number(row.offsetDays) || 0),
-                            };
-                          }));
-                        }
-                      }}
+                      onChange={(e) => setSellForm({ ...sellForm, startDate: e.target.value })}
                       className="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
                     />
                   </div>
@@ -1291,87 +1233,29 @@ export default function ClientDetailPage() {
                         <> Discount applies for the first <strong>{sellForm.discountCycles}</strong> {p.billingCycle} cycle{Number(sellForm.discountCycles) !== 1 ? 's' : ''} — billing then reverts to <strong>{p?.currency} {base.toLocaleString()}</strong> automatically.</>
                       )}
                       {p?.isRecurring && <> This package bills on a <strong>{p.billingCycle}</strong> cycle — a retainer and the first invoice will be created automatically; later invoices on each renewal date.</>}
-                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.value).length > 0 && (
-                        <> Custom installment plan ({sellInstallmentPlan.filter((r) => r.value).length} payments) for this sale — invoices are created now; future ones stay scheduled until their due date.</>
-                      )}
-                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.value).length === 0 && Array.isArray(p?.installmentPlan) && p.installmentPlan.length > 0 && (
-                        <> Installment plan ({p.installmentPlan.length} payments) — invoices are created now; future ones stay scheduled until their due date.</>
-                      )}
-                      {!p?.isRecurring && sellInstallmentPlan.filter((r) => r.value).length === 0 && !(Array.isArray(p?.installmentPlan) && p.installmentPlan.length > 0) && (
-                        <> A single invoice for the full amount will be created automatically.</>
+                      {!p?.isRecurring && (
+                        <> A single invoice for the full amount will be created automatically{sellAllowPartial ? ' — the client can pay it off in as many part-payments as they like.' : '.'}</>
                       )}
                     </p>
                   );
                 })()}
 
                 {sellForm.packageId && !(sellablePackages as any[]).find((x: any) => x.id === sellForm.packageId)?.isRecurring && (
-                  <div className="space-y-2 border-t border-gray-200 pt-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-xs font-medium text-gray-700">
-                        Installment plan for this sale <span className="text-gray-400 font-normal">(optional — overrides the package&apos;s own plan)</span>
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setSellInstallmentPlan([
-                          ...sellInstallmentPlan,
-                          { type: 'percent', value: '', dueAt: sellForm.startDate || todayDateStr(), label: '' },
-                        ])}
-                        className="text-xs font-medium text-brand-800 hover:text-brand-900"
-                      >
-                        + Add installment
-                      </button>
-                    </div>
-                    {sellInstallmentPlan.length > 0 && (
-                      <div className="grid gap-2 text-[11px] font-medium text-gray-500 px-0.5" style={{ gridTemplateColumns: '1fr 100px 90px 160px 28px' }}>
-                        <span>Label</span>
-                        <span>Type</span>
-                        <span>Value</span>
-                        <span>Due date</span>
-                        <span />
-                      </div>
-                    )}
-                    {sellInstallmentPlan.map((row, i) => (
-                      <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 100px 90px 160px 28px' }}>
-                        <input value={row.label} placeholder="e.g. Deposit, Milestone 2…"
-                          onChange={(e) => setSellInstallmentPlan(sellInstallmentPlan.map((r, j) => j === i ? { ...r, label: e.target.value } : r))}
-                          className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
-                        <select value={row.type}
-                          onChange={(e) => setSellInstallmentPlan(sellInstallmentPlan.map((r, j) => j === i ? { ...r, type: e.target.value as 'percent' | 'amount' } : r))}
-                          className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600">
-                          <option value="percent">Percentage</option>
-                          <option value="amount">Amount</option>
-                        </select>
-                        <input value={row.value} placeholder={row.type === 'amount' ? 'e.g. 200' : 'e.g. 50'} type="number" min="0"
-                          onChange={(e) => setSellInstallmentPlan(sellInstallmentPlan.map((r, j) => j === i ? { ...r, value: e.target.value } : r))}
-                          className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600" />
-                        <input
-                          type="date"
-                          value={row.dueAt}
-                          onChange={(e) => setSellInstallmentPlan(sellInstallmentPlan.map((r, j) => j === i ? { ...r, dueAt: e.target.value } : r))}
-                          className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
-                        />
-                        <button type="button" onClick={() => setSellInstallmentPlan(sellInstallmentPlan.filter((_, j) => j !== i))}
-                          className="p-1.5 text-gray-400 hover:text-red-500 justify-self-center">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                    {sellInstallmentPlan.some((r) => r.type === 'percent') && (
-                      <p className={cn('text-xs', sellInstallmentPlan.filter((r) => r.type === 'percent').reduce((s, r) => s + (Number(r.value) || 0), 0) === 100 ? 'text-gray-400' : 'text-amber-600')}>
-                        Percentage installments total: {sellInstallmentPlan.filter((r) => r.type === 'percent').reduce((s, r) => s + (Number(r.value) || 0), 0)}% (should sum to 100% of the price not already covered by fixed amounts)
-                      </p>
-                    )}
-                    {sellInstallmentPlan.some((r) => r.value && !r.dueAt) && (
-                      <p className="text-xs text-amber-600">Each installment with a value needs a due date.</p>
-                    )}
-                  </div>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 border-t border-gray-200 pt-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sellAllowPartial}
+                      onChange={(e) => { setPartialTouched(true); setSellForm({ ...sellForm, allowPartialPayment: e.target.checked }); }}
+                      className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
+                    />
+                    Allow partial payment <span className="text-gray-400 font-normal">(client can pay the invoice down in as many chunks as they want)</span>
+                  </label>
                 )}
 
                 {/* Additional packages in the same sale. Kept below the main
-                    package because the start date and the installment plan
-                    above apply to that one only; each package added here
-                    carries its own price / discount, and everything is billed
-                    on one invoice. */}
+                    package because the start date above applies to that one
+                    only; each package added here carries its own price /
+                    discount, and everything is billed on one invoice. */}
                 {sellForm.packageId && (sellablePackages as any[]).length > 1 && (
                   <div className="border-t border-gray-100 pt-4">
                     <p className="text-xs font-medium text-gray-700 mb-1">
@@ -1580,7 +1464,7 @@ export default function ClientDetailPage() {
 
                 <div className="flex gap-2">
                   <button
-                    onClick={() => sellForm.packageId && sellPackage.mutate(sellForm)}
+                    onClick={() => sellForm.packageId && sellPackage.mutate({ ...sellForm, allowPartialPayment: sellAllowPartial })}
                     disabled={!sellForm.packageId || sellPackage.isPending}
                     className="bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg"
                   >

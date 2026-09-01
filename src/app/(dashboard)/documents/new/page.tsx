@@ -68,6 +68,7 @@ export default function NewDocumentPage() {
     // Quotations default to a 7-day validity window; admin can change freely.
     validUntil: daysFromToday(DEFAULT_QUOTATION_VALID_DAYS),
     scopeTerms: '',
+    allowPartialPayment: false,
   });
   const [services, setServices] = useState<ServiceRow[]>([]);
   // A newly-checked service starts expanded (not in this set) so its package
@@ -122,6 +123,17 @@ export default function NewDocumentPage() {
     queryKey: ['clients-all'],
     queryFn: () => api.get('/clients', { params: { limit: 200 } }).then((r) => r.data?.data || []),
   });
+
+  // Same org-wide default the New Invoice / sell-package forms show, so a
+  // partial-payment box left untouched matches what the resulting invoice
+  // would actually get when this document converts.
+  const { data: billingDefaults } = useQuery({
+    queryKey: ['invoice-billing-defaults'],
+    queryFn: () => api.get('/invoices/billing-defaults').then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const [partialTouched, setPartialTouched] = useState(false);
+  const allowPartial = partialTouched ? form.allowPartialPayment : !!billingDefaults?.allowPartialPaymentDefault;
 
   // The list endpoint returns contacts as bare ids (it only needs a count), so
   // the full record has to be fetched to autofill from — reading contacts off
@@ -397,6 +409,7 @@ export default function NewDocumentPage() {
   const mutation = useMutation({
     mutationFn: () => api.post('/documents', {
       ...form,
+      allowPartialPayment: allowPartial,
       serviceTypeKey: primaryServiceKey,
       services: servicesPayload,
       packageMenu: packageMenuPayload.length ? packageMenuPayload : undefined,
@@ -880,6 +893,15 @@ export default function NewDocumentPage() {
                           </strong>
                         </p>
                       )}
+                      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={allowPartial}
+                          onChange={(e) => { setPartialTouched(true); setForm((f) => ({ ...f, allowPartialPayment: e.target.checked })); }}
+                          className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
+                        />
+                        Allow partial payment <span className="text-gray-400 font-normal">(client can pay the resulting invoice down in as many chunks as they want)</span>
+                      </label>
                     </div>
                   );
                 })()}

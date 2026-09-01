@@ -219,6 +219,10 @@ export default function ProjectDetailPage() {
   const [rankDate, setRankDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [rankEntryDraft, setRankEntryDraft] = useState<Record<string, string>>({});
   const rankImportRef = useRef<HTMLInputElement>(null);
+  // Supporting Keywords card: same draft-by-id pattern as rankEntryDraft above,
+  // keyed by supportingKeywordId, plus which main keywords are expanded.
+  const [supportingRankEntryDraft, setSupportingRankEntryDraft] = useState<Record<string, string>>({});
+  const [expandedSupportingKeywordIds, setExpandedSupportingKeywordIds] = useState<Set<string>>(new Set());
   const [contentWordCount, setContentWordCount] = useState('');
   const [rejectingContentId, setRejectingContentId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -308,9 +312,19 @@ export default function ProjectDetailPage() {
     enabled: tab === 'keywords' || tab === 'content',
   });
   const inactiveKeywordCount = (allKeywords as any[]).filter((k: any) => (k.status || 'active') === 'inactive').length;
+  // Full active+inactive pool — used by the Content tab's writer picker, the
+  // sheet stats, and the lock/delete-eligibility sets, all of which need to see
+  // every keyword regardless of what the Keywords tab's Show Inactive toggle
+  // is currently set to.
   const keywords = inactive.show
     ? allKeywords
     : (allKeywords as any[]).filter((k: any) => (k.status || 'active') === 'active');
+  // Keywords tab list only — "Show inactive" replaces what's listed rather
+  // than adding to it: Inactive keywords only when on, Active only when off,
+  // never mixed together.
+  const displayedKeywords = (allKeywords as any[]).filter(
+    (k: any) => (k.status || 'active') === (inactive.show ? 'inactive' : 'active'),
+  );
 
   // The page title is derived from whichever selected keyword already has a
   // page name (set when the keyword was added) — content writers pick keywords,
@@ -331,6 +345,14 @@ export default function ProjectDetailPage() {
   const { data: rankings, isLoading: rankingsLoading } = useQuery({
     queryKey: ['seo-rankings', id],
     queryFn: () => api.get(`/seo/projects/${id}/rankings`).then((r) => r.data),
+    enabled: tab === 'reporting',
+  });
+
+  // Monthly Report: supporting keywords, nested under each main keyword —
+  // same dates/positions shape as the grid above, one level down.
+  const { data: supportingRankings, isLoading: supportingRankingsLoading } = useQuery({
+    queryKey: ['seo-supporting-rankings', id],
+    queryFn: () => api.get(`/seo/projects/${id}/supporting-keywords/rankings`).then((r) => r.data),
     enabled: tab === 'reporting',
   });
 
@@ -373,19 +395,30 @@ export default function ProjectDetailPage() {
     return ids;
   }, [liveContent]);
 
-  // Locked from deletion: handed to a writer (work may already be underway,
-  // or a task already exists for it) OR its content is already approved.
-  // Only still-unassigned keywords stay freely deletable.
+  // Locked from *deactivation*: handed to a writer (work may already be
+  // underway, or a task already exists for it) OR its content is already
+  // approved. Deletion itself is admin-only and not subject to this lock —
+  // an admin can delete any keyword regardless of status (SeoService.deleteKeyword);
+  // this set only gates the non-destructive "Deactivate all"/"Set Inactive" actions,
+  // and drives the informational Assigned/Approved badge on each row.
   const lockedKeywordIds = useMemo(() => {
     const ids = new Set<string>(approvedKeywordIds);
     (keywords as any[]).forEach((kw: any) => { if (kw.assignedWriterId) ids.add(kw.id); });
     return ids;
   }, [keywords, approvedKeywordIds]);
 
+  // Eligible for the non-destructive "Deactivate all" sheet action — scoped to
+  // the full keyword pool, not whatever the Keywords tab is currently
+  // displaying, since that action always targets every active keyword on the
+  // project regardless of the Show Inactive toggle.
   const deletableKeywordIds = useMemo(
     () => (keywords as any[]).filter((kw: any) => !lockedKeywordIds.has(kw.id)).map((kw: any) => kw.id as string),
     [keywords, lockedKeywordIds],
   );
+  // Every keyword currently listed is selectable for the row checkboxes —
+  // Delete (admin-only) applies regardless of lock status; Set Inactive still
+  // skips locked rows server-side and reports them as skipped.
+  const allKeywordIds = useMemo(() => (displayedKeywords as any[]).map((kw: any) => kw.id as string), [displayedKeywords]);
   const deletableBacklinkIds = useMemo(
     () => (backlinks as any[]).filter((bl: any) => !bl.isIndexed).map((bl: any) => bl.id as string),
     [backlinks],
@@ -403,11 +436,11 @@ export default function ProjectDetailPage() {
     setTaskPage(1);
   }, [id, tab]);
 
-  const keywordTotalPages = Math.max(1, Math.ceil(keywords.length / KEYWORD_PAGE_SIZE));
+  const keywordTotalPages = Math.max(1, Math.ceil(displayedKeywords.length / KEYWORD_PAGE_SIZE));
   const pagedKeywords = useMemo(() => {
     const start = (keywordPage - 1) * KEYWORD_PAGE_SIZE;
-    return (keywords as any[]).slice(start, start + KEYWORD_PAGE_SIZE);
-  }, [keywords, keywordPage]);
+    return (displayedKeywords as any[]).slice(start, start + KEYWORD_PAGE_SIZE);
+  }, [displayedKeywords, keywordPage]);
 
   useEffect(() => {
     if (keywordPage > keywordTotalPages) setKeywordPage(keywordTotalPages);
@@ -593,6 +626,45 @@ export default function ProjectDetailPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to remove that date.'),
   });
 
+  const saveSupportingRankings = useMutation({
+    mutationFn: (payload: { date: string; entries: { supportingKeywordId: string; position: string }[] }) =>
+      api.post(`/seo/projects/${id}/supporting-keywords/rankings`, payload).then((r) => r.data),
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ['seo-supporting-rankings', id] });
+      setSupportingRankEntryDraft({});
+      toast.success(`Saved ${data?.saved ?? 0} supporting keyword ranking(s) for ${data?.date}.`);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to save supporting keyword rankings.'),
+  });
+
+  const toggleSupportingShowToClient = useMutation({
+    mutationFn: ({ supportingKeywordId, showToClient }: { supportingKeywordId: string; showToClient: boolean }) =>
+      api.patch(`/seo/supporting-keywords/${supportingKeywordId}`, { showToClient }).then((r) => r.data),
+    onMutate: async ({ supportingKeywordId, showToClient }) => {
+      // Optimistic — this is a plain display flag, not worth a round-trip
+      // flicker on every click.
+      await qc.cancelQueries({ queryKey: ['seo-supporting-rankings', id] });
+      const previous = qc.getQueryData(['seo-supporting-rankings', id]);
+      qc.setQueryData(['seo-supporting-rankings', id], (old: any) => {
+        if (!old?.rows) return old;
+        return {
+          ...old,
+          rows: old.rows.map((row: any) => ({
+            ...row,
+            supportingKeywords: (row.supportingKeywords || []).map((sk: any) =>
+              sk.id === supportingKeywordId ? { ...sk, showToClient } : sk),
+          })),
+        };
+      });
+      return { previous };
+    },
+    onError: (e: any, _vars, context) => {
+      if (context?.previous) qc.setQueryData(['seo-supporting-rankings', id], context.previous);
+      toast.error(e?.response?.data?.message || 'Failed to update.');
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['seo-supporting-rankings', id] }),
+  });
+
   const addBacklink = useMutation({
     mutationFn: (bl: typeof newBacklink) =>
       api.post(`/seo/projects/${id}/backlinks`, {
@@ -713,9 +785,9 @@ export default function ProjectDetailPage() {
       setConfirmSeoDelete(null);
       const deleted = data?.deleted ?? 0;
       const skipped = data?.skipped?.length ?? 0;
-      if (deleted && skipped) toast.success(`Deleted ${deleted} keyword(s). ${skipped} skipped.`);
+      if (deleted && skipped) toast.success(`Deleted ${deleted} keyword(s). ${skipped} not found.`);
       else if (deleted) toast.success(`Deleted ${deleted} keyword(s)`);
-      else toast.error('No keywords were deleted. Assigned or approved keywords were skipped.');
+      else toast.error('No keywords were deleted.');
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to delete keywords.'),
   });
@@ -822,13 +894,12 @@ export default function ProjectDetailPage() {
     || bulkDeleteBacklinks.isPending
     || bulkDeactivateBacklinks.isPending;
 
-  const allDeletableKeywordsSelected =
-    deletableKeywordIds.length > 0 && deletableKeywordIds.every((kid) => selectedKeywordIds.has(kid));
+  const allKeywordsSelected =
+    allKeywordIds.length > 0 && allKeywordIds.every((kid) => selectedKeywordIds.has(kid));
   const allDeletableBacklinksSelected =
     deletableBacklinkIds.length > 0 && deletableBacklinkIds.every((bid) => selectedBacklinkIds.has(bid));
 
-  function toggleKeywordSelect(kwId: string, deletable: boolean) {
-    if (!deletable) return;
+  function toggleKeywordSelect(kwId: string) {
     setSelectedKeywordIds((prev) => {
       const next = new Set(prev);
       if (next.has(kwId)) next.delete(kwId);
@@ -838,7 +909,7 @@ export default function ProjectDetailPage() {
   }
 
   function toggleAllKeywords() {
-    setSelectedKeywordIds(allDeletableKeywordsSelected ? new Set() : new Set(deletableKeywordIds));
+    setSelectedKeywordIds(allKeywordsSelected ? new Set() : new Set(allKeywordIds));
   }
 
   function toggleBacklinkSelect(blId: string, deletable: boolean) {
@@ -1627,7 +1698,7 @@ export default function ProjectDetailPage() {
                 : confirmSeoDelete?.kind === 'backlinks-selected'
                   ? `Set ${confirmSeoDelete.count ?? selectedBacklinkIds.size} selected backlink(s) to Inactive? Nothing is deleted — they can be set back to Active any time. Indexed backlinks are skipped.`
                   : confirmSeoDelete?.kind === 'keywords-delete-selected'
-                    ? `Permanently delete ${confirmSeoDelete.count ?? selectedKeywordIds.size} selected keyword(s)? This cannot be undone — their rank history goes with them. Keywords assigned to a writer or with approved content are skipped.`
+                    ? `Permanently delete ${confirmSeoDelete.count ?? selectedKeywordIds.size} selected keyword(s)? This cannot be undone — their rank history goes with them, even if assigned to a writer or approved.`
                     : confirmSeoDelete?.kind === 'backlinks-delete-selected'
                       ? `Permanently delete ${confirmSeoDelete.count ?? selectedBacklinkIds.size} selected backlink(s)? This cannot be undone. Indexed backlinks are skipped.`
                       : confirmSeoDelete?.kind === 'content-selected'
@@ -2588,9 +2659,12 @@ export default function ProjectDetailPage() {
                   Rows still awaiting upload approval are on the sheet but sit in their own
                   Pending bucket until an approver decides the batch. */}
               {(() => {
-                const total = keywords.length;
-                const pending = (keywords as any[]).filter((kw: any) => (kw.approvalStatus || 'approved') === 'pending');
-                const live = (keywords as any[]).filter((kw: any) => (kw.approvalStatus || 'approved') !== 'pending');
+                // Deliberately the full sheet (allKeywords), not the Active/Inactive-
+                // filtered `keywords` list — these stats summarize the whole project
+                // regardless of which state the Show Inactive toggle is in.
+                const total = (allKeywords as any[]).length;
+                const pending = (allKeywords as any[]).filter((kw: any) => (kw.approvalStatus || 'approved') === 'pending');
+                const live = (allKeywords as any[]).filter((kw: any) => (kw.approvalStatus || 'approved') !== 'pending');
                 const active = live.filter((kw: any) => (kw.status || 'active') === 'active');
                 const used = active.filter((kw: any) => approvedKeywordIds.has(kw.id)).length;
                 const remaining = active.length - used;
@@ -2754,27 +2828,28 @@ export default function ProjectDetailPage() {
               </div>
               {/* Compact keyword list — no horizontal scroll; secondary keywords truncated */}
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                {isAdminUser && keywords.length > 0 && (
+                {isAdminUser && displayedKeywords.length > 0 && (
                   <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 bg-gray-50/80">
                     <input
                       type="checkbox"
-                      checked={allDeletableKeywordsSelected}
-                      disabled={deletableKeywordIds.length === 0}
+                      checked={allKeywordsSelected}
+                      disabled={allKeywordIds.length === 0}
                       onChange={toggleAllKeywords}
                       className="rounded border-gray-300 text-brand-700 focus:ring-brand-600"
-                      title="Select all deletable keywords"
-                      aria-label="Select all deletable keywords"
+                      title="Select all keywords"
+                      aria-label="Select all keywords"
                     />
                     <span className="text-xs text-gray-500">
-                      {deletableKeywordIds.length > 0
-                        ? 'Select all deletable'
-                        : 'Nothing to select — every keyword below is assigned to a writer or has approved content (see the "Assigned"/"Approved" tag on each row). Use the Active/Inactive dropdown on a row to change it individually instead.'}
+                      Select all — Delete removes any keyword; Set Inactive skips ones assigned to a writer or with
+                      approved content (see the &quot;Assigned&quot;/&quot;Approved&quot; tag on each row).
                     </span>
                   </div>
                 )}
 
-                {keywords.length === 0 ? (
-                  <p className="px-4 py-10 text-sm text-gray-400 text-center">No keywords yet. Add a row or import Excel.</p>
+                {displayedKeywords.length === 0 ? (
+                  <p className="px-4 py-10 text-sm text-gray-400 text-center">
+                    {inactive.show ? 'No inactive keywords.' : 'No keywords yet. Add a row or import Excel.'}
+                  </p>
                 ) : (
                   <ul className="divide-y divide-gray-100">
                     {pagedKeywords.map((kw: any) => {
@@ -2797,8 +2872,7 @@ export default function ProjectDetailPage() {
                             <input
                               type="checkbox"
                               checked={selectedKeywordIds.has(kw.id)}
-                              disabled={locked}
-                              onChange={() => toggleKeywordSelect(kw.id, !locked)}
+                              onChange={() => toggleKeywordSelect(kw.id)}
                               className="mt-1 rounded border-gray-300 text-brand-700 focus:ring-brand-600 disabled:opacity-40 shrink-0"
                               aria-label={`Select ${kw.primaryKeyword}`}
                             />
@@ -2897,8 +2971,10 @@ export default function ProjectDetailPage() {
                               <span className="text-xs text-gray-600 self-center">{kw.assignedWriter?.name || '—'}</span>
                             ))}
                             {/* Delete is admin-only — same boundary as the status dropdown
-                                above and the bulk actions bar (SeoService.deleteKeyword). */}
-                            {!locked && isAdminUser && (
+                                above and the bulk actions bar (SeoService.deleteKeyword).
+                                Not gated on `locked`: an admin can delete a keyword even if
+                                it's assigned or has approved content. */}
+                            {isAdminUser && (
                               <button
                                 type="button"
                                 title="Delete"
@@ -2915,11 +2991,11 @@ export default function ProjectDetailPage() {
                   </ul>
                 )}
 
-                {keywords.length > 0 && (
+                {displayedKeywords.length > 0 && (
                   <Pagination
                     page={keywordPage}
                     totalPages={keywordTotalPages}
-                    total={keywords.length}
+                    total={displayedKeywords.length}
                     limit={KEYWORD_PAGE_SIZE}
                     onPageChange={setKeywordPage}
                   />
@@ -4273,6 +4349,8 @@ export default function ProjectDetailPage() {
             // Newest report date first — that's the column anyone opening this
             // tab is actually looking for.
             const columnDates = [...dates].reverse();
+            const supportingRows: any[] = supportingRankings?.rows || [];
+            const supportingLatestDate: string | null = supportingRankings?.latestDate || null;
             return (
               <div className="space-y-4">
                 {canActOnProject && (
@@ -4450,6 +4528,161 @@ export default function ProjectDetailPage() {
                     )}
                   </div>
                 )}
+
+                {/* Supporting Keywords — one row per main keyword, expandable to
+                    record positions for its secondary/supporting phrases and pick
+                    which ones go in the client-facing report. */}
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="max-w-xl">
+                      <h3 className="text-sm font-semibold text-gray-900">Supporting Keywords</h3>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Expand a keyword to see its supporting phrases, record where each one ranks, and choose which ones
+                        show up in the client report.
+                      </p>
+                    </div>
+                    {canActOnProject && Object.keys(supportingRankEntryDraft).length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => saveSupportingRankings.mutate({
+                          date: rankDate,
+                          entries: Object.entries(supportingRankEntryDraft)
+                            .filter(([, v]) => v !== undefined)
+                            .map(([supportingKeywordId, position]) => ({ supportingKeywordId, position })),
+                        })}
+                        disabled={saveSupportingRankings.isPending}
+                        className="flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-xs font-medium px-3 py-2 rounded-lg whitespace-nowrap"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        {saveSupportingRankings.isPending
+                          ? 'Saving…'
+                          : `Save ${Object.keys(supportingRankEntryDraft).length} for ${rankDate}`}
+                      </button>
+                    )}
+                  </div>
+                  {supportingRankingsLoading ? (
+                    <p className="px-4 py-10 text-sm text-gray-400 text-center">Loading…</p>
+                  ) : supportingRows.length === 0 ? (
+                    <p className="px-4 py-10 text-sm text-gray-400 text-center">
+                      No active keywords on this project yet — add keywords first, then their supporting phrases can be tracked here.
+                    </p>
+                  ) : (
+                    <ul className="divide-y divide-gray-100">
+                      {supportingRows.map((row: any) => {
+                        const expanded = expandedSupportingKeywordIds.has(row.keywordId);
+                        const supporting: any[] = row.supportingKeywords || [];
+                        return (
+                          <li key={row.keywordId}>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedSupportingKeywordIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(row.keywordId)) next.delete(row.keywordId);
+                                else next.add(row.keywordId);
+                                return next;
+                              })}
+                              className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50/60 text-left"
+                            >
+                              <span className="flex items-center gap-2 text-sm font-medium text-gray-900 min-w-0">
+                                {expanded ? <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />}
+                                <span className="truncate">{row.primaryKeyword}</span>
+                              </span>
+                              <span className="text-xs text-gray-400 shrink-0">
+                                {supporting.length} supporting keyword{supporting.length === 1 ? '' : 's'}
+                              </span>
+                            </button>
+                            {expanded && (
+                              supporting.length === 0 ? (
+                                <p className="px-4 pb-3 pl-10 text-xs text-gray-400">
+                                  No supporting keywords yet — add some to this keyword&apos;s Secondary Keywords field on the Keywords tab.
+                                </p>
+                              ) : (
+                                <div className="pb-3 overflow-x-auto">
+                                  <Table className="w-full min-w-[520px]">
+                                    <TableHeader>
+                                      <TableRow className="border-b border-gray-100">
+                                        <TableHead className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider pl-10 pr-3 py-2">Supporting keyword</TableHead>
+                                        <TableHead className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2 w-28 whitespace-nowrap">Last recorded</TableHead>
+                                        {canActOnProject && (
+                                          <TableHead className="text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2 w-36 whitespace-nowrap">
+                                            Position on {rankDate || 'this date'}
+                                          </TableHead>
+                                        )}
+                                        <TableHead className="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 py-2 w-24 whitespace-nowrap">Show to client</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody className="divide-y divide-gray-50">
+                                      {supporting.map((sk: any) => (
+                                        <TableRow key={sk.id} className="hover:bg-gray-50">
+                                          <TableCell className="pl-10 pr-3 py-2 text-sm text-gray-800">{sk.text}</TableCell>
+                                          <TableCell className="px-3 py-2 text-sm text-right text-gray-500">
+                                            {sk.latestPosition != null
+                                              ? <>#{sk.latestPosition}{supportingLatestDate && <span className="block text-[11px] text-gray-400">{supportingLatestDate}</span>}</>
+                                              : <span className="text-gray-300">Never</span>}
+                                          </TableCell>
+                                          {canActOnProject && (
+                                            <TableCell className="px-3 py-2">
+                                              <div className="flex items-center justify-end gap-1.5">
+                                                <input
+                                                  type="number"
+                                                  min={1}
+                                                  value={supportingRankEntryDraft[sk.id] ?? ''}
+                                                  onChange={(e) => setSupportingRankEntryDraft((d) => ({ ...d, [sk.id]: e.target.value }))}
+                                                  placeholder="e.g. 12"
+                                                  aria-label={`Google position for "${sk.text}"`}
+                                                  className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded-lg text-right focus:outline-none focus:ring-2 focus:ring-brand-600 bg-white"
+                                                />
+                                                <button
+                                                  type="button"
+                                                  aria-pressed={supportingRankEntryDraft[sk.id] === ''}
+                                                  title={supportingRankEntryDraft[sk.id] === ''
+                                                    ? 'Marked as checked but not ranking — click to undo'
+                                                    : "You checked this keyword and it isn't ranking"}
+                                                  onClick={() => setSupportingRankEntryDraft((d) => {
+                                                    const next = { ...d };
+                                                    if (next[sk.id] === '') delete next[sk.id];
+                                                    else next[sk.id] = '';
+                                                    return next;
+                                                  })}
+                                                  className={cn(
+                                                    'text-[11px] px-1.5 py-1.5 rounded-lg border whitespace-nowrap transition-colors',
+                                                    supportingRankEntryDraft[sk.id] === ''
+                                                      ? 'border-amber-400 bg-amber-50 text-amber-700 font-medium'
+                                                      : 'border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50',
+                                                  )}
+                                                >
+                                                  Not ranking
+                                                </button>
+                                              </div>
+                                            </TableCell>
+                                          )}
+                                          <TableCell className="px-3 py-2 text-center">
+                                            <input
+                                              type="checkbox"
+                                              checked={!!sk.showToClient}
+                                              disabled={!canActOnProject}
+                                              onChange={(e) => toggleSupportingShowToClient.mutate({
+                                                supportingKeywordId: sk.id,
+                                                showToClient: e.target.checked,
+                                              })}
+                                              aria-label={`Show "${sk.text}" to the client`}
+                                              title="Include this supporting keyword's ranking in the client-facing report"
+                                              className="rounded border-gray-300 text-brand-700 focus:ring-brand-600 disabled:opacity-40"
+                                            />
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              )
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
 
                 <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
                   <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">

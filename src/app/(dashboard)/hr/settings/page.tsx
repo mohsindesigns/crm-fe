@@ -28,6 +28,7 @@ export default function HrSettingsPage() {
     activate: true,
   });
   const [selectedTaxYearId, setSelectedTaxYearId] = useState<string>('');
+  const [editYearForm, setEditYearForm] = useState({ label: '', startDate: '', endDate: '' });
   const [confirmDeleteTaxYear, setConfirmDeleteTaxYear] = useState(false);
   // One flag for the whole page — its three lists (tax years/slabs, departments,
   // designations) show and hide their Inactive rows together.
@@ -98,10 +99,21 @@ export default function HrSettingsPage() {
       || null,
     [taxYears, selectedTaxYearId],
   );
+  const taxYearLocked = !!selectedTaxYear?.isActive;
 
   useEffect(() => {
     if (!selectedTaxYearId && selectedTaxYear?.id) setSelectedTaxYearId(selectedTaxYear.id);
   }, [selectedTaxYear, selectedTaxYearId]);
+
+  useEffect(() => {
+    if (selectedTaxYear) {
+      setEditYearForm({
+        label: selectedTaxYear.label || '',
+        startDate: selectedTaxYear.startDate || '',
+        endDate: selectedTaxYear.endDate || '',
+      });
+    }
+  }, [selectedTaxYear?.id, selectedTaxYear?.label, selectedTaxYear?.startDate, selectedTaxYear?.endDate]);
 
   const createTaxYear = useMutation({
     mutationFn: (payload: typeof taxYearForm) => api.post('/hr/tax-years', payload).then((r) => r.data),
@@ -114,6 +126,16 @@ export default function HrSettingsPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to create tax year.'),
   });
 
+  const updateTaxYear = useMutation({
+    mutationFn: ({ id, ...payload }: { id: string; label: string; startDate: string; endDate: string }) =>
+      api.patch(`/hr/tax-years/${id}`, payload).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['hr-tax-years'] });
+      toast.success('Tax year updated.');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update tax year.'),
+  });
+
   const activateTaxYear = useMutation({
     mutationFn: (id: string) => api.post(`/hr/tax-years/${id}/activate`).then((r) => r.data),
     onSuccess: () => {
@@ -121,6 +143,16 @@ export default function HrSettingsPage() {
       toast.success('Tax year activated for payroll.');
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to activate tax year.'),
+  });
+
+  const duplicateTaxYear = useMutation({
+    mutationFn: (id: string) => api.post(`/hr/tax-years/${id}/duplicate`).then((r) => r.data),
+    onSuccess: (year) => {
+      qc.invalidateQueries({ queryKey: ['hr-tax-years'] });
+      if (year?.id) setSelectedTaxYearId(year.id);
+      toast.success('Tax year duplicated — edit the copy below.');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to duplicate tax year.'),
   });
 
   // Archive / restore — nothing is ever destroyed (see ActiveToggle). Past payroll
@@ -438,6 +470,16 @@ export default function HrSettingsPage() {
                 {selectedTaxYear && (
                   <button
                     type="button"
+                    disabled={duplicateTaxYear.isPending}
+                    onClick={() => duplicateTaxYear.mutate(selectedTaxYear.id)}
+                    className="text-xs font-medium text-brand-800 bg-brand-50 hover:bg-brand-100 disabled:opacity-60 px-2.5 py-1.5 rounded-lg"
+                  >
+                    Duplicate
+                  </button>
+                )}
+                {selectedTaxYear && (
+                  <button
+                    type="button"
                     onClick={() => setConfirmDeleteTaxYear(true)}
                     className="text-xs font-medium text-red-600 hover:text-red-700 px-2 py-1.5"
                   >
@@ -449,8 +491,63 @@ export default function HrSettingsPage() {
                 )}
               </div>
 
+              {selectedTaxYear?.sourceTaxYear && (
+                <p className="text-[11px] text-gray-400">Duplicated from {selectedTaxYear.sourceTaxYear.label}.</p>
+              )}
+
+              {selectedTaxYear && (
+                <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_auto] gap-3 items-end bg-gray-50 border border-gray-100 rounded-lg p-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Label</label>
+                    <input
+                      type="text"
+                      value={editYearForm.label}
+                      disabled={taxYearLocked}
+                      onChange={(e) => setEditYearForm((x) => ({ ...x, label: e.target.value }))}
+                      className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-500 mb-1">Start date</label>
+                    <input
+                      type="date"
+                      value={editYearForm.startDate}
+                      disabled={taxYearLocked}
+                      onChange={(e) => setEditYearForm((x) => ({ ...x, startDate: e.target.value }))}
+                      className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-500 mb-1">End date</label>
+                    <input
+                      type="date"
+                      value={editYearForm.endDate}
+                      disabled={taxYearLocked}
+                      onChange={(e) => setEditYearForm((x) => ({ ...x, endDate: e.target.value }))}
+                      className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-600"
+                    />
+                  </div>
+                  {!taxYearLocked && (
+                    <button
+                      type="button"
+                      disabled={updateTaxYear.isPending || !editYearForm.label.trim() || !editYearForm.startDate || !editYearForm.endDate}
+                      onClick={() => updateTaxYear.mutate({ id: selectedTaxYear.id, ...editYearForm })}
+                      className="text-xs font-medium text-white bg-brand-700 hover:bg-brand-800 disabled:opacity-60 px-3 py-2 rounded-lg whitespace-nowrap"
+                    >
+                      Save
+                    </button>
+                  )}
+                </div>
+              )}
+
               {selectedTaxYear && (
                 <>
+                  {taxYearLocked && (
+                    <p className="text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      This tax year is active — its label, dates, and slabs are locked to protect payroll already calculated against them.
+                      Activate another (inactive) year to edit it instead.
+                    </p>
+                  )}
                   <div className="overflow-x-auto border border-gray-100 rounded-lg">
                     <Table className="w-full text-sm">
                       <TableHeader>
@@ -480,7 +577,7 @@ export default function HrSettingsPage() {
                                 <ActiveToggle
                                   isActive={slab.isActive !== false}
                                   label="slab"
-                                  disabled={toggleSlabActive.isPending}
+                                  disabled={toggleSlabActive.isPending || taxYearLocked}
                                   onToggle={(next) => toggleSlabActive.mutate({ id: slab.id, next })}
                                 />
                               </TableCell>
@@ -497,6 +594,7 @@ export default function HrSettingsPage() {
                     </Table>
                   </div>
 
+                  {!taxYearLocked && (
                   <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_1fr_1fr_auto] gap-3 items-end">
                     <div>
                       <label className="block text-[11px] font-medium text-gray-500 mb-1 whitespace-nowrap">Min (yearly)</label>
@@ -552,6 +650,9 @@ export default function HrSettingsPage() {
                       <Plus className="w-4 h-4" /> Add
                     </button>
                   </div>
+                  )}
+                  {!taxYearLocked && (
+                  <>
                   <p className="text-[11px] text-gray-400">Rate % applies only to income above Min — see the example below once you start typing.</p>
 
                   {/* Live formula readout — the Rate % only ever multiplies the slice of
@@ -577,6 +678,8 @@ export default function HrSettingsPage() {
                       </div>
                     );
                   })()}
+                  </>
+                  )}
                 </>
               )}
             </div>

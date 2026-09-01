@@ -136,6 +136,7 @@ export default function DocumentDetailPage() {
       discountType: doc.discountType || '', discountValue: doc.discountValue || '',
       discountCycles: doc.discountCycles || '',
       validUntil: doc.validUntil || '', scopeTerms: doc.scopeTerms || '',
+      allowPartialPayment: !!doc.allowPartialPayment,
     });
     // Legacy single-service documents (no services array) become a one-row list.
     setServices(Array.isArray(doc.services) && doc.services.length
@@ -1069,6 +1070,15 @@ export default function DocumentDetailPage() {
                         </strong>
                       </p>
                     )}
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!form.allowPartialPayment}
+                        onChange={(e) => setForm({ ...form, allowPartialPayment: e.target.checked })}
+                        className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
+                      />
+                      Allow partial payment <span className="text-gray-400 font-normal">(client can pay the resulting invoice down in as many chunks as they want)</span>
+                    </label>
                   </div>
 
                   <div>
