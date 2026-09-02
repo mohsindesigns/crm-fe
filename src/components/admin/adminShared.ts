@@ -68,6 +68,7 @@ export const MERGE_TOKENS = [
 // default — the full address/tax/contact block used to print unconditionally.
 export const SEO_REPORT_FIELD_OPTS = [
   { key: 'logo',    label: 'Logo' },
+  { key: 'name',    label: 'Company Name' },
   { key: 'address', label: 'Address' },
   { key: 'tax',     label: 'Tax/EIN' },
   { key: 'email',   label: 'Email' },

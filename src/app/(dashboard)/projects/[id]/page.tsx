@@ -4086,7 +4086,7 @@ export default function ProjectDetailPage() {
                                   </TableCell>
                                 )}
                                 <TableCell className="px-3 py-2.5 whitespace-nowrap text-gray-700">{cellOrDash(row.contentType)}</TableCell>
-                                <TableCell className="px-3 py-2.5 text-gray-900 font-medium max-w-xs break-words">
+                                <TableCell className="px-3 py-2.5 text-gray-900 font-medium max-w-xs whitespace-normal break-words">
                                   {row.title}
                                   {row.status === 'rejected' && row.rejectionReason && (
                                     <p className="text-[11px] text-red-600 font-normal mt-0.5">{row.rejectionReason}</p>
