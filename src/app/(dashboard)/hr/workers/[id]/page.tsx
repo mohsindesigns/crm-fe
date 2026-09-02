@@ -52,6 +52,7 @@ function workerToEditForm(worker: any) {
     salaryBase: worker.salaryBase ?? '',
     medicalAllowance: worker.medicalAllowance ?? '',
     salaryComponents: Array.isArray(worker.salaryComponents) ? worker.salaryComponents : [],
+    taxExempt: !!worker.taxExempt,
     joiningDate: worker.joiningDate ? String(worker.joiningDate).slice(0, 10) : '',
     leavingDate: worker.leavingDate ? String(worker.leavingDate).slice(0, 10) : '',
     dateOfBirth: worker.dateOfBirth ? String(worker.dateOfBirth).slice(0, 10) : '',
@@ -1160,9 +1161,25 @@ export default function WorkerDetailPage() {
           return (
             <div className="space-y-5">
               <div className="bg-white rounded-xl border border-gray-200 p-5">
-                <h3 className="text-sm font-semibold text-gray-900 mb-1">Salary Structure</h3>
+                <div className="flex items-start justify-between gap-4 mb-1">
+                  <h3 className="text-sm font-semibold text-gray-900">Salary Structure</h3>
+                  <label className="flex items-center gap-1.5 text-xs text-gray-600 whitespace-nowrap shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={!!editForm.taxExempt}
+                      onChange={(e) => setEditForm({ ...editForm, taxExempt: e.target.checked })}
+                      className="rounded border-gray-300 text-brand-600 focus:ring-brand-600"
+                    />
+                    Tax exempt
+                  </label>
+                </div>
                 <p className="text-xs text-gray-500 mb-4">
                   Basic is taxable; Medical is tax-exempt up to {capPercent}% of Basic (org default, set in HR → Settings).
+                  {editForm.taxExempt && (
+                    <span className="block text-amber-600 mt-1">
+                      Tax exempt: payroll will skip income-tax withholding for this employee every month, regardless of taxable salary.
+                    </span>
+                  )}
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
