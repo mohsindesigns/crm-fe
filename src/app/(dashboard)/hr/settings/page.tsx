@@ -306,6 +306,7 @@ export default function HrSettingsPage() {
                 Use HR &rarr; Attendance &rarr; &quot;Whole day&quot; to stamp a holiday onto the attendance log.
               </p>
             </div>
+            <ShowInactiveToggle {...inactive.toggleProps} className="order-last ml-auto shrink-0" />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 rounded-lg bg-gray-50 border border-gray-100">

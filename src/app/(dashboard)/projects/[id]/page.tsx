@@ -153,14 +153,15 @@ function titleFromFileText(text: string) {
   return null;
 }
 
-type Tab = 'overview' | 'keywords' | 'backlinks' | 'content' | 'blogs' | 'reporting' | 'comments' | 'client-requests';
-const VALID_TABS: Tab[] = ['overview', 'keywords', 'backlinks', 'content', 'blogs', 'reporting', 'comments', 'client-requests'];
-const SEO_WORKFLOW_TABS: Tab[] = ['keywords', 'backlinks', 'content', 'blogs', 'reporting'];
+type Tab = 'overview' | 'keywords' | 'backlinks' | 'content' | 'implementation' | 'blogs' | 'reporting' | 'comments' | 'client-requests';
+const VALID_TABS: Tab[] = ['overview', 'keywords', 'backlinks', 'content', 'implementation', 'blogs', 'reporting', 'comments', 'client-requests'];
+const SEO_WORKFLOW_TABS: Tab[] = ['keywords', 'backlinks', 'content', 'implementation', 'blogs', 'reporting'];
 const GMB_WORKFLOW_TABS: Tab[] = ['keywords', 'reporting'];
 const WORKFLOW_TAB_LABELS: Record<string, string> = {
   keywords: 'Keywords',
   backlinks: 'Backlinks',
   content: 'Content',
+  implementation: 'Implementation',
   blogs: 'Blogs',
   reporting: 'Monthly Report',
 };
@@ -309,7 +310,7 @@ export default function ProjectDetailPage() {
   const { data: allKeywords = [] } = useQuery({
     queryKey: ['seo-keywords', id],
     queryFn: () => api.get(`/seo/projects/${id}/keywords`, { params: { includeInactive: 1 } }).then((r) => r.data),
-    enabled: tab === 'keywords' || tab === 'content',
+    enabled: tab === 'keywords' || tab === 'content' || tab === 'implementation',
   });
   const inactiveKeywordCount = (allKeywords as any[]).filter((k: any) => (k.status || 'active') === 'inactive').length;
   // Full active+inactive pool — used by the Content tab's writer picker, the
@@ -359,7 +360,7 @@ export default function ProjectDetailPage() {
   const { data: content = [] } = useQuery({
     queryKey: ['seo-content', id],
     queryFn: () => api.get(`/seo/projects/${id}/content`).then((r) => r.data),
-    enabled: tab === 'content' || (tab === 'keywords' && project?.serviceTypeKey === 'seo'),
+    enabled: tab === 'content' || tab === 'implementation' || (tab === 'keywords' && project?.serviceTypeKey === 'seo'),
   });
 
   // Keywords covered by an approved content submission — used for the
@@ -1004,6 +1005,37 @@ export default function ProjectDetailPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Could not delete submission.'),
   });
 
+  const [selectedImplementIds, setSelectedImplementIds] = useState<Set<string>>(new Set());
+  const [rejectingImplementationId, setRejectingImplementationId] = useState<string | null>(null);
+  const [implementationRejectReason, setImplementationRejectReason] = useState('');
+
+  const bulkMarkImplemented = useMutation({
+    mutationFn: (ids: string[]) =>
+      api.patch(`/seo/projects/${id}/content/bulk-implement`, { ids }).then((r) => r.data),
+    onSuccess: async (data: any) => {
+      await invalidateMany(qc, [['seo-content', id], ...afterProjectChange(id)]);
+      setSelectedImplementIds(new Set());
+      const marked = data?.marked ?? 0;
+      const skipped = data?.skipped ?? 0;
+      if (marked && skipped) toast.success(`Marked ${marked} item(s) implemented. ${skipped} skipped.`);
+      else if (marked) toast.success(`Marked ${marked} item(s) implemented.`);
+      else toast.error('Nothing was marked — those items are not eligible.');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to mark content implemented.'),
+  });
+
+  const reviewImplementation = useMutation({
+    mutationFn: ({ csId, status, rejectionReason }: { csId: string; status: 'approved' | 'rejected'; rejectionReason?: string }) =>
+      api.patch(`/seo/content/${csId}/implementation-review`, { status, rejectionReason }).then((r) => r.data),
+    onSuccess: async (_data, vars) => {
+      await invalidateMany(qc, [['seo-content', id], ...afterProjectChange(id)]);
+      setRejectingImplementationId(null);
+      setImplementationRejectReason('');
+      toast.success(vars.status === 'approved' ? 'Implementation approved.' : 'Implementation rejected.');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Review failed.'),
+  });
+
   async function handleContentFileChange(file: File | undefined) {
     if (!file) {
       setContentFileName('');
@@ -1502,7 +1534,7 @@ export default function ProjectDetailPage() {
   // Backlinks here, even if their global role has no bearing on that at all.
   // Holding project_manager (or being admin) always keeps full access.
   const SPECIALIST_TAB_ACCESS: Record<string, Tab[]> = {
-    project_strategist: ['keywords', 'backlinks', 'content', 'blogs', 'reporting'],
+    project_strategist: ['keywords', 'backlinks', 'content', 'implementation', 'blogs', 'reporting'],
     link_builder: ['backlinks'],
     content_writer: ['content'],
     blog_writer: ['blogs'],
@@ -1519,6 +1551,17 @@ export default function ProjectDetailPage() {
     .filter((cs: any) => cs.status !== 'superseded' && cs.status !== 'approved'
       && (cs.submittedBy === user?.id || isAdminUser || iAmProjectManager))
     .map((cs: any) => cs.id);
+  // Implementation tab: any approved content item, latest version only —
+  // independent of the approve/reject lifecycle above, and never gates the
+  // project's own stage progression.
+  const implementationRows: any[] = (liveContent as any[]).filter((cs: any) => cs.status === 'approved');
+  const canMarkImplemented = isAdminUser || iAmProjectManager || iAmProjectStrategist;
+  const canReviewImplementation = isAdminUser || iAmProjectManager;
+  const markableImplementIds: string[] = canMarkImplemented
+    ? implementationRows
+        .filter((cs: any) => ['not_started', 'rejected'].includes(cs.implementationStatus || 'not_started'))
+        .map((cs: any) => cs.id)
+    : [];
   // Weekly blog / retainer automation is scheduled deliberately — not auto-started.
   const canScheduleAutomation = isAdminUser || canManageTeam || iAmProjectManager || iAmProjectStrategist;
   const heldSpecialistSlots = myRoleSlots.filter((slot) => SPECIALIST_TAB_ACCESS[slot]);
@@ -3760,6 +3803,196 @@ export default function ProjectDetailPage() {
                                     Reopen keeps this approved file as a superseded history version and opens a revise entry so the writer can upload a new deliverable.
                                   </p>
                                 )}
+                              </TableCell>
+                            </TableRow>
+                          )}
+                          </Fragment>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
+          {/* Implementation tab — Project Strategist marks approved content as
+              implemented on the live page; admin/PM gives it a second, separate
+              approval. Independent of the content approve/reject lifecycle and
+              of the project's own stage progression — this is where the item's
+              flow ends. */}
+          {tab === 'implementation' && (
+            <div className="space-y-4">
+              <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+                <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-gray-900">Implementation</h3>
+                  {selectedImplementIds.size > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">{selectedImplementIds.size} selected</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedImplementIds(new Set())}
+                        className="text-xs font-medium text-gray-600 hover:text-gray-900 px-2.5 py-1.5"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => bulkMarkImplemented.mutate([...selectedImplementIds])}
+                        disabled={bulkMarkImplemented.isPending}
+                        className="flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-xs font-semibold px-3 py-1.5 rounded-lg"
+                      >
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        {bulkMarkImplemented.isPending ? 'Marking…' : `Mark Implemented (${selectedImplementIds.size})`}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <Table className="w-full min-w-[840px]">
+                  <TableHeader>
+                    <TableRow className="border-b border-gray-100">
+                      {markableImplementIds.length > 0 && (
+                        <TableHead className="px-4 py-3 w-10">
+                          <input
+                            type="checkbox"
+                            checked={markableImplementIds.every((cid) => selectedImplementIds.has(cid))}
+                            onChange={(e) => setSelectedImplementIds(e.target.checked ? new Set(markableImplementIds) : new Set())}
+                            className="rounded border-gray-300 text-brand-700 focus:ring-brand-600"
+                            aria-label="Select all markable content"
+                            title="Select all markable content"
+                          />
+                        </TableHead>
+                      )}
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Page title</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Keywords</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Implemented by</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Date</TableHead>
+                      <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Status</TableHead>
+                      <TableHead className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-gray-100">
+                    {implementationRows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="px-4 py-8 text-sm text-gray-400 text-center">
+                          No approved content yet.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      implementationRows.map((cs: any) => {
+                        const kwMap = new Map((keywords as any[]).map((k) => [k.id, k.primaryKeyword]));
+                        const kwLabels = (cs.keywordIds || [])
+                          .map((kid: string) => kwMap.get(kid))
+                          .filter(Boolean);
+                        const implStatus = cs.implementationStatus || 'not_started';
+                        const isMarkable = markableImplementIds.includes(cs.id);
+                        const canReviewRow = canReviewImplementation && implStatus === 'submitted' && (isAdminUser || cs.implementedBy !== user?.id);
+                        return (
+                          <Fragment key={cs.id}>
+                          <TableRow className="hover:bg-gray-50">
+                            {markableImplementIds.length > 0 && (
+                              <TableCell className="px-4 py-3">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedImplementIds.has(cs.id)}
+                                  disabled={!isMarkable}
+                                  onChange={() => setSelectedImplementIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(cs.id)) next.delete(cs.id); else next.add(cs.id);
+                                    return next;
+                                  })}
+                                  className="rounded border-gray-300 text-brand-700 focus:ring-brand-600 disabled:opacity-40"
+                                  aria-label={`Select ${cs.pageName}`}
+                                />
+                              </TableCell>
+                            )}
+                            <TableCell className="px-4 py-3 text-sm font-medium text-gray-900 max-w-[220px] whitespace-normal break-words">
+                              {cs.pageName}
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-sm text-gray-600 max-w-[260px]">
+                              {kwLabels.length ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {kwLabels.map((label: string) => (
+                                    <span key={label} className="text-[11px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded">
+                                      {label}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                              {cs.implementer?.name || '—'}
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                              {cs.implementedAt ? formatDate(cs.implementedAt) : '—'}
+                            </TableCell>
+                            <TableCell className="px-4 py-3 whitespace-nowrap">
+                              <span
+                                title={implStatus === 'rejected' ? cs.implementationRejectionReason || '' : ''}
+                                className={cn(
+                                  'inline-block px-2 py-0.5 text-xs font-medium rounded-full capitalize',
+                                  implStatus === 'approved' ? 'bg-brand-100 text-brand-800'
+                                    : implStatus === 'rejected' ? 'bg-red-100 text-red-700'
+                                    : implStatus === 'submitted' ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-slate-100 text-slate-600'
+                                )}
+                              >
+                                {implStatus === 'not_started' ? 'Not started' : implStatus}
+                              </span>
+                            </TableCell>
+                            <TableCell className="px-4 py-3 text-right">
+                              {canReviewRow && (
+                                <div className="inline-flex items-center gap-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => reviewImplementation.mutate({ csId: cs.id, status: 'approved' })}
+                                    disabled={reviewImplementation.isPending}
+                                    title="Approve implementation"
+                                    className="p-1.5 text-gray-400 hover:text-brand-700 hover:bg-brand-50 rounded-lg disabled:opacity-50"
+                                  >
+                                    <CheckCircle className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setRejectingImplementationId(cs.id); setImplementationRejectReason(''); }}
+                                    title="Reject implementation"
+                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                                  >
+                                    <XCircle className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                          {rejectingImplementationId === cs.id && (
+                            <TableRow>
+                              <TableCell colSpan={7} className="px-4 py-3 bg-red-50/50 border-t border-red-100">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <input
+                                    autoFocus
+                                    value={implementationRejectReason}
+                                    onChange={(e) => setImplementationRejectReason(e.target.value)}
+                                    placeholder="Reason for rejection — tells the strategist what to fix *"
+                                    className="flex-1 min-w-[240px] px-3 py-1.5 text-sm border border-red-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 bg-white"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => implementationRejectReason.trim() && reviewImplementation.mutate({ csId: cs.id, status: 'rejected', rejectionReason: implementationRejectReason.trim() })}
+                                    disabled={!implementationRejectReason.trim() || reviewImplementation.isPending}
+                                    className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+                                  >
+                                    {reviewImplementation.isPending ? 'Rejecting…' : 'Confirm Reject'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setRejectingImplementationId(null); setImplementationRejectReason(''); }}
+                                    className="text-xs font-medium text-gray-500 hover:text-gray-700 px-2 py-1.5"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           )}
