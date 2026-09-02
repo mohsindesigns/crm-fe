@@ -194,6 +194,8 @@ export default function TaskDetailPage() {
   const [rejectFiles, setRejectFiles] = useState<any[]>([]);
   const [rejectUploading, setRejectUploading] = useState(false);
   const rejectFileRef = useRef<HTMLInputElement>(null);
+  const [editingAssignee, setEditingAssignee] = useState(false);
+  const [reassignTo, setReassignTo] = useState('');
 
   const { data: task, isLoading, isError } = useQuery({
     queryKey: ['task-detail', projectId, taskId],
@@ -210,6 +212,27 @@ export default function TaskDetailPage() {
   const { data: artifacts = [] } = useQuery({
     queryKey: ['task-artifacts', taskId],
     queryFn: () => api.get('/media/artifacts', { params: { taskId } }).then((r) => r.data),
+  });
+
+  // Lightweight directory for the reassign picker — same endpoint the Create Task
+  // form uses, no permission gate needed since anyone can be a task assignee.
+  const { data: assignableUsers = [] } = useQuery({
+    queryKey: ['users-assignable'],
+    queryFn: () => api.get('/users/assignable').then((r) => r.data || []),
+  });
+
+  const reassign = useMutation({
+    mutationFn: (assigneeId: string) =>
+      api.patch(`/projects/${projectId}/tasks/${taskId}/assignee`, { assigneeId }).then((r) => r.data),
+    onSuccess: async () => {
+      await invalidateMany(qc, [
+        ['task-detail', projectId, taskId],
+        ...afterTaskChange(projectId),
+      ]);
+      setEditingAssignee(false);
+      toast.success('Assignee updated.');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Could not reassign task.'),
   });
 
   const transition = useMutation({
@@ -395,6 +418,11 @@ export default function TaskDetailPage() {
     && (isAssignee || isAdmin || isEffectiveReviewer);
   const awaitingAudit = !!task.requiresTechnicalAudit && task.auditStatus === 'pending';
   const auditRejected = !!task.requiresTechnicalAudit && task.auditStatus === 'rejected';
+  // Fixes a mis-assigned task — creator/admin only, and only up to the point the
+  // current assignee has accepted it (or, for a technical-audit task, admin
+  // approval) — mirrors the gate in TaskService#reassign.
+  const canReassign = (isAdmin || task.createdBy === user?.id)
+    && (awaitingAudit || (task.status === 'todo' && !task.acceptedAt));
 
   // Backend returns events oldest→newest. Keep that for the timeline; only the
   // latest event is needed for the duplicate "Approved/Completed" node guard.
@@ -797,18 +825,65 @@ export default function TaskDetailPage() {
             </Field>
 
             <Field icon={User} label="Assignee">
-              {task.assignee?.name ? (
-                <span className="inline-flex items-center gap-2 min-w-0">
-                  <Avatar name={task.assignee.name} src={task.assignee.avatarUrl} size="xs" />
-                  <span className="truncate font-medium">{task.assignee.name}</span>
-                </span>
-              ) : awaitingAudit && task.pendingAssignee?.name ? (
-                <span className="inline-flex items-center gap-2 min-w-0">
-                  <Avatar name={task.pendingAssignee.name} src={task.pendingAssignee.avatarUrl} size="xs" />
-                  <span className="truncate text-gray-500">Pending: {task.pendingAssignee.name}</span>
-                </span>
+              {editingAssignee ? (
+                <div className="flex items-center gap-1.5">
+                  <select
+                    autoFocus
+                    value={reassignTo}
+                    onChange={(e) => setReassignTo(e.target.value)}
+                    className="min-w-0 flex-1 px-2 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 bg-white"
+                  >
+                    <option value="">Select…</option>
+                    {(assignableUsers as any[]).map((u: any) => (
+                      <option key={u.id} value={u.id}>
+                        {u.id === user?.id ? `${u.name} (me)` : u.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!reassignTo || reassign.isPending}
+                    onClick={() => reassign.mutate(reassignTo)}
+                    className="text-xs font-medium text-brand-700 hover:text-brand-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingAssignee(false)}
+                    className="text-xs font-medium text-gray-400 hover:text-gray-600"
+                  >
+                    Cancel
+                  </button>
+                </div>
               ) : (
-                <span className="text-gray-400">Unassigned</span>
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  {task.assignee?.name ? (
+                    <>
+                      <Avatar name={task.assignee.name} src={task.assignee.avatarUrl} size="xs" />
+                      <span className="truncate font-medium">{task.assignee.name}</span>
+                    </>
+                  ) : awaitingAudit && task.pendingAssignee?.name ? (
+                    <>
+                      <Avatar name={task.pendingAssignee.name} src={task.pendingAssignee.avatarUrl} size="xs" />
+                      <span className="truncate text-gray-500">Pending: {task.pendingAssignee.name}</span>
+                    </>
+                  ) : (
+                    <span className="text-gray-400">Unassigned</span>
+                  )}
+                  {canReassign && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReassignTo((awaitingAudit ? task.pendingAssigneeId : task.assigneeId) || '');
+                        setEditingAssignee(true);
+                      }}
+                      className="text-xs font-medium text-gray-400 hover:text-brand-700 flex-shrink-0"
+                    >
+                      Change
+                    </button>
+                  )}
+                </span>
               )}
             </Field>
 
