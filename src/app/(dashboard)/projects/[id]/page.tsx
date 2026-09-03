@@ -2,7 +2,7 @@
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, XCircle, ChevronRight, ChevronDown, Clock, Plus, Upload, Users, Link, Paperclip, ToggleLeft, Download, Repeat, AlertTriangle, Eye, Pencil, Save, X, Calendar, Bell, Flag, RotateCcw, Trash2, ArrowLeft } from 'lucide-react';
+import { CheckCircle, XCircle, ChevronRight, ChevronDown, Clock, Plus, Upload, Users, Link, Paperclip, ToggleLeft, Download, Repeat, AlertTriangle, Eye, Pencil, Save, X, Calendar, Bell, Flag, RotateCcw, Trash2, ArrowLeft, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
@@ -1975,6 +1975,15 @@ export default function ProjectDetailPage() {
                 {project.description && <p className="text-sm text-gray-600 mt-2">{project.description}</p>}
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                {isGmbProject && (
+                  <button
+                    onClick={() => router.push(`/projects/${id}/gmb-profile`)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 px-2.5 py-1.5 rounded-lg transition-colors"
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    GMB Profile
+                  </button>
+                )}
                 {canManageTeam && !['cancelled', 'completed'].includes(project.status) ? (
                   <select
                     value={project.status}

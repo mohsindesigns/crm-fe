@@ -90,6 +90,19 @@ export default function PayrollRunDetailPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update overtime setting.'),
   });
 
+  // Toggling absence deduction here updates the run, then recalculates so the
+  // change actually shows up in the items below — flipping the flag alone
+  // doesn't touch existing rows.
+  const updateDeductAbsencesMutation = useMutation({
+    mutationFn: (deductAbsences: boolean) => api.patch(`/hr/payroll/${id}`, { deductAbsences }).then((r) => r.data),
+    onSuccess: async () => {
+      qc.invalidateQueries({ queryKey: ['hr-payroll'] });
+      await qc.invalidateQueries({ queryKey: ['hr-payroll-run', id] });
+      await calculateMutation.mutateAsync();
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update absence deduction setting.'),
+  });
+
   const revertMutation = useMutation({
     mutationFn: () => api.post(`/hr/payroll/${id}/revert`).then((r) => r.data),
     onSuccess: () => {
@@ -189,6 +202,25 @@ export default function PayrollRunDetailPage() {
             ) : (
               <span className="text-xs text-gray-400">
                 OT {run.includeOvertime !== false ? 'included' : 'excluded'}
+              </span>
+            )}
+            {(run.status === 'draft' || run.status === 'open_for_review') ? (
+              <label
+                className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer"
+                title="If unchecked, unpaid absences won't reduce pay this month — attendance absent days are still recorded either way. Toggling this recalculates the run."
+              >
+                <input
+                  type="checkbox"
+                  checked={run.deductAbsences !== false}
+                  disabled={updateDeductAbsencesMutation.isPending}
+                  onChange={(e) => updateDeductAbsencesMutation.mutate(e.target.checked)}
+                  className="w-4 h-4 rounded accent-brand-700"
+                />
+                Deduct Absences
+              </label>
+            ) : (
+              <span className="text-xs text-gray-400">
+                Absences {run.deductAbsences !== false ? 'deducted' : 'not deducted'}
               </span>
             )}
             <span className={cn('px-3 py-1 text-xs font-medium rounded-full', RUN_STATUS_COLORS[run.status] || 'bg-gray-100 text-gray-600')}>

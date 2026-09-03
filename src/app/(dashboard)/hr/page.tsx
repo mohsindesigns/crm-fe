@@ -67,6 +67,7 @@ export default function HrPage() {
   const [newPeriod, setNewPeriod] = useState('');
   const [newWorkingDays, setNewWorkingDays] = useState<number | ''>('');
   const [newIncludeOvertime, setNewIncludeOvertime] = useState(true);
+  const [newDeductAbsences, setNewDeductAbsences] = useState(true);
   const [workerStatusFilter, setWorkerStatusFilter] = useState('');
   const [workerDesigFilter, setWorkerDesigFilter] = useState('');
   const [workerDeptFilter, setWorkerDeptFilter] = useState('');
@@ -180,8 +181,8 @@ export default function HrPage() {
   });
 
   const createPayrollRun = useMutation({
-    mutationFn: ({ period, workingDaysPerMonth, includeOvertime }: { period: string; workingDaysPerMonth: number; includeOvertime: boolean }) =>
-      api.post('/hr/payroll', { period, workingDaysPerMonth, includeOvertime }).then((r) => r.data),
+    mutationFn: ({ period, workingDaysPerMonth, includeOvertime, deductAbsences }: { period: string; workingDaysPerMonth: number; includeOvertime: boolean; deductAbsences: boolean }) =>
+      api.post('/hr/payroll', { period, workingDaysPerMonth, includeOvertime, deductAbsences }).then((r) => r.data),
     onSuccess: (run) => {
       qc.invalidateQueries({ queryKey: ['hr-payroll'] });
       setNewPeriod('');
@@ -412,6 +413,18 @@ export default function HrPage() {
                 />
                 Include OT
               </label>
+              <label
+                className="flex items-center gap-1.5 text-xs text-gray-600 whitespace-nowrap cursor-pointer"
+                title="If unchecked, unpaid absences won't reduce pay this month — attendance absent days are still recorded either way."
+              >
+                <input
+                  type="checkbox"
+                  checked={newDeductAbsences}
+                  onChange={(e) => setNewDeductAbsences(e.target.checked)}
+                  className="w-4 h-4 rounded accent-brand-700"
+                />
+                Deduct Absences
+              </label>
               <button
                 onClick={() => {
                   const days = typeof newWorkingDays === 'number' ? newWorkingDays : parseInt(String(newWorkingDays), 10);
@@ -420,7 +433,7 @@ export default function HrPage() {
                     toast.error('Working days must be between 1 and 31.');
                     return;
                   }
-                  createPayrollRun.mutate({ period: newPeriod, workingDaysPerMonth: days, includeOvertime: newIncludeOvertime });
+                  createPayrollRun.mutate({ period: newPeriod, workingDaysPerMonth: days, includeOvertime: newIncludeOvertime, deductAbsences: newDeductAbsences });
                 }}
                 disabled={!newPeriod || createPayrollRun.isPending}
                 className="flex items-center justify-center gap-1.5 whitespace-nowrap bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors w-full sm:w-auto sm:min-w-32"
