@@ -1,12 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Plus, X, Save, CheckCircle2 } from 'lucide-react';
+import { Plus, X, Save, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
-import Header from '@/components/layout/Header';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { cn, formatDate } from '@/lib/utils';
 
@@ -276,27 +274,29 @@ function ServiceAreasCard({ areas, onChange }: { areas: ServiceAreaRow[]; onChan
   );
 }
 
-export default function GmbProfilePage() {
-  const { id } = useParams<{ id: string }>();
-  const router = useRouter();
+interface Props {
+  projectId: string;
+  projectName: string;
+  /** Whether the project is currently sitting on the GMB Profile workflow stage. */
+  isProfileStage: boolean;
+  /** Whether the current user may act on that stage (stage-owner assignment or admin). */
+  canCompleteStage: boolean;
+  /** Advances the project's workflow stage — called after a successful "complete" save while on the profile stage. */
+  onStageComplete: () => Promise<unknown>;
+}
+
+export default function GmbProfileTab({ projectId, projectName, isProfileStage, canCompleteStage, onStageComplete }: Props) {
   const qc = useQueryClient();
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
 
-  const { data: project, isLoading: projectLoading } = useQuery({
-    queryKey: ['project', id],
-    queryFn: () => api.get(`/projects/${id}`).then((r) => r.data),
-  });
-
-  const { data: profile, isLoading: profileLoading } = useQuery<GmbProfileData | null>({
-    queryKey: ['gmb-profile', id],
-    queryFn: () => api.get(`/gmb/projects/${id}/profile`).then((r) => r.data),
-    enabled: !!project && project.serviceTypeKey === 'gmb',
+  const { data: profile, isLoading } = useQuery<GmbProfileData | null>({
+    queryKey: ['gmb-profile', projectId],
+    queryFn: () => api.get(`/gmb/projects/${projectId}/profile`).then((r) => r.data),
   });
 
   const { data: suggestions } = useQuery<{ services: string[]; categories: string[] }>({
     queryKey: ['gmb-suggestions'],
     queryFn: () => api.get('/gmb/suggestions').then((r) => r.data),
-    enabled: !!project && project.serviceTypeKey === 'gmb',
   });
 
   useEffect(() => {
@@ -316,45 +316,37 @@ export default function GmbProfilePage() {
     });
   }, [profile]);
 
-  function setProfileCache(data: GmbProfileData) {
-    qc.setQueryData(['gmb-profile', id], data);
-  }
-
   const saveProfile = useMutation({
-    mutationFn: (mode: 'draft' | 'complete') => api.put(`/gmb/projects/${id}/profile`, { ...form, mode }).then((r) => r.data),
-    onSuccess: (data, mode) => {
-      setProfileCache(data);
+    mutationFn: (mode: 'draft' | 'complete') => api.put(`/gmb/projects/${projectId}/profile`, { ...form, mode }).then((r) => r.data),
+    onSuccess: async (data, mode) => {
+      qc.setQueryData(['gmb-profile', projectId], data);
       qc.invalidateQueries({ queryKey: ['gmb-suggestions'] });
+      if (mode === 'complete' && isProfileStage) {
+        if (canCompleteStage) {
+          try {
+            await onStageComplete();
+            toast.success('GMB Profile completed — stage advanced.');
+            return;
+          } catch {
+            toast.success('GMB Profile completed.');
+            toast.error('Could not advance the stage — you may not be assigned as the Project Strategist on this project.');
+            return;
+          }
+        }
+        toast.success('GMB Profile completed.');
+        toast('An assigned Project Strategist (or admin) needs to advance the stage.', { icon: 'ℹ️' });
+        return;
+      }
       toast.success(mode === 'complete' ? 'GMB Profile completed.' : 'Draft saved.');
     },
     onError: (e: any) => toast.error(e?.response?.data?.error || 'Failed to save GMB Profile.'),
   });
 
-  const isLoading = projectLoading || (project?.serviceTypeKey === 'gmb' && profileLoading);
-
   if (isLoading) {
     return (
-      <div className="flex flex-col h-full">
-        <Header title="GMB Profile" />
-        <div className="flex-1 overflow-y-auto">
-          <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5 animate-pulse">
-            <div className="h-24 bg-gray-100 rounded-xl" />
-            <div className="h-64 bg-gray-100 rounded-xl" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!project || project.serviceTypeKey !== 'gmb') {
-    return (
-      <div className="flex flex-col h-full">
-        <Header title="GMB Profile" />
-        <div className="flex-1 overflow-y-auto">
-          <div className="p-6 max-w-4xl mx-auto text-sm text-gray-500">
-            GMB Profile is only available for GMB projects.
-          </div>
-        </div>
+      <div className="space-y-5 animate-pulse">
+        <div className="h-64 bg-gray-100 rounded-xl" />
+        <div className="h-48 bg-gray-100 rounded-xl" />
       </div>
     );
   }
@@ -362,144 +354,133 @@ export default function GmbProfilePage() {
   const nonGoogleWarning = looksNonGoogle(form.gmbProfileUrl);
 
   return (
-    <div className="flex flex-col h-full">
-      <Header title="GMB Profile" />
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5">
-          <div className="flex items-center justify-between gap-2">
-            <button onClick={() => router.push(`/projects/${id}`)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 transition-colors">
-              <ArrowLeft className="w-4 h-4" />
-              Back to project
-            </button>
-            <div className="flex items-center gap-2 text-xs text-gray-400">
-              {profile && (
-                <span className={cn(
-                  'px-2 py-0.5 rounded-full font-semibold',
-                  profile.status === 'completed' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700',
-                )}>
-                  {profile.status === 'completed' ? 'Completed' : 'Draft'}
-                </span>
-              )}
-              {profile?.updatedAt && <span>Last saved {formatDate(profile.updatedAt, 'MMM d, yyyy · h:mm a')}</span>}
-            </div>
-          </div>
+    <div className="space-y-5">
+      <div className="flex items-center justify-end gap-2 text-xs text-gray-400">
+        {profile && (
+          <span className={cn(
+            'px-2 py-0.5 rounded-full font-semibold',
+            profile.status === 'completed' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700',
+          )}>
+            {profile.status === 'completed' ? 'Completed' : 'Draft'}
+          </span>
+        )}
+        {profile?.updatedAt && <span>Last saved {formatDate(profile.updatedAt, 'MMM d, yyyy · h:mm a')}</span>}
+      </div>
 
-          {/* Business details */}
-          <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-            <h2 className="text-sm font-semibold text-gray-900">Business Details</h2>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Profile Name <span className="text-red-500">*</span></label>
-              <input
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value.slice(0, 150) }))}
-                maxLength={150}
-                placeholder={project.name}
-                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Profile Address <span className="text-red-500">*</span></label>
-              <textarea
-                value={form.address}
-                onChange={(e) => setForm((f) => ({ ...f, address: e.target.value.slice(0, 300) }))}
-                maxLength={300}
-                rows={2}
-                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Contact Number <span className="text-red-500">*</span></label>
-              <input
-                value={form.contactNumber}
-                onChange={(e) => setForm((f) => ({ ...f, contactNumber: e.target.value }))}
-                placeholder="+1 (303) 555-0148"
-                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600"
-              />
-            </div>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Profile Link</label>
-                <input
-                  value={form.gmbProfileUrl}
-                  onChange={(e) => setForm((f) => ({ ...f, gmbProfileUrl: e.target.value }))}
-                  placeholder="Google Business Profile listing or share URL"
-                  className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600"
-                />
-                {nonGoogleWarning && <p className="text-xs text-amber-600 mt-1">This doesn&apos;t look like a Google Maps/Business link — you can still save it.</p>}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Website Address</label>
-                <input
-                  value={form.websiteUrl}
-                  onChange={(e) => setForm((f) => ({ ...f, websiteUrl: e.target.value }))}
-                  onBlur={() => setForm((f) => (f.websiteUrl.trim() ? { ...f, websiteUrl: withScheme(f.websiteUrl.trim()) } : f))}
-                  placeholder="https://…"
-                  className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Services and categories */}
-          <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-            <h2 className="text-sm font-semibold text-gray-900">Services and Categories</h2>
-            <TagInput
-              label="Services"
-              required
-              values={form.services}
-              suggestions={suggestions?.services}
-              onChange={(v) => setForm((f) => ({ ...f, services: v }))}
+      {/* Business details */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        <h2 className="text-sm font-semibold text-gray-900">Business Details</h2>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Profile Name <span className="text-red-500">*</span></label>
+          <input
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value.slice(0, 150) }))}
+            maxLength={150}
+            placeholder={projectName}
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Profile Address <span className="text-red-500">*</span></label>
+          <textarea
+            value={form.address}
+            onChange={(e) => setForm((f) => ({ ...f, address: e.target.value.slice(0, 300) }))}
+            maxLength={300}
+            rows={2}
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Contact Number <span className="text-red-500">*</span></label>
+          <input
+            value={form.contactNumber}
+            onChange={(e) => setForm((f) => ({ ...f, contactNumber: e.target.value }))}
+            placeholder="+1 (303) 555-0148"
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600"
+          />
+        </div>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Profile Link</label>
+            <input
+              value={form.gmbProfileUrl}
+              onChange={(e) => setForm((f) => ({ ...f, gmbProfileUrl: e.target.value }))}
+              placeholder="Google Business Profile listing or share URL"
+              className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600"
             />
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Primary Category <span className="text-red-500">*</span></label>
-              <input
-                list="gmb-primary-category"
-                value={form.primaryCategory}
-                onChange={(e) => setForm((f) => ({
-                  ...f,
-                  primaryCategory: e.target.value,
-                  secondaryCategories: f.secondaryCategories.filter((c) => c.toLowerCase() !== e.target.value.trim().toLowerCase()),
-                }))}
-                placeholder="e.g. Roofing contractor"
-                className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600"
-              />
-              <datalist id="gmb-primary-category">
-                {(suggestions?.categories || []).map((c) => <option key={c} value={c} />)}
-              </datalist>
-              <p className="text-xs text-gray-400 mt-1">One value only.</p>
-            </div>
-            <TagInput
-              label="Secondary Categories"
-              values={form.secondaryCategories}
-              suggestions={(suggestions?.categories || []).filter((c) => c.toLowerCase() !== form.primaryCategory.trim().toLowerCase())}
-              warnAboveCount={9}
-              onChange={(v) => setForm((f) => ({ ...f, secondaryCategories: v.filter((c) => c.toLowerCase() !== f.primaryCategory.trim().toLowerCase()) }))}
-            />
-            <p className="text-xs text-gray-400 -mt-2">Cannot contain the primary category.</p>
+            {nonGoogleWarning && <p className="text-xs text-amber-600 mt-1">This doesn&apos;t look like a Google Maps/Business link — you can still save it.</p>}
           </div>
-
-          {/* Service areas */}
-          <ServiceAreasCard areas={form.serviceAreas} onChange={(v) => setForm((f) => ({ ...f, serviceAreas: v }))} />
-
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={() => saveProfile.mutate('draft')}
-              disabled={saveProfile.isPending}
-              className="flex items-center gap-2 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 px-4 py-2.5 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <Save className="w-4 h-4" />
-              Save Draft
-            </button>
-            <button
-              onClick={() => saveProfile.mutate('complete')}
-              disabled={saveProfile.isPending}
-              className="flex items-center gap-2 text-sm font-semibold text-white bg-brand-700 hover:bg-brand-800 px-4 py-2.5 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              Save and Complete
-            </button>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Website Address</label>
+            <input
+              value={form.websiteUrl}
+              onChange={(e) => setForm((f) => ({ ...f, websiteUrl: e.target.value }))}
+              onBlur={() => setForm((f) => (f.websiteUrl.trim() ? { ...f, websiteUrl: withScheme(f.websiteUrl.trim()) } : f))}
+              placeholder="https://…"
+              className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600"
+            />
           </div>
         </div>
+      </div>
+
+      {/* Services and categories */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+        <h2 className="text-sm font-semibold text-gray-900">Services and Categories</h2>
+        <TagInput
+          label="Services"
+          required
+          values={form.services}
+          suggestions={suggestions?.services}
+          onChange={(v) => setForm((f) => ({ ...f, services: v }))}
+        />
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Primary Category <span className="text-red-500">*</span></label>
+          <input
+            list="gmb-primary-category"
+            value={form.primaryCategory}
+            onChange={(e) => setForm((f) => ({
+              ...f,
+              primaryCategory: e.target.value,
+              secondaryCategories: f.secondaryCategories.filter((c) => c.toLowerCase() !== e.target.value.trim().toLowerCase()),
+            }))}
+            placeholder="e.g. Roofing contractor"
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600"
+          />
+          <datalist id="gmb-primary-category">
+            {(suggestions?.categories || []).map((c) => <option key={c} value={c} />)}
+          </datalist>
+          <p className="text-xs text-gray-400 mt-1">One value only.</p>
+        </div>
+        <TagInput
+          label="Secondary Categories"
+          values={form.secondaryCategories}
+          suggestions={(suggestions?.categories || []).filter((c) => c.toLowerCase() !== form.primaryCategory.trim().toLowerCase())}
+          warnAboveCount={9}
+          onChange={(v) => setForm((f) => ({ ...f, secondaryCategories: v.filter((c) => c.toLowerCase() !== f.primaryCategory.trim().toLowerCase()) }))}
+        />
+        <p className="text-xs text-gray-400 -mt-2">Cannot contain the primary category.</p>
+      </div>
+
+      {/* Service areas */}
+      <ServiceAreasCard areas={form.serviceAreas} onChange={(v) => setForm((f) => ({ ...f, serviceAreas: v }))} />
+
+      <div className="flex justify-end gap-2">
+        <button
+          onClick={() => saveProfile.mutate('draft')}
+          disabled={saveProfile.isPending}
+          className="flex items-center gap-2 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 px-4 py-2.5 rounded-lg transition-colors disabled:opacity-50"
+        >
+          <Save className="w-4 h-4" />
+          Save Draft
+        </button>
+        <button
+          onClick={() => saveProfile.mutate('complete')}
+          disabled={saveProfile.isPending}
+          className="flex items-center gap-2 text-sm font-semibold text-white bg-brand-700 hover:bg-brand-800 px-4 py-2.5 rounded-lg transition-colors disabled:opacity-50"
+        >
+          <CheckCircle2 className="w-4 h-4" />
+          Save and Complete
+        </button>
       </div>
     </div>
   );

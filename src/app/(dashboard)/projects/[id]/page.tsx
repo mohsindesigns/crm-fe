@@ -2,7 +2,7 @@
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, XCircle, ChevronRight, ChevronDown, Clock, Plus, Upload, Users, Link, Paperclip, ToggleLeft, Download, Repeat, AlertTriangle, Eye, Pencil, Save, X, Calendar, Bell, Flag, RotateCcw, Trash2, ArrowLeft, MapPin } from 'lucide-react';
+import { CheckCircle, XCircle, ChevronRight, ChevronDown, Clock, Plus, Upload, Users, Link, Paperclip, ToggleLeft, Download, Repeat, AlertTriangle, Eye, Pencil, Save, X, Calendar, Bell, Flag, RotateCcw, Trash2, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
@@ -18,6 +18,7 @@ import { usersForRoleSlot } from '@/lib/projectTeam';
 import { useState, useRef, useMemo, useEffect, Fragment } from 'react';
 import { useAuthStore } from '@/store/auth';
 import ClientRequestsTab from '@/components/projects/ClientRequestsTab';
+import GmbProfileTab from '@/components/projects/GmbProfileTab';
 import { useSidebar } from '@/components/ui/sidebar';
 import ProjectStatusPanel from '@/components/projects/ProjectStatusPanel';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
@@ -167,11 +168,12 @@ type ImplementationRow = {
   implementedBy?: string | null;
 };
 
-type Tab = 'overview' | 'keywords' | 'backlinks' | 'content' | 'implementation' | 'blogs' | 'reporting' | 'comments' | 'client-requests';
-const VALID_TABS: Tab[] = ['overview', 'keywords', 'backlinks', 'content', 'implementation', 'blogs', 'reporting', 'comments', 'client-requests'];
+type Tab = 'overview' | 'gmb-profile' | 'keywords' | 'backlinks' | 'content' | 'implementation' | 'blogs' | 'reporting' | 'comments' | 'client-requests';
+const VALID_TABS: Tab[] = ['overview', 'gmb-profile', 'keywords', 'backlinks', 'content', 'implementation', 'blogs', 'reporting', 'comments', 'client-requests'];
 const SEO_WORKFLOW_TABS: Tab[] = ['keywords', 'backlinks', 'content', 'implementation', 'blogs', 'reporting'];
-const GMB_WORKFLOW_TABS: Tab[] = ['keywords', 'reporting'];
+const GMB_WORKFLOW_TABS: Tab[] = ['gmb-profile', 'keywords', 'reporting'];
 const WORKFLOW_TAB_LABELS: Record<string, string> = {
+  'gmb-profile': 'GMB Profile',
   keywords: 'Keywords',
   backlinks: 'Backlinks',
   content: 'Content',
@@ -219,6 +221,7 @@ export default function ProjectDetailPage() {
   const backlinkStatusFileRef = useRef<HTMLInputElement>(null);
   const blogSheetFileRef = useRef<HTMLInputElement>(null);
   const blogDeliverableRef = useRef<HTMLInputElement>(null);
+  const blogDesignDeliverableRef = useRef<HTMLInputElement>(null);
   const [newBlogRow, setNewBlogRow] = useState({
     contentType: '', title: '', mainKeyword: '', volume: '', kd: '',
     supportingKeywords: '', urlSlug: '', targetServicePage: '', proof: '',
@@ -227,6 +230,9 @@ export default function ProjectDetailPage() {
   const [blogSubmitId, setBlogSubmitId] = useState('');
   const [blogSubmitFileName, setBlogSubmitFileName] = useState('');
   const [blogSubmitLink, setBlogSubmitLink] = useState('');
+  const [blogDesignSubmitId, setBlogDesignSubmitId] = useState('');
+  const [blogDesignSubmitFileName, setBlogDesignSubmitFileName] = useState('');
+  const [blogDesignSubmitLink, setBlogDesignSubmitLink] = useState('');
   const [contentSubmitLink, setContentSubmitLink] = useState('');
   // Monthly Report: the date being recorded, and the in-progress position for
   // each keyword keyed by keyword id (kept as strings so a field can be blanked
@@ -1343,6 +1349,23 @@ export default function ProjectDetailPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Blog submission failed.'),
   });
 
+  const submitBlogDesign = useMutation({
+    mutationFn: (fd: FormData) =>
+      api.post(`/seo/projects/${id}/blog-sheet/submit-design`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data),
+    onSuccess: async () => {
+      await invalidateMany(qc, [
+        ['blog-sheet', id],
+        ...afterTaskChange(id),
+      ]);
+      setBlogDesignSubmitId('');
+      setBlogDesignSubmitFileName('');
+      setBlogDesignSubmitLink('');
+      if (blogDesignDeliverableRef.current) blogDesignDeliverableRef.current.value = '';
+      toast.success('Design uploaded.');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Design upload failed.'),
+  });
+
   const reviewBlogRow = useMutation({
     mutationFn: ({ blogId, status, rejectionReason }: { blogId: string; status: 'approved' | 'rejected'; rejectionReason?: string }) =>
       api.patch(`/seo/blog-sheet/${blogId}/review`, { status, rejectionReason }).then((r) => r.data),
@@ -1614,7 +1637,7 @@ export default function ProjectDetailPage() {
   // Backlinks here, even if their global role has no bearing on that at all.
   // Holding project_manager (or being admin) always keeps full access.
   const SPECIALIST_TAB_ACCESS: Record<string, Tab[]> = {
-    project_strategist: ['keywords', 'backlinks', 'content', 'implementation', 'blogs', 'reporting'],
+    project_strategist: ['gmb-profile', 'keywords', 'backlinks', 'content', 'implementation', 'blogs', 'reporting'],
     link_builder: ['backlinks'],
     content_writer: ['content'],
     blog_writer: ['blogs'],
@@ -1975,15 +1998,6 @@ export default function ProjectDetailPage() {
                 {project.description && <p className="text-sm text-gray-600 mt-2">{project.description}</p>}
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {isGmbProject && (
-                  <button
-                    onClick={() => router.push(`/projects/${id}/gmb-profile`)}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 px-2.5 py-1.5 rounded-lg transition-colors"
-                  >
-                    <MapPin className="w-3.5 h-3.5" />
-                    GMB Profile
-                  </button>
-                )}
                 {canManageTeam && !['cancelled', 'completed'].includes(project.status) ? (
                   <select
                     value={project.status}
@@ -2064,7 +2078,18 @@ export default function ProjectDetailPage() {
               it defaults closed to a summary bar and the user expands it
               when they actually need to act, instead of it permanently
               pushing the tabs/content below down the page. */}
-          {project.status === 'active' && isAssigned && (
+          {/* The GMB Profile stage is completed from its own tab (full field
+              validation lives there) rather than this generic deliverable
+              panel — a bare "Mark Complete" here would skip that validation. */}
+          {project.status === 'active' && currentStage?.key === 'gmb_profile_setup' && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-gray-600">This stage is completed from the <span className="font-medium text-gray-900">GMB Profile</span> tab.</p>
+              <button onClick={() => setTab('gmb-profile')} className="text-sm font-semibold text-brand-700 hover:text-brand-800">
+                Go to GMB Profile →
+              </button>
+            </div>
+          )}
+          {project.status === 'active' && isAssigned && currentStage?.key !== 'gmb_profile_setup' && (
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               <button
                 type="button"
@@ -2228,7 +2253,7 @@ export default function ProjectDetailPage() {
               )}
             </div>
           )}
-          {project.status === 'active' && !isAssigned && (
+          {project.status === 'active' && !isAssigned && currentStage?.key !== 'gmb_profile_setup' && (
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 text-sm text-gray-500">
               You are not assigned to act on this stage ({titleCase(currentStage?.ownerRoleSlot)}).
             </div>
@@ -4195,6 +4220,14 @@ export default function ProjectDetailPage() {
               if (!['draft', 'rejected'].includes(row.status || 'draft')) return false;
               return row.assignedWriterId === user?.id;
             });
+            // Submit Design mirrors Submit Blog above, but for the designer: only
+            // approved rows (a designer can't be assigned before then, see the
+            // Designer column) assigned to the current user.
+            const submittableDesigns = sheetRows.filter((row: any) => {
+              if (!row.isActive && row.isActive !== undefined) return false;
+              if (row.status !== 'approved') return false;
+              return row.assignedDesignerId === user?.id;
+            });
             return (
             <div className="space-y-4">
               {canActOnProject && (
@@ -4301,6 +4334,108 @@ export default function ProjectDetailPage() {
                       >
                         <CheckCircle className="w-4 h-4" />
                         {submitBlog.isPending ? 'Submitting…' : 'Submit Blog'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {submittableDesigns.length > 0 && (
+                <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Submit design</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Pick an approved blog assigned to you, attach the image/file or paste a link — it shows up in the sheet's Design File column.
+                    </p>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1.5">Blog title *</label>
+                      <select
+                        value={blogDesignSubmitId}
+                        onChange={(e) => setBlogDesignSubmitId(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600 bg-white"
+                      >
+                        <option value="">Select a blog…</option>
+                        {submittableDesigns.map((row: any) => (
+                          <option key={row.id} value={row.id}>
+                            {row.title}{row.designFileUrl ? ' (re-upload)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => blogDesignDeliverableRef.current?.click()}
+                          className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-3.5 py-2 rounded-lg"
+                        >
+                          <Upload className="w-4 h-4" />
+                          {blogDesignSubmitFileName || 'Attach file'}
+                        </button>
+                        <input
+                          ref={blogDesignDeliverableRef}
+                          type="file"
+                          accept=".jpg,.jpeg,.png,.gif,.svg,.webp,.pdf,.psd,.ai,.fig,.zip"
+                          className="hidden"
+                          onChange={(e) => {
+                            setBlogDesignSubmitLink('');
+                            setBlogDesignSubmitFileName(e.target.files?.[0]?.name || '');
+                          }}
+                        />
+                        {blogDesignSubmitFileName && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBlogDesignSubmitFileName('');
+                              if (blogDesignDeliverableRef.current) blogDesignDeliverableRef.current.value = '';
+                            }}
+                            className="text-xs text-gray-500 hover:text-red-600"
+                          >
+                            Remove file
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0 sm:min-w-[220px]">
+                        <Link className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                        <input
+                          value={blogDesignSubmitLink}
+                          onChange={(e) => {
+                            setBlogDesignSubmitLink(e.target.value);
+                            if (e.target.value.trim()) {
+                              setBlogDesignSubmitFileName('');
+                              if (blogDesignDeliverableRef.current) blogDesignDeliverableRef.current.value = '';
+                            }
+                          }}
+                          placeholder="Or paste a design link (Figma, Drive, …)"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!blogDesignSubmitId) {
+                            toast.error('Select a blog to submit.');
+                            return;
+                          }
+                          const link = blogDesignSubmitLink.trim();
+                          const hasFile = !!blogDesignDeliverableRef.current?.files?.[0];
+                          if (!hasFile && !link) {
+                            toast.error('Attach a file or paste a design link.');
+                            return;
+                          }
+                          const fd = new FormData();
+                          fd.append('blogId', blogDesignSubmitId);
+                          if (hasFile) fd.append('file', blogDesignDeliverableRef.current!.files![0]);
+                          else if (link) fd.append('fileUrl', toAbsoluteUrl(link));
+                          submitBlogDesign.mutate(fd);
+                        }}
+                        disabled={submitBlogDesign.isPending || !blogDesignSubmitId}
+                        className="flex items-center justify-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-3.5 py-2 rounded-lg w-full sm:w-auto shrink-0"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        {submitBlogDesign.isPending ? 'Uploading…' : 'Submit Design'}
                       </button>
                     </div>
                   </div>
@@ -4457,6 +4592,7 @@ export default function ProjectDetailPage() {
                           <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Status</TableHead>
                           <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Writer</TableHead>
                           <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5 whitespace-nowrap">Designer</TableHead>
+                          <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-3 py-2.5">Design File</TableHead>
                           <TableHead className="w-28" />
                         </TableRow>
                       </TableHeader>
@@ -4607,6 +4743,29 @@ export default function ProjectDetailPage() {
                                     <span className="text-gray-700">{row.assignedDesigner?.name || '—'}</span>
                                   )}
                                 </TableCell>
+                                <TableCell className="px-3 py-2.5 text-gray-700 max-w-[160px]">
+                                  {row.designFileUrl ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => openDeliverable(row.designFileUrl, row.designFileName).catch(() => toast.error('Failed to open deliverable.'))}
+                                      className="flex items-center gap-1 text-brand-700 hover:underline max-w-full"
+                                      title={row.designFileName || row.designFileUrl}
+                                    >
+                                      {isLinkDeliverable(row.designFileUrl, row.designFileName) ? (
+                                        <Link className="w-3.5 h-3.5 shrink-0" />
+                                      ) : (
+                                        <Paperclip className="w-3.5 h-3.5 shrink-0" />
+                                      )}
+                                      <span className="truncate">
+                                        {row.designFileName === 'Link'
+                                          ? (row.designFileUrl || 'Link')
+                                          : (row.designFileName || 'Attached')}
+                                      </span>
+                                    </button>
+                                  ) : (
+                                    <span className="text-gray-400">—</span>
+                                  )}
+                                </TableCell>
                                 <TableCell className="px-3 py-2.5">
                                   <div className="flex items-center gap-1 justify-end">
                                     {row.fileUrl && (
@@ -4625,6 +4784,28 @@ export default function ProjectDetailPage() {
                                             download={row.fileName || undefined}
                                             className="p-1.5 text-gray-400 hover:text-brand-700 rounded-lg hover:bg-gray-100"
                                             title="Download"
+                                          >
+                                            <Download className="w-3.5 h-3.5" />
+                                          </a>
+                                        )}
+                                      </>
+                                    )}
+                                    {row.designFileUrl && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => openDeliverable(row.designFileUrl, row.designFileName).catch(() => toast.error('Failed to open deliverable.'))}
+                                          className="p-1.5 text-gray-400 hover:text-brand-700 rounded-lg hover:bg-gray-100"
+                                          title={isLinkDeliverable(row.designFileUrl, row.designFileName) ? 'Open design link' : 'View design'}
+                                        >
+                                          <Eye className="w-3.5 h-3.5" />
+                                        </button>
+                                        {!isLinkDeliverable(row.designFileUrl, row.designFileName) && (
+                                          <a
+                                            href={row.designFileUrl}
+                                            download={row.designFileName || undefined}
+                                            className="p-1.5 text-gray-400 hover:text-brand-700 rounded-lg hover:bg-gray-100"
+                                            title="Download design"
                                           >
                                             <Download className="w-3.5 h-3.5" />
                                           </a>
@@ -5176,6 +5357,16 @@ export default function ProjectDetailPage() {
               </div>
             );
           })()}
+
+          {tab === 'gmb-profile' && (
+            <GmbProfileTab
+              projectId={id}
+              projectName={project.name}
+              isProfileStage={currentStage?.key === 'gmb_profile_setup'}
+              canCompleteStage={isAssigned}
+              onStageComplete={() => actionMutation.mutateAsync({ action: 'complete' })}
+            />
+          )}
 
           {/* Comments tab */}
           {tab === 'client-requests' && (
