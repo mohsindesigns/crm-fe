@@ -78,6 +78,10 @@ export default function HrPage() {
   const [revertRunTarget, setRevertRunTarget] = useState<{ id: string; period: string } | null>(null);
   // Temporary while QA-ing the payroll workflow — remove this delete option later.
   const [deleteRunTarget, setDeleteRunTarget] = useState<{ id: string; period: string } | null>(null);
+  // CPR No (tax deposit receipt for the run) is entered inline in the runs
+  // table below — local drafts so typing doesn't fight the query cache on
+  // every keystroke; saved on blur, keyed by run id.
+  const [cprDrafts, setCprDrafts] = useState<Record<string, string>>({});
   const qc = useQueryClient();
 
   const { data: workers = [], isLoading: loadingWorkers } = useQuery({
@@ -178,6 +182,16 @@ export default function HrPage() {
       router.push(`/hr/payroll/${run.id}`);
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to revert payroll run.'),
+  });
+
+  const updateCpr = useMutation({
+    mutationFn: ({ id, cprNumber }: { id: string; cprNumber: string }) =>
+      api.patch(`/hr/payroll/${id}`, { cprNumber }).then((r) => r.data),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['hr-payroll'] });
+      setCprDrafts((d) => { const next = { ...d }; delete next[vars.id]; return next; });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to save CPR number.'),
   });
 
   const createPayrollRun = useMutation({
@@ -809,6 +823,7 @@ export default function HrPage() {
                   <TableRow className="border-b border-gray-200 bg-gray-100">
                     <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Period</TableHead>
                     <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Working days</TableHead>
+                    <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">CPR No</TableHead>
                     <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Status</TableHead>
                     <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Created</TableHead>
                     <TableHead className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Actions</TableHead>
@@ -816,9 +831,9 @@ export default function HrPage() {
                 </TableHeader>
                 <TableBody className="divide-y divide-gray-100">
                   {loadingPayroll ? (
-                    <TableRow><TableCell colSpan={5} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">Loading…</TableCell></TableRow>
                   ) : filteredPayrollRuns.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="px-5 py-8 text-sm text-gray-400 text-center">
+                    <TableRow><TableCell colSpan={6} className="px-5 py-8 text-sm text-gray-400 text-center">
                       {payrollStatusFilter ? 'No payroll runs with this status.' : 'No payroll runs yet. Pick a month above to create one.'}
                     </TableCell></TableRow>
                   ) : (
@@ -830,6 +845,24 @@ export default function HrPage() {
                       >
                         <TableCell className="px-5 py-3.5 text-sm font-medium text-gray-900">{formatPeriod(run.period)}</TableCell>
                         <TableCell className="px-5 py-3.5 text-sm text-gray-600">{run.workingDaysPerMonth ?? '—'}</TableCell>
+                        <TableCell className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            placeholder="Not yet deposited"
+                            value={cprDrafts[run.id] ?? run.cprNumber ?? ''}
+                            onChange={(e) => setCprDrafts((d) => ({ ...d, [run.id]: e.target.value }))}
+                            onBlur={(e) => {
+                              const value = e.target.value.trim();
+                              if (value === (run.cprNumber || '')) {
+                                setCprDrafts((d) => { const next = { ...d }; delete next[run.id]; return next; });
+                                return;
+                              }
+                              updateCpr.mutate({ id: run.id, cprNumber: value });
+                            }}
+                            title="Computerized Payment Receipt number for this month's tax deposit with the tax authority. Editable any time, regardless of run status."
+                            className="w-36 px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-600"
+                          />
+                        </TableCell>
                         <TableCell className="px-5 py-3.5">
                           <span className={cn('px-2.5 py-1 text-xs font-medium rounded-full capitalize', PAYROLL_STATUS_COLORS[run.status] || 'bg-gray-100 text-gray-600')}>
                             {titleCase(run.status)}

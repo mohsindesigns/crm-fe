@@ -16,7 +16,7 @@ import ProfilePhotoCropper from '@/components/ProfilePhotoCropper';
 import ProfilePhotoActions from '@/components/ProfilePhotoActions';
 import ImageLightbox from '@/components/ImageLightbox';
 import ShowInactiveToggle, { useShowInactive } from '@/components/ShowInactiveToggle';
-import { cn, formatDate, formatPeriod, generatePassword, downloadFile, uploadErrorMessage, titleCase, inactiveRow } from '@/lib/utils';
+import { cn, formatDate, formatPeriod, generatePassword, downloadFile, downloadAuthedFile, uploadErrorMessage, titleCase, inactiveRow } from '@/lib/utils';
 import AttendanceStatusBadges from '@/components/AttendanceStatusBadges';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -42,7 +42,7 @@ async function generateAndSaveDoc(workerId: string, type: string) {
   }
 }
 
-type Tab = 'profile' | 'salary' | 'onboarding' | 'attendance' | 'payroll' | 'documents' | 'appraisals';
+type Tab = 'profile' | 'salary' | 'onboarding' | 'attendance' | 'payroll' | 'taxCertificate' | 'documents' | 'appraisals';
 
 function workerToEditForm(worker: any) {
   return {
@@ -318,10 +318,14 @@ export default function WorkerDetailPage() {
   const [tab, setTab] = useState<Tab>('profile');
   useEffect(() => {
     const t = searchParams.get('tab') as Tab | null;
-    if (t && ['profile', 'onboarding', 'attendance', 'payroll', 'documents', 'appraisals'].includes(t)) {
+    if (t && ['profile', 'onboarding', 'attendance', 'payroll', 'taxCertificate', 'documents', 'appraisals'].includes(t)) {
       setTab(t);
     }
   }, [searchParams]);
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const [taxCertFrom, setTaxCertFrom] = useState(`${thisMonth.slice(0, 4)}-01`);
+  const [taxCertTo, setTaxCertTo] = useState(thisMonth);
+  const [taxCertDownloading, setTaxCertDownloading] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
   const [roleId, setRoleId] = useState('');
   const [initialEditForm, setInitialEditForm] = useState<Record<string, any>>({});
@@ -726,6 +730,7 @@ export default function WorkerDetailPage() {
     ...(worker.status === 'profile_amended' ? [{ key: 'onboarding' as Tab, label: 'Amendment Review' }] : []),
     { key: 'attendance', label: 'Attendance' },
     { key: 'payroll', label: 'Payroll' },
+    { key: 'taxCertificate', label: 'Tax Certificate' },
     { key: 'documents', label: 'Documents' },
     { key: 'appraisals', label: 'Appraisals' },
   ];
@@ -1846,6 +1851,86 @@ export default function WorkerDetailPage() {
                 )}
               </TableBody>
             </Table>
+          </div>
+        )}
+
+        {/* Tax Certificate tab */}
+        {tab === 'taxCertificate' && (
+          <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Tax Certificate</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                One row per payroll month in the range below: Sr No, CPR No, Month, Salary, Tax, Payment Date.
+                CPR No is each month&apos;s tax deposit receipt number — set per payroll run on the{' '}
+                <a href="/hr?tab=payroll" className="font-medium text-brand-700 hover:underline">HR → Payroll</a> list, blank until entered there.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
+                <input
+                  type="month"
+                  value={taxCertFrom}
+                  onChange={(e) => setTaxCertFrom(e.target.value)}
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
+                <input
+                  type="month"
+                  value={taxCertTo}
+                  onChange={(e) => setTaxCertTo(e.target.value)}
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-600"
+                />
+              </div>
+              <button
+                onClick={async () => {
+                  if (!taxCertFrom || !taxCertTo) return;
+                  if (taxCertFrom > taxCertTo) { toast.error('"From" must be on or before "To".'); return; }
+                  setTaxCertDownloading(true);
+                  try {
+                    await downloadAuthedFile(
+                      `/hr/workers/${id}/tax-certificate`,
+                      `tax-certificate-${worker.user?.name || 'employee'}-${taxCertFrom}-to-${taxCertTo}.pdf`,
+                      { from: taxCertFrom, to: taxCertTo, format: 'pdf' },
+                    );
+                  } catch (e: any) {
+                    toast.error(e?.message || 'Download failed.');
+                  } finally {
+                    setTaxCertDownloading(false);
+                  }
+                }}
+                disabled={taxCertDownloading || !taxCertFrom || !taxCertTo}
+                className="flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                {taxCertDownloading ? 'Downloading…' : 'Download PDF'}
+              </button>
+              <button
+                onClick={async () => {
+                  if (!taxCertFrom || !taxCertTo) return;
+                  if (taxCertFrom > taxCertTo) { toast.error('"From" must be on or before "To".'); return; }
+                  setTaxCertDownloading(true);
+                  try {
+                    await downloadAuthedFile(
+                      `/hr/workers/${id}/tax-certificate`,
+                      `tax-certificate-${worker.user?.name || 'employee'}-${taxCertFrom}-to-${taxCertTo}.csv`,
+                      { from: taxCertFrom, to: taxCertTo, format: 'csv' },
+                    );
+                  } catch (e: any) {
+                    toast.error(e?.message || 'Download failed.');
+                  } finally {
+                    setTaxCertDownloading(false);
+                  }
+                }}
+                disabled={taxCertDownloading || !taxCertFrom || !taxCertTo}
+                className="flex items-center gap-1.5 border border-gray-300 hover:bg-gray-50 disabled:opacity-60 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                CSV
+              </button>
+            </div>
           </div>
         )}
 
