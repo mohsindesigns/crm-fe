@@ -93,8 +93,8 @@ export default function PayrollRunDetailPage() {
   // Toggling absence deduction here updates the run, then recalculates so the
   // change actually shows up in the items below — flipping the flag alone
   // doesn't touch existing rows.
-  const updateDeductAbsencesMutation = useMutation({
-    mutationFn: (deductAbsences: boolean) => api.patch(`/hr/payroll/${id}`, { deductAbsences }).then((r) => r.data),
+  const updateDeductAttendanceMutation = useMutation({
+    mutationFn: (deductAttendance: boolean) => api.patch(`/hr/payroll/${id}`, { deductAttendance }).then((r) => r.data),
     onSuccess: async () => {
       qc.invalidateQueries({ queryKey: ['hr-payroll'] });
       await qc.invalidateQueries({ queryKey: ['hr-payroll-run', id] });
@@ -137,6 +137,17 @@ export default function PayrollRunDetailPage() {
       toast.success('Tax override saved.');
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update tax.'),
+  });
+
+  // Per-employee override of the run's Deduct Attendance toggle — checked/unchecked
+  // defaults to whatever the run is set to, but pinning it here overrides that for
+  // just this one worker on this run. Saving alone doesn't move computedNet, so
+  // recalculate right after, same as the run-level toggle.
+  const overrideDeductAttendanceMutation = useMutation({
+    mutationFn: ({ workerId, deductAttendanceOverride }: { workerId: string; deductAttendanceOverride: boolean }) =>
+      api.put(`/hr/payroll/${id}/items/${workerId}`, { deductAttendanceOverride }).then((r) => r.data),
+    onSuccess: () => calculateMutation.mutateAsync(),
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to update deduction setting.'),
   });
 
   async function downloadDisbursement() {
@@ -207,20 +218,20 @@ export default function PayrollRunDetailPage() {
             {(run.status === 'draft' || run.status === 'open_for_review') ? (
               <label
                 className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer"
-                title="If unchecked, unpaid absences won't reduce pay this month — attendance absent days are still recorded either way. Toggling this recalculates the run."
+                title="If unchecked, unpaid absence, half-day, and late-penalty days won't reduce pay this month — attendance is still recorded either way. Can be overridden per employee below. Toggling this recalculates the run."
               >
                 <input
                   type="checkbox"
-                  checked={run.deductAbsences !== false}
-                  disabled={updateDeductAbsencesMutation.isPending}
-                  onChange={(e) => updateDeductAbsencesMutation.mutate(e.target.checked)}
+                  checked={run.deductAttendance !== false}
+                  disabled={updateDeductAttendanceMutation.isPending}
+                  onChange={(e) => updateDeductAttendanceMutation.mutate(e.target.checked)}
                   className="w-4 h-4 rounded accent-brand-700"
                 />
-                Deduct Absences
+                Deduct Attendance
               </label>
             ) : (
               <span className="text-xs text-gray-400">
-                Absences {run.deductAbsences !== false ? 'deducted' : 'not deducted'}
+                Attendance deductions {run.deductAttendance !== false ? 'applied' : 'not applied'}
               </span>
             )}
             <span className={cn('px-3 py-1 text-xs font-medium rounded-full', RUN_STATUS_COLORS[run.status] || 'bg-gray-100 text-gray-600')}>
@@ -407,6 +418,21 @@ export default function PayrollRunDetailPage() {
                             >
                               Edit tax
                             </button>
+                          )}
+                          {(run.status === 'draft' || run.status === 'open_for_review') && !item.isLocked && (
+                            <label
+                              className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer whitespace-nowrap"
+                              title="Deduct Attendance for this employee on this run. Defaults to the run's own toggle above; checking/unchecking it here pins this employee regardless of that setting."
+                            >
+                              <input
+                                type="checkbox"
+                                checked={item.deductAttendanceOverride != null ? item.deductAttendanceOverride : run.deductAttendance !== false}
+                                disabled={overrideDeductAttendanceMutation.isPending || calculateMutation.isPending}
+                                onChange={(e) => overrideDeductAttendanceMutation.mutate({ workerId: item.workerId, deductAttendanceOverride: e.target.checked })}
+                                className="w-3.5 h-3.5 rounded accent-brand-700"
+                              />
+                              Deduct
+                            </label>
                           )}
                         </div>
                       </TableCell>

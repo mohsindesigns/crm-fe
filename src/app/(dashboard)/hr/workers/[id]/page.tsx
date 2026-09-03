@@ -53,6 +53,7 @@ function workerToEditForm(worker: any) {
     medicalAllowance: worker.medicalAllowance ?? '',
     salaryComponents: Array.isArray(worker.salaryComponents) ? worker.salaryComponents : [],
     taxExempt: !!worker.taxExempt,
+    noAttendanceDeduction: !!worker.noAttendanceDeduction,
     joiningDate: worker.joiningDate ? String(worker.joiningDate).slice(0, 10) : '',
     leavingDate: worker.leavingDate ? String(worker.leavingDate).slice(0, 10) : '',
     dateOfBirth: worker.dateOfBirth ? String(worker.dateOfBirth).slice(0, 10) : '',
@@ -328,6 +329,8 @@ export default function WorkerDetailPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [declineDocTarget, setDeclineDocTarget] = useState<{ id: string; label: string } | null>(null);
   const [declineDocReason, setDeclineDocReason] = useState('');
+  const [showResignDialog, setShowResignDialog] = useState(false);
+  const [resignLeavingDate, setResignLeavingDate] = useState('');
   const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
   const inactive = useShowInactive();
   const [docForm, setDocForm] = useState(BLANK_DOC);
@@ -781,6 +784,49 @@ export default function WorkerDetailPage() {
           </DialogContent>
         </Dialog>
       )}
+      {showResignDialog && (
+        <Dialog open onOpenChange={(open) => { if (!open) setShowResignDialog(false); }}>
+          <DialogContent className="max-w-md sm:max-w-md rounded-2xl">
+            <DialogTitle className="sr-only">Mark as Resigned</DialogTitle>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Mark {worker.user?.name} as Resigned</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Sets Status to Inactive and Leaving Date together, so this month&apos;s payroll still prorates their pay correctly instead of the run silently skipping them. Their login is also deactivated. This can be undone by setting Status back to Active.
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">Leaving Date</label>
+              <input
+                type="date"
+                autoFocus
+                value={resignLeavingDate}
+                onChange={(e) => setResignLeavingDate(e.target.value)}
+                className="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400"
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowResignDialog(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => updateWorker.mutate({ status: 'inactive', leavingDate: resignLeavingDate }, {
+                  onSuccess: () => {
+                    setShowResignDialog(false);
+                    toast.success('Marked as resigned.');
+                  },
+                })}
+                disabled={updateWorker.isPending || !resignLeavingDate}
+                className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              >
+                {updateWorker.isPending ? 'Saving…' : 'Mark as Resigned'}
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
       {cropSrc && (
         <ProfilePhotoCropper
           imageSrc={cropSrc}
@@ -828,9 +874,23 @@ export default function WorkerDetailPage() {
               <p className="text-xs text-gray-400 mt-0.5 break-all">{worker.user?.email}</p>
             </div>
           </div>
-          <span className={cn('self-start shrink-0 px-3 py-1 text-xs font-medium rounded-full capitalize', STATUS_COLORS[worker.status] || 'bg-gray-100 text-gray-600')}>
-            {STATUS_LABELS[worker.status] || titleCase(worker.status)}
-          </span>
+          <div className="flex items-center gap-2 self-start shrink-0">
+            {worker.status !== 'inactive' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setResignLeavingDate(worker.leavingDate ? String(worker.leavingDate).slice(0, 10) : new Date().toISOString().slice(0, 10));
+                  setShowResignDialog(true);
+                }}
+                className="px-3 py-1 text-xs font-medium text-red-600 border border-red-200 hover:bg-red-50 rounded-full transition-colors"
+              >
+                Mark as Resigned
+              </button>
+            )}
+            <span className={cn('px-3 py-1 text-xs font-medium rounded-full capitalize', STATUS_COLORS[worker.status] || 'bg-gray-100 text-gray-600')}>
+              {STATUS_LABELS[worker.status] || titleCase(worker.status)}
+            </span>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -1163,21 +1223,37 @@ export default function WorkerDetailPage() {
               <div className="bg-white rounded-xl border border-gray-200 p-5">
                 <div className="flex items-start justify-between gap-4 mb-1">
                   <h3 className="text-sm font-semibold text-gray-900">Salary Structure</h3>
-                  <label className="flex items-center gap-1.5 text-xs text-gray-600 whitespace-nowrap shrink-0">
-                    <input
-                      type="checkbox"
-                      checked={!!editForm.taxExempt}
-                      onChange={(e) => setEditForm({ ...editForm, taxExempt: e.target.checked })}
-                      className="rounded border-gray-300 text-brand-600 focus:ring-brand-600"
-                    />
-                    Tax exempt
-                  </label>
+                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+                    <label className="flex items-center gap-1.5 text-xs text-gray-600 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={!!editForm.taxExempt}
+                        onChange={(e) => setEditForm({ ...editForm, taxExempt: e.target.checked })}
+                        className="rounded border-gray-300 text-brand-600 focus:ring-brand-600"
+                      />
+                      Tax exempt
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs text-gray-600 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={!!editForm.noAttendanceDeduction}
+                        onChange={(e) => setEditForm({ ...editForm, noAttendanceDeduction: e.target.checked })}
+                        className="rounded border-gray-300 text-brand-600 focus:ring-brand-600"
+                      />
+                      No attendance deduction
+                    </label>
+                  </div>
                 </div>
                 <p className="text-xs text-gray-500 mb-4">
                   Basic is taxable; Medical is tax-exempt up to {capPercent}% of Basic (org default, set in HR → Settings).
                   {editForm.taxExempt && (
                     <span className="block text-amber-600 mt-1">
                       Tax exempt: payroll will skip income-tax withholding for this employee every month, regardless of taxable salary.
+                    </span>
+                  )}
+                  {editForm.noAttendanceDeduction && (
+                    <span className="block text-amber-600 mt-1">
+                      No attendance deduction: payroll will never dock pay for this employee&apos;s unpaid absences or half-days, every month, regardless of the run&apos;s Deduct Absences setting.
                     </span>
                   )}
                 </p>

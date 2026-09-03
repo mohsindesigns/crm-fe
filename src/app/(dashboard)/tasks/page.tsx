@@ -878,7 +878,7 @@ export default function TasksPage() {
                         onClick={() => openTask(task)}
                         className={cn('cursor-pointer hover:bg-gray-50/80 transition-colors align-top', isOverdue && 'bg-red-50/40')}
                       >
-                        <TableCell className="px-5 py-3.5">
+                        <TableCell className="px-5 py-3.5 whitespace-normal">
                           <div className="flex items-start gap-2.5 min-w-0">
                             <CheckSquare className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
                             <div className="min-w-0 space-y-1.5">
@@ -953,7 +953,7 @@ export default function TasksPage() {
                             <span className="text-xs text-gray-300">—</span>
                           )}
                         </TableCell>
-                        <TableCell className="px-3 py-3.5 align-top">
+                        <TableCell className="px-3 py-3.5 align-top whitespace-normal">
                           {stamps.length === 0 ? (
                             <span className="text-xs text-gray-300">—</span>
                           ) : (
