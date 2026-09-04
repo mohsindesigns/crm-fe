@@ -69,6 +69,10 @@ export default function HrPage() {
   const [newIncludeOvertime, setNewIncludeOvertime] = useState(true);
   const [newDeductAttendance, setNewDeductAttendance] = useState(true);
   const [workerStatusFilter, setWorkerStatusFilter] = useState('');
+  useEffect(() => {
+    const statusParam = searchParams.get('status');
+    if (statusParam && statusParam in WORKER_STATUS_COLORS) setWorkerStatusFilter(statusParam);
+  }, [searchParams]);
   const [workerDesigFilter, setWorkerDesigFilter] = useState('');
   const [workerDeptFilter, setWorkerDeptFilter] = useState('');
   const [workerTypeFilter, setWorkerTypeFilter] = useState('');

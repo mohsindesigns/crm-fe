@@ -447,6 +447,7 @@ export default function ProjectDetailPage() {
 
   const [selectedKeywordIds, setSelectedKeywordIds] = useState<Set<string>>(new Set());
   const [selectedBacklinkIds, setSelectedBacklinkIds] = useState<Set<string>>(new Set());
+  const [bulkAssignValue, setBulkAssignValue] = useState('');
   const [keywordPage, setKeywordPage] = useState(1);
   const [taskPage, setTaskPage] = useState(1);
 
@@ -903,6 +904,19 @@ export default function ProjectDetailPage() {
       else toast.error('No backlinks were set to Inactive. Indexed backlinks were skipped.');
     },
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change backlinks status.'),
+  });
+
+  const bulkAssignBacklinks = useMutation({
+    mutationFn: ({ ids, assignedWriterId }: { ids: string[]; assignedWriterId: string }) =>
+      api.post(`/seo/projects/${id}/backlinks/bulk-assign`, { ids, assignedWriterId: assignedWriterId || null }).then((r) => r.data),
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ['seo-backlinks', id] });
+      setSelectedBacklinkIds(new Set());
+      setBulkAssignValue('');
+      const assigned = data?.assigned ?? 0;
+      toast.success(assigned ? `Assigned ${assigned} backlink(s)` : 'No backlinks were assigned.');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to assign backlinks.'),
   });
 
   const seoDeletePending =
@@ -3275,6 +3289,30 @@ export default function ProjectDetailPage() {
                 )}
                 {canActOnProject && (
                   <>
+                    <div className="flex items-center gap-1.5 border border-gray-300 rounded-lg pl-2.5 pr-1 py-1" title={selectedBacklinkIds.size === 0 ? 'Check one or more backlinks below first.' : 'Credit the selected backlinks to a link builder.'}>
+                      <Users className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                      <select
+                        value={bulkAssignValue}
+                        disabled={selectedBacklinkIds.size === 0 || bulkAssignBacklinks.isPending}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setBulkAssignValue(value);
+                          bulkAssignBacklinks.mutate({
+                            ids: [...selectedBacklinkIds],
+                            assignedWriterId: value === 'unassigned' ? '' : value,
+                          });
+                        }}
+                        className="text-sm bg-transparent focus:outline-none disabled:text-gray-400 max-w-[160px]"
+                      >
+                        <option value="" disabled>
+                          Assign {selectedBacklinkIds.size > 0 ? `(${selectedBacklinkIds.size})` : ''}
+                        </option>
+                        <option value="unassigned">Unassigned</option>
+                        {(assignableLinkBuilders as any[]).map((u: any) => (
+                          <option key={u.id} value={u.id}>{u.name}</option>
+                        ))}
+                      </select>
+                    </div>
                     <button
                       type="button"
                       disabled={deletableBacklinkIds.length === 0}

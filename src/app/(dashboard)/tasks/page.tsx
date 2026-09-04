@@ -97,6 +97,10 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [projectFilter, setProjectFilter] = useState('');
   const [assigneeFilter, setAssigneeFilter] = useState('');
+  useEffect(() => {
+    const assigneeParam = searchParams.get('assigneeId');
+    if (assigneeParam) setAssigneeFilter(assigneeParam);
+  }, [searchParams]);
   const [createdByFilter, setCreatedByFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [dueFilter, setDueFilter] = useState('');

@@ -88,6 +88,12 @@ export default function ProjectsPage() {
   }, [searchParams]);
 
   useEffect(() => {
+    if (searchParams.get('overdue') !== 'true') return;
+    setOverdue(true);
+    setPage(1);
+  }, [searchParams]);
+
+  useEffect(() => {
     const t = setTimeout(() => { setSearch(rawSearch); setPage(1); }, 350);
     return () => clearTimeout(t);
   }, [rawSearch]);
@@ -142,6 +148,22 @@ export default function ProjectsPage() {
       if (a?.user) return a.user;
     }
     return undefined;
+  };
+
+  // When the Strategist filter is active, the column must show the person the
+  // filter actually matched — not just whichever strategist-type slot ranks
+  // highest in STRATEGIST_ROLE_PRIORITY. A project can have different people in
+  // different strategist-type slots (e.g. Alice as social_manager, Bob as the
+  // project_manager fallback); filtering by Bob and then displaying Alice's name
+  // looks exactly like a broken filter.
+  const displayStrategistOf = (project: any) => {
+    if (strategistId) {
+      const a = project.assignments?.find(
+        (x: any) => STRATEGIST_ROLE_PRIORITY.includes(x.roleSlot) && x.user?.id === strategistId,
+      );
+      if (a?.user) return a.user;
+    }
+    return projectStrategistOf(project);
   };
 
   // Any team member can be assigned to a strategist-type slot — filtering only by
@@ -392,7 +414,7 @@ export default function ProjectsPage() {
                       <TableCell className="px-5 py-3.5 text-sm text-gray-600 capitalize">
                         {titleCase(project.currentStageKey) || '—'}
                       </TableCell>
-                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{projectStrategistOf(project)?.name || '—'}</TableCell>
+                      <TableCell className="px-5 py-3.5 text-sm text-gray-600">{displayStrategistOf(project)?.name || '—'}</TableCell>
                       <TableCell className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">{project.startDate ? formatDate(project.startDate) : '—'}</TableCell>
                       <TableCell className={cn('px-5 py-3.5 text-sm whitespace-nowrap', isOverdue ? 'text-red-600 font-medium' : 'text-gray-600')}>
                         <div className="flex items-center gap-1.5">

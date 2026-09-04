@@ -51,6 +51,11 @@ export default function LeadsPage() {
   const [editingForm, setEditingForm] = useState<any>(null);
   const [expandedFormId, setExpandedFormId] = useState<string | null>(null);
 
+  useEffect(() => {
+    const statusParam = searchParams.get('status');
+    if (statusParam && STATUS_OPTIONS.includes(statusParam)) setStatus(statusParam);
+  }, [searchParams]);
+
   // Deep-link from global search (?open=<leadId>) — opens the lead's detail
   // modal directly instead of landing on the plain list.
   useEffect(() => {
