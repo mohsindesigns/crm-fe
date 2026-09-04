@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import Header from '@/components/layout/Header';
 import { Bell, CheckCheck, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, formatMentionPreview } from '@/lib/utils';
+import { notificationHref } from '@/lib/notifications';
 
 type AnyNotification = {
   id: string;
@@ -16,10 +18,13 @@ type AnyNotification = {
   createdAt: string;
   isRead: boolean;
   readAt?: string | null;
+  refTable?: string | null;
+  refId?: string | null;
 };
 
 export default function NotificationsPage() {
   const qc = useQueryClient();
+  const router = useRouter();
   const notifRef = useRef<HTMLDivElement | null>(null);
 
   const { data: notifications = [], refetch } = useQuery({
@@ -49,6 +54,12 @@ export default function NotificationsPage() {
   useEffect(() => {
     notifRef.current?.scrollTo?.({ top: 0 });
   }, []);
+
+  function handleNotificationClick(n: AnyNotification) {
+    if (!n.isRead) markRead.mutate(n.id);
+    const href = notificationHref(n);
+    if (href) router.push(href);
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -102,9 +113,13 @@ export default function NotificationsPage() {
               {(notifications as AnyNotification[]).map((n) => (
                 <div
                   key={n.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleNotificationClick(n)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleNotificationClick(n); }}
                   className={cn(
-                    'px-5 py-3.5 border-b border-gray-50 last:border-b-0',
-                    !n.isRead && 'bg-blue-50/30',
+                    'px-5 py-3.5 border-b border-gray-50 last:border-b-0 cursor-pointer hover:bg-gray-50',
+                    !n.isRead && 'bg-blue-50/30 hover:bg-blue-50/50',
                   )}
                 >
                   <div className="flex items-start gap-3">
@@ -132,7 +147,7 @@ export default function NotificationsPage() {
                     {!n.isRead && (
                       <button
                         type="button"
-                        onClick={() => markRead.mutate(n.id)}
+                        onClick={(e) => { e.stopPropagation(); markRead.mutate(n.id); }}
                         disabled={markRead.isPending}
                         className="shrink-0 px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-brand-50 rounded-lg border border-brand-200 whitespace-nowrap"
                       >
