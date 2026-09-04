@@ -10,6 +10,10 @@ export interface RoutePermission {
 
 export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { href: '/dashboard', permission: null },
+  // The org-wide command centre: money across every client, every employee's
+  // attendance, and the health of the API/DB/media processes. Same gate as
+  // /analytics and /activity-logs, because it shows a superset of both.
+  { href: '/overview', permission: 'admin.access' },
   { href: '/projects', permission: 'projects.read' },
   { href: '/clients', permission: 'clients.read' },
   { href: '/tasks', permission: null },

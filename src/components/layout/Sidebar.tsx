@@ -8,7 +8,7 @@ import {
   Briefcase, ClipboardList, BarChart2, UserCog, Receipt, DollarSign, RefreshCw,
   Palette, Workflow, Shield, Package, FileSignature, ScrollText, Clock, MessagesSquare,
   Building2, CreditCard, Target, PieChart, History,
-  ClipboardCheck, ShieldCheck, Download, KeyRound, Link2,
+  ClipboardCheck, ShieldCheck, Download, KeyRound, Link2, Gauge,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
@@ -31,6 +31,7 @@ import {
 // out of sync with each other.
 const NAV_ITEMS = [
   { label: 'Dashboard',    href: '/dashboard' as const,     icon: LayoutDashboard },
+  { label: 'Overview',     href: '/overview' as const,      icon: Gauge },
   { label: 'Projects',     href: '/projects' as const,      icon: FolderKanban },
   { label: 'Clients',      href: '/clients' as const,       icon: Briefcase },
   { label: 'Tasks',        href: '/tasks' as const,         icon: ClipboardList },
